@@ -1,0 +1,310 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 60;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0ADAB0232F81BFD100E95396 /* SpeechSessionFeatures in Frameworks */ = {isa = PBXBuildFile; productRef = SPD01 /* SpeechSessionFeatures */; };
+		BF01 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR01 /* AppModel.swift */; };
+		BF02 /* SpeechSessionAppApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR02 /* SpeechSessionAppApp.swift */; };
+		BF03 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR03 /* ContentView.swift */; };
+		BF04 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR04 /* HomeView.swift */; };
+		BF05 /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR05 /* RecordingView.swift */; };
+		BF06 /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR06 /* SessionDetailView.swift */; };
+		BF08 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR08 /* SettingsView.swift */; };
+		BF09 /* OnDeviceSummaryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR09 /* OnDeviceSummaryService.swift */; };
+		BF07 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FR07 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		FR01 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		FR02 /* SpeechSessionAppApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechSessionAppApp.swift; sourceTree = "<group>"; };
+		FR03 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		FR04 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		FR05 /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
+		FR06 /* SessionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailView.swift; sourceTree = "<group>"; };
+		FR08 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		FR09 /* OnDeviceSummaryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceSummaryService.swift; sourceTree = "<group>"; };
+		FR07 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		PR01 /* SpeechSessionApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpeechSessionApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		FW01 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0ADAB0232F81BFD100E95396 /* SpeechSessionFeatures in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		GR00 = {
+			isa = PBXGroup;
+			children = (
+				GR01 /* SpeechSessionApp */,
+				GR02 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		GR01 /* SpeechSessionApp */ = {
+			isa = PBXGroup;
+			children = (
+				FR01 /* AppModel.swift */,
+				FR02 /* SpeechSessionAppApp.swift */,
+				FR03 /* ContentView.swift */,
+				FR04 /* HomeView.swift */,
+				FR05 /* RecordingView.swift */,
+				FR06 /* SessionDetailView.swift */,
+				FR07 /* Assets.xcassets */,
+				FR08 /* SettingsView.swift */,
+				FR09 /* OnDeviceSummaryService.swift */,
+			);
+			path = SpeechSessionApp;
+			sourceTree = "<group>";
+		};
+		GR02 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				PR01 /* SpeechSessionApp.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		NT01 /* SpeechSessionApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BCL03 /* Build configuration list for PBXNativeTarget "SpeechSessionApp" */;
+			buildPhases = (
+				SRC01 /* Sources */,
+				FW01 /* Frameworks */,
+				RES01 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SpeechSessionApp;
+			packageProductDependencies = (
+				SPD01 /* SpeechSessionFeatures */,
+			);
+			productName = SpeechSessionApp;
+			productReference = PR01 /* SpeechSessionApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		PJ01 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					NT01 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = BCL01 /* Build configuration list for PBXProject "SpeechSessionApp" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = GR00;
+			packageReferences = (
+				PKG01 /* XCLocalSwiftPackageReference "." */,
+			);
+			productRefGroup = GR02 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				NT01 /* SpeechSessionApp */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		RES01 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF07 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		SRC01 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF01 /* AppModel.swift in Sources */,
+				BF02 /* SpeechSessionAppApp.swift in Sources */,
+				BF03 /* ContentView.swift in Sources */,
+				BF04 /* HomeView.swift in Sources */,
+				BF05 /* RecordingView.swift in Sources */,
+				BF06 /* SessionDetailView.swift in Sources */,
+				BF08 /* SettingsView.swift in Sources */,
+				BF09 /* OnDeviceSummaryService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		BC01 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		BC02 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		BC11 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DGV2W6W2AK;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record audio to transcribe speech on device.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe your speech using on-device recognition.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.SpeechSessionApp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		BC12 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DGV2W6W2AK;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record audio to transcribe speech on device.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe your speech using on-device recognition.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.SpeechSessionApp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		BCL01 /* Build configuration list for PBXProject "SpeechSessionApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BC01 /* Debug */,
+				BC02 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BCL03 /* Build configuration list for PBXNativeTarget "SpeechSessionApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BC11 /* Debug */,
+				BC12 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		PKG01 /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		SPD01 /* SpeechSessionFeatures */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = PKG01 /* XCLocalSwiftPackageReference "." */;
+			productName = SpeechSessionFeatures;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = PJ01 /* Project object */;
+}
