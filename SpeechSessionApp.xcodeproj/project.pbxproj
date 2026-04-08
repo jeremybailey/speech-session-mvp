@@ -16,6 +16,8 @@
 		BF06 /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR06 /* SessionDetailView.swift */; };
 		BF08 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR08 /* SettingsView.swift */; };
 		BF09 /* OnDeviceSummaryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR09 /* OnDeviceSummaryService.swift */; };
+		BF10 /* GlobalHealthSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR10 /* GlobalHealthSummaryView.swift */; };
+		BF11 /* SummaryCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR11 /* SummaryCardView.swift */; };
 		BF07 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FR07 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -28,6 +30,8 @@
 		FR06 /* SessionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailView.swift; sourceTree = "<group>"; };
 		FR08 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		FR09 /* OnDeviceSummaryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceSummaryService.swift; sourceTree = "<group>"; };
+		FR10 /* GlobalHealthSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHealthSummaryView.swift; sourceTree = "<group>"; };
+		FR11 /* SummaryCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryCardView.swift; sourceTree = "<group>"; };
 		FR07 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		PR01 /* SpeechSessionApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpeechSessionApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -64,6 +68,8 @@
 				FR07 /* Assets.xcassets */,
 				FR08 /* SettingsView.swift */,
 				FR09 /* OnDeviceSummaryService.swift */,
+				FR10 /* GlobalHealthSummaryView.swift */,
+				FR11 /* SummaryCardView.swift */,
 			);
 			path = SpeechSessionApp;
 			sourceTree = "<group>";
@@ -159,6 +165,8 @@
 				BF06 /* SessionDetailView.swift in Sources */,
 				BF08 /* SettingsView.swift in Sources */,
 				BF09 /* OnDeviceSummaryService.swift in Sources */,
+				BF10 /* GlobalHealthSummaryView.swift in Sources */,
+				BF11 /* SummaryCardView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
