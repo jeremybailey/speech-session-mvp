@@ -76,7 +76,7 @@ struct HomeView: View {
                         Label("Scan Documents", systemImage: "camera.fill")
                     }
                 } label: {
-                    Image(systemName: "plus")
+                    Image(systemName: "square.and.pencil")
                 }
                 .disabled(phase != .idle)
             }
