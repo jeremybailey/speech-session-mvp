@@ -128,20 +128,7 @@ struct HomeView: View {
     // Mic + document scan buttons — idle state
     @ViewBuilder
     private var idleButtons: some View {
-        HStack(spacing: 24) {
-            // Document scan
-            Button {
-                scanErrorMessage = nil
-                showDocumentScanner = true
-            } label: {
-                Image(systemName: "doc.text.viewfinder")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(.green)
-                    .frame(width: 68, height: 68)
-                    .modifier(GlassCircleModifier(tint: .green))
-            }
-
-            // Microphone
+        Menu {
             Button {
                 Task {
                     recording.prepareForRecording(
@@ -152,12 +139,21 @@ struct HomeView: View {
                     await recording.start()
                 }
             } label: {
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 26, weight: .semibold))
-                    .foregroundStyle(.blue)
-                    .frame(width: 68, height: 68)
-                    .modifier(GlassCircleModifier(tint: .blue))
+                Label("Record Audio", systemImage: "mic.fill")
             }
+
+            Button {
+                scanErrorMessage = nil
+                showDocumentScanner = true
+            } label: {
+                Label("Scan Document", systemImage: "doc.text.viewfinder")
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(.blue)
+                .frame(width: 68, height: 68)
+                .modifier(GlassCircleModifier())
         }
         .transition(.scale(scale: 0.85).combined(with: .opacity))
     }
