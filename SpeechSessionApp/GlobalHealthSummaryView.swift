@@ -299,6 +299,8 @@ struct GlobalHealthSummaryView: View {
 
 // MARK: - GlobalSummaryPayload
 
+/// The model sometimes returns a plain string, sometimes a JSON array of strings.
+/// This struct handles both by normalising arrays into "- item" bullet strings.
 struct GlobalSummaryPayload: Codable {
     var symptoms: String?
     var diagnoses: String?
@@ -309,6 +311,36 @@ struct GlobalSummaryPayload: Codable {
     var testsAndLabs: String?
     var followUp: String?
     var biopsychosocialContext: String?
+
+    enum CodingKeys: String, CodingKey {
+        case symptoms, diagnoses, medications, carePlans, vaccinations
+        case allergies, testsAndLabs, followUp, biopsychosocialContext
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        symptoms               = c.decodeFlexible(.symptoms)
+        diagnoses              = c.decodeFlexible(.diagnoses)
+        medications            = c.decodeFlexible(.medications)
+        carePlans              = c.decodeFlexible(.carePlans)
+        vaccinations           = c.decodeFlexible(.vaccinations)
+        allergies              = c.decodeFlexible(.allergies)
+        testsAndLabs           = c.decodeFlexible(.testsAndLabs)
+        followUp               = c.decodeFlexible(.followUp)
+        biopsychosocialContext = c.decodeFlexible(.biopsychosocialContext)
+    }
+}
+
+private extension KeyedDecodingContainer {
+    /// Decodes a key that may arrive as a `String` or `[String]`.
+    /// Arrays are joined as "- item\n- item" bullet lines.
+    func decodeFlexible(_ key: Key) -> String? {
+        if let str = try? decode(String.self, forKey: key), !str.isEmpty { return str }
+        if let arr = try? decode([String].self, forKey: key), !arr.isEmpty {
+            return arr.map { "- \($0)" }.joined(separator: "\n")
+        }
+        return nil
+    }
 }
 
 // MARK: - GlobalSummaryState
