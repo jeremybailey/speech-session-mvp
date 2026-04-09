@@ -1,5 +1,11 @@
 import Foundation
 
+/// How the session transcript was captured.
+public enum SessionInputType: String, Codable, Sendable {
+    case audio
+    case document
+}
+
 /// A persisted recording session: metadata, full transcript, and optional AI-generated fields.
 public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
     public let id: UUID
@@ -11,18 +17,33 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
     /// Full medical summary in markdown, generated on demand and cached here.
     /// `nil` until a summary has been requested for this session.
     public var summary: String?
+    /// How the transcript was captured. Defaults to `.audio` for legacy sessions.
+    public var inputType: SessionInputType
 
     public init(
         id: UUID = UUID(),
         date: Date = Date(),
         transcript: String,
         title: String? = nil,
-        summary: String? = nil
+        summary: String? = nil,
+        inputType: SessionInputType = .audio
     ) {
         self.id = id
         self.date = date
         self.transcript = transcript
         self.title = title
         self.summary = summary
+        self.inputType = inputType
+    }
+
+    // Custom decoder so existing persisted sessions (without inputType) default to .audio.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id        = try c.decode(UUID.self,   forKey: .id)
+        date      = try c.decode(Date.self,   forKey: .date)
+        transcript = try c.decode(String.self, forKey: .transcript)
+        title     = try c.decodeIfPresent(String.self, forKey: .title)
+        summary   = try c.decodeIfPresent(String.self, forKey: .summary)
+        inputType = try c.decodeIfPresent(SessionInputType.self, forKey: .inputType) ?? .audio
     }
 }

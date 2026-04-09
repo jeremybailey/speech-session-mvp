@@ -18,6 +18,8 @@
 		BF09 /* OnDeviceSummaryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR09 /* OnDeviceSummaryService.swift */; };
 		BF10 /* GlobalHealthSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR10 /* GlobalHealthSummaryView.swift */; };
 		BF11 /* SummaryCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR11 /* SummaryCardView.swift */; };
+		BF12 /* DocumentScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR12 /* DocumentScannerView.swift */; };
+		BF13 /* DocumentScanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR13 /* DocumentScanService.swift */; };
 		BF07 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FR07 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -32,6 +34,8 @@
 		FR09 /* OnDeviceSummaryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceSummaryService.swift; sourceTree = "<group>"; };
 		FR10 /* GlobalHealthSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHealthSummaryView.swift; sourceTree = "<group>"; };
 		FR11 /* SummaryCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryCardView.swift; sourceTree = "<group>"; };
+		FR12 /* DocumentScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentScannerView.swift; sourceTree = "<group>"; };
+		FR13 /* DocumentScanService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentScanService.swift; sourceTree = "<group>"; };
 		FR07 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		PR01 /* SpeechSessionApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpeechSessionApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -70,6 +74,8 @@
 				FR09 /* OnDeviceSummaryService.swift */,
 				FR10 /* GlobalHealthSummaryView.swift */,
 				FR11 /* SummaryCardView.swift */,
+				FR12 /* DocumentScannerView.swift */,
+				FR13 /* DocumentScanService.swift */,
 			);
 			path = SpeechSessionApp;
 			sourceTree = "<group>";
@@ -167,6 +173,8 @@
 				BF09 /* OnDeviceSummaryService.swift in Sources */,
 				BF10 /* GlobalHealthSummaryView.swift in Sources */,
 				BF11 /* SummaryCardView.swift in Sources */,
+				BF12 /* DocumentScannerView.swift in Sources */,
+				BF13 /* DocumentScanService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -228,6 +236,7 @@
 				DEVELOPMENT_TEAM = DGV2W6W2AK;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan documents to transcribe their text.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record audio to transcribe speech on device.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe your speech using on-device recognition.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -256,6 +265,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = DGV2W6W2AK;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan documents to transcribe their text.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record audio to transcribe speech on device.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe your speech using on-device recognition.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
