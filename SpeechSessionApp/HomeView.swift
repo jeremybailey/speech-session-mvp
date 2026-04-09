@@ -59,7 +59,35 @@ struct HomeView: View {
                 }
                 .disabled(phase != .idle)
             }
+            ToolbarItemGroup(placement: .bottomBar) {
+                Spacer()
+                Menu {
+                    Button {
+                        Task {
+                            recording.prepareForRecording(
+                                backend: selectedBackend,
+                                openAIAPIKey: openAIAPIKey,
+                                whisperKitModel: whisperKitModel
+                            )
+                            await recording.start()
+                        }
+                    } label: {
+                        Label("Record Audio", systemImage: "mic.fill")
+                    }
+                    Button {
+                        scanErrorMessage = nil
+                        showDocumentScanner = true
+                    } label: {
+                        Label("Scan Document", systemImage: "doc.text.viewfinder")
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 22, weight: .semibold))
+                }
+            }
         }
+        // Hide the bottom toolbar while recording/scanning so the pill takes over.
+        .toolbar(phase == .idle ? .visible : .hidden, for: .bottomBar)
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
@@ -72,91 +100,45 @@ struct HomeView: View {
                 Task { await processDocumentScan(scan) }
             }
         }
+        // safeAreaInset is only used for the active-state pills now.
         .safeAreaInset(edge: .bottom) {
-            recordingControl
+            activePillControl
         }
         .task {
             await home.loadSessions()
         }
     }
 
-    // MARK: - Inline recording control
+    // MARK: - Active-state pill (shown in safeAreaInset while recording / transcribing / scanning)
 
     @ViewBuilder
-    private var recordingControl: some View {
-        VStack(spacing: 6) {
-            if let error = recording.errorMessage, phase == .idle {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
-            if let error = scanErrorMessage, phase == .idle {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
-
-            switch phase {
-            case .idle:
-                idleButtons
-
-            case .recording:
-                recordingPill
-
-            case .transcribing:
-                transcribingPill
-
-            case .scanTranscribing:
-                scanTranscribingPill
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .padding(.vertical, 16)
-        .padding(.trailing, 24)
-        .contentShape(Rectangle())
-        .animation(.spring(response: 0.38, dampingFraction: 0.75), value: phase == .idle)
-        .animation(.spring(response: 0.38, dampingFraction: 0.75), value: phase == .recording)
-        .animation(.spring(response: 0.38, dampingFraction: 0.75), value: phase == .transcribing)
-        .animation(.spring(response: 0.38, dampingFraction: 0.75), value: phase == .scanTranscribing)
-    }
-
-    // Mic + document scan buttons — idle state
-    @ViewBuilder
-    private var idleButtons: some View {
-        Menu {
-            Button {
-                Task {
-                    recording.prepareForRecording(
-                        backend: selectedBackend,
-                        openAIAPIKey: openAIAPIKey,
-                        whisperKitModel: whisperKitModel
-                    )
-                    await recording.start()
+    private var activePillControl: some View {
+        switch phase {
+        case .idle:
+            // Error banners shown here when idle so they don't interfere with the toolbar button.
+            VStack(spacing: 4) {
+                if let error = recording.errorMessage {
+                    Text(error)
+                        .font(.caption).foregroundStyle(.red)
+                        .multilineTextAlignment(.center).padding(.horizontal, 24)
                 }
-            } label: {
-                Label("Record Audio", systemImage: "mic.fill")
+                if let error = scanErrorMessage {
+                    Text(error)
+                        .font(.caption).foregroundStyle(.red)
+                        .multilineTextAlignment(.center).padding(.horizontal, 24)
+                }
             }
+            .padding(.bottom, 8)
 
-            Button {
-                scanErrorMessage = nil
-                showDocumentScanner = true
-            } label: {
-                Label("Scan Document", systemImage: "doc.text.viewfinder")
-            }
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 26, weight: .semibold))
-                .foregroundStyle(.blue)
-                .frame(width: 68, height: 68)
-                .modifier(GlassCircleModifier())
+        case .recording:
+            recordingPill.padding(.bottom, 16)
+
+        case .transcribing:
+            transcribingPill.padding(.bottom, 16)
+
+        case .scanTranscribing:
+            scanTranscribingPill.padding(.bottom, 16)
         }
-        .transition(.scale(scale: 0.85).combined(with: .opacity))
     }
 
     // Scanning document pill — OCR in progress
