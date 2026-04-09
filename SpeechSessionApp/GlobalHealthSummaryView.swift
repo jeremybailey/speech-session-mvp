@@ -357,70 +357,92 @@ private enum GlobalSummaryState {
 private struct CareTimelineCard: View {
     let sessions: [Session]
 
+    @State private var isExpanded = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header
-            HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.blue.opacity(0.15))
-                        .frame(width: 34, height: 34)
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.blue)
+        VStack(alignment: .leading, spacing: 0) {
+            // Tappable header
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    isExpanded.toggle()
                 }
-                Text("CARE TIMELINE")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                    .kerning(0.5)
+            } label: {
+                HStack(spacing: 10) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.blue.opacity(0.15))
+                            .frame(width: 34, height: 34)
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.blue)
+                    }
+                    Text("CARE TIMELINE")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                        .kerning(0.5)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .padding(16)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
-            // Timeline entries
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
-                    HStack(alignment: .top, spacing: 14) {
-                        // Dot + connecting line
-                        VStack(spacing: 0) {
-                            Circle()
-                                .fill(Color.blue)
-                                .frame(width: 9, height: 9)
-                                .padding(.top, 4)
-                            if index < sessions.count - 1 {
-                                Rectangle()
-                                    .fill(Color.blue.opacity(0.2))
-                                    .frame(width: 2)
-                                    .frame(minHeight: 28)
-                            }
-                        }
-                        .frame(width: 9)
+            // Collapsible timeline entries
+            if isExpanded {
+                Divider()
+                    .padding(.horizontal, 16)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(session.date.formatted(date: .abbreviated, time: .shortened))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            if let title = session.title {
-                                Text(title)
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                            } else if !session.transcript.isEmpty {
-                                Text(session.transcript)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            } else {
-                                Text("Untitled session")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .italic()
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
+                        HStack(alignment: .top, spacing: 14) {
+                            // Dot + connecting line
+                            VStack(spacing: 0) {
+                                Circle()
+                                    .fill(Color.blue)
+                                    .frame(width: 9, height: 9)
+                                    .padding(.top, 4)
+                                if index < sessions.count - 1 {
+                                    Rectangle()
+                                        .fill(Color.blue.opacity(0.2))
+                                        .frame(width: 2)
+                                        .frame(minHeight: 28)
+                                }
                             }
+                            .frame(width: 9)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(session.date.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if let title = session.title {
+                                    Text(title)
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                } else if !session.transcript.isEmpty {
+                                    Text(session.transcript)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                } else {
+                                    Text("Untitled session")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .italic()
+                                }
+                            }
+                            .padding(.bottom, index < sessions.count - 1 ? 14 : 0)
                         }
-                        .padding(.bottom, index < sessions.count - 1 ? 14 : 0)
                     }
                 }
+                .padding(16)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
