@@ -17,6 +17,7 @@ struct HomeView: View {
     @State private var showDocumentScanner = false
     @State private var isScanningDocument = false
     @State private var scanErrorMessage: String? = nil
+    @State private var showRecordingError = false
 
     private var selectedBackend: TranscriptionBackend {
         TranscriptionBackend(rawValue: backendRaw) ?? .onDeviceApple
@@ -110,12 +111,13 @@ struct HomeView: View {
         .task {
             await home.loadSessions()
         }
-        // Auto-clear error messages after 4 seconds.
+        // Auto-dismiss error messages after 4 seconds.
         .onChange(of: recording.errorMessage) { _, newValue in
             guard newValue != nil else { return }
+            showRecordingError = true
             Task {
                 try? await Task.sleep(for: .seconds(4))
-                recording.errorMessage = nil
+                showRecordingError = false
             }
         }
         .onChange(of: scanErrorMessage) { _, newValue in
@@ -135,7 +137,7 @@ struct HomeView: View {
         case .idle:
             // Error banners shown here when idle so they don't interfere with the toolbar button.
             VStack(spacing: 4) {
-                if let error = recording.errorMessage {
+                if showRecordingError, let error = recording.errorMessage {
                     Text(error)
                         .font(.caption).foregroundStyle(.red)
                         .multilineTextAlignment(.center).padding(.horizontal, 24)
