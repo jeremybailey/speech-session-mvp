@@ -116,8 +116,9 @@ struct HomeView: View {
                 scanTranscribingPill
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.vertical, 16)
+        .padding(.trailing, 24)
         .contentShape(Rectangle())
         .animation(.spring(response: 0.38, dampingFraction: 0.75), value: phase == .idle)
         .animation(.spring(response: 0.38, dampingFraction: 0.75), value: phase == .recording)
