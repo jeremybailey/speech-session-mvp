@@ -78,7 +78,7 @@ struct HomeView: View {
                         scanErrorMessage = nil
                         showDocumentScanner = true
                     } label: {
-                        Label("Transcribe Document", systemImage: "doc.text.viewfinder")
+                        Label("Scan Documents", systemImage: "camera.fill")
                     }
                 } label: {
                     Image(systemName: "plus")
@@ -235,7 +235,7 @@ struct HomeView: View {
     private func sessionRow(_ session: Session) -> some View {
         HStack(alignment: .top, spacing: 10) {
             // Input type badge
-            Image(systemName: session.inputType == .document ? "doc.text.viewfinder" : "waveform")
+            Image(systemName: session.inputType == .document ? "camera.fill" : "waveform")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(session.inputType == .document ? Color.green : Color.blue)
                 .padding(.top, 3)
