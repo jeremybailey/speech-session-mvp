@@ -52,50 +52,74 @@ struct SummaryCardsView: View {
 
 // MARK: SummaryCategoryCard
 
-/// A single Apple Health–style card: colored icon + uppercase label + content.
+/// A single Apple Health–style card: colored icon + uppercase label + collapsible content.
 struct SummaryCategoryCard: View {
     let title: String
     let content: String
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Header row
-            HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(categoryColor.opacity(0.18))
-                        .frame(width: 34, height: 34)
-                    Image(systemName: categoryIcon)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(categoryColor)
-                }
-                Text(title.uppercased())
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                    .kerning(0.5)
-            }
+    @State private var isExpanded = false
 
-            // Content — bullet list or plain paragraph
-            if hasBullets {
-                VStack(alignment: .leading, spacing: 5) {
-                    ForEach(bulletItems, id: \.self) { item in
-                        HStack(alignment: .top, spacing: 8) {
-                            Circle()
-                                .fill(Color.primary.opacity(0.35))
-                                .frame(width: 5, height: 5)
-                                .padding(.top, 7)
-                            Text(item)
-                                .font(.body)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Tappable header row
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(categoryColor.opacity(0.18))
+                            .frame(width: 34, height: 34)
+                        Image(systemName: categoryIcon)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(categoryColor)
+                    }
+                    Text(title.uppercased())
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                        .kerning(0.5)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .padding(16)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            // Collapsible content
+            if isExpanded {
+                Divider()
+                    .padding(.horizontal, 16)
+
+                Group {
+                    if hasBullets {
+                        VStack(alignment: .leading, spacing: 5) {
+                            ForEach(bulletItems, id: \.self) { item in
+                                HStack(alignment: .top, spacing: 8) {
+                                    Circle()
+                                        .fill(Color.primary.opacity(0.35))
+                                        .frame(width: 5, height: 5)
+                                        .padding(.top, 7)
+                                    Text(item)
+                                        .font(.body)
+                                }
+                            }
                         }
+                    } else {
+                        Text(content)
+                            .font(.body)
                     }
                 }
-            } else {
-                Text(content)
-                    .font(.body)
+                .padding(16)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
