@@ -101,8 +101,11 @@ struct HomeView: View {
             }
         }
         // safeAreaInset is only used for the active-state pills now.
+        // contentShape blocks touches from falling through to list rows beneath.
         .safeAreaInset(edge: .bottom) {
             activePillControl
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
         }
         .task {
             await home.loadSessions()
