@@ -54,14 +54,8 @@ struct HomeView: View {
         .animation(.default, value: home.sessions.map(\.id))
         .navigationTitle("Sessions")
         .toolbar {
+            // + menu — far-right trailing (declared first = rightmost)
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showSettings = true } label: {
-                    Image(systemName: "gearshape")
-                }
-                .disabled(phase != .idle)
-            }
-            ToolbarItemGroup(placement: .bottomBar) {
-                Spacer()
                 Menu {
                     Button {
                         Task {
@@ -83,12 +77,17 @@ struct HomeView: View {
                     }
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 22, weight: .semibold))
                 }
+                .disabled(phase != .idle)
+            }
+            // Settings gear — second from right
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape")
+                }
+                .disabled(phase != .idle)
             }
         }
-        // Hide the bottom toolbar while recording/scanning so the pill takes over.
-        .toolbar(phase == .idle ? .visible : .hidden, for: .bottomBar)
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
