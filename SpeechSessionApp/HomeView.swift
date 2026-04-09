@@ -110,6 +110,21 @@ struct HomeView: View {
         .task {
             await home.loadSessions()
         }
+        // Auto-clear error messages after 4 seconds.
+        .onChange(of: recording.errorMessage) { _, newValue in
+            guard newValue != nil else { return }
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                recording.errorMessage = nil
+            }
+        }
+        .onChange(of: scanErrorMessage) { _, newValue in
+            guard newValue != nil else { return }
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                scanErrorMessage = nil
+            }
+        }
     }
 
     // MARK: - Active-state pill (shown in safeAreaInset while recording / transcribing / scanning)
