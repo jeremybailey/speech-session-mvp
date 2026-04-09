@@ -72,13 +72,13 @@ struct HomeView: View {
                             await recording.start()
                         }
                     } label: {
-                        Label("Record Audio", systemImage: "mic.fill")
+                        Label("Transcribe Audio", systemImage: "mic.fill")
                     }
                     Button {
                         scanErrorMessage = nil
                         showDocumentScanner = true
                     } label: {
-                        Label("Scan Document", systemImage: "doc.text.viewfinder")
+                        Label("Transcribe Document", systemImage: "doc.text.viewfinder")
                     }
                 } label: {
                     Image(systemName: "plus")
