@@ -268,10 +268,19 @@ struct GlobalHealthSummaryView: View {
             guard
                 let chat = try? JSONDecoder().decode(ChatResponse.self, from: data),
                 let content = chat.choices.first?.message.content,
-                let contentData = content.data(using: .utf8),
-                let payload = try? JSONDecoder().decode(GlobalSummaryPayload.self, from: contentData)
+                let contentData = content.data(using: .utf8)
             else {
-                summaryState = .failed("Could not parse the health summary response. Try again.")
+                summaryState = .failed("Could not read the API response. Try again.")
+                return
+            }
+
+            // Accept both camelCase and snake_case keys from the model.
+            let payloadDecoder = JSONDecoder()
+            payloadDecoder.keyDecodingStrategy = .convertFromSnakeCase
+
+            guard let payload = try? payloadDecoder.decode(GlobalSummaryPayload.self, from: contentData) else {
+                let preview = String(content.prefix(300))
+                summaryState = .failed("Could not parse the summary JSON. Raw response:\n\n\(preview)")
                 return
             }
 
