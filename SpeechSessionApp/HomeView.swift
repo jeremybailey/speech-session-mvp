@@ -1,4 +1,5 @@
 import SwiftUI
+import VisionKit
 import SpeechSessionFeatures
 import SpeechSessionPersistence
 
