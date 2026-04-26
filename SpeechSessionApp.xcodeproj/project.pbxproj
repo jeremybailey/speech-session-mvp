@@ -14,13 +14,13 @@
 		BF04 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR04 /* HomeView.swift */; };
 		BF05 /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR05 /* RecordingView.swift */; };
 		BF06 /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR06 /* SessionDetailView.swift */; };
+		BF07 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FR07 /* Assets.xcassets */; };
 		BF08 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR08 /* SettingsView.swift */; };
 		BF09 /* OnDeviceSummaryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR09 /* OnDeviceSummaryService.swift */; };
 		BF10 /* GlobalHealthSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR10 /* GlobalHealthSummaryView.swift */; };
 		BF11 /* SummaryCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR11 /* SummaryCardView.swift */; };
 		BF12 /* DocumentScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR12 /* DocumentScannerView.swift */; };
 		BF13 /* DocumentScanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR13 /* DocumentScanService.swift */; };
-		BF07 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FR07 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,13 +30,13 @@
 		FR04 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		FR05 /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
 		FR06 /* SessionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailView.swift; sourceTree = "<group>"; };
+		FR07 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		FR08 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		FR09 /* OnDeviceSummaryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceSummaryService.swift; sourceTree = "<group>"; };
 		FR10 /* GlobalHealthSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHealthSummaryView.swift; sourceTree = "<group>"; };
 		FR11 /* SummaryCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryCardView.swift; sourceTree = "<group>"; };
 		FR12 /* DocumentScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentScannerView.swift; sourceTree = "<group>"; };
 		FR13 /* DocumentScanService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentScanService.swift; sourceTree = "<group>"; };
-		FR07 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		PR01 /* SpeechSessionApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpeechSessionApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -236,9 +236,11 @@
 				DEVELOPMENT_TEAM = DGV2W6W2AK;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Scan documents to transcribe their text.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record audio to transcribe speech on device.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe your speech using on-device recognition.";
+				INFOPLIST_KEY_CFBundleDisplayName = CollectiveCare;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan visit documents so CollectiveCare can extract text for your session notes.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record appointment audio so CollectiveCare can create a transcript for your session notes.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe appointment audio into session notes using Apple's speech recognition when selected.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
@@ -247,13 +249,15 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.SpeechSessionApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -265,9 +269,11 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = DGV2W6W2AK;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Scan documents to transcribe their text.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record audio to transcribe speech on device.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe your speech using on-device recognition.";
+				INFOPLIST_KEY_CFBundleDisplayName = CollectiveCare;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan visit documents so CollectiveCare can extract text for your session notes.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record appointment audio so CollectiveCare can create a transcript for your session notes.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe appointment audio into session notes using Apple's speech recognition when selected.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
@@ -276,13 +282,15 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.SpeechSessionApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};

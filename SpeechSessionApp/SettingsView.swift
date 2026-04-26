@@ -33,12 +33,28 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Transcription Engine") {
+                Section {
+                    Label {
+                        Text("CollectiveCare helps capture and organize visit notes, but it is not medical advice. Review summaries for accuracy before using or sharing them.")
+                    } icon: {
+                        Image(systemName: "heart.text.square")
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                } header: {
+                    Text("Beta Notice")
+                }
+
+                Section {
                     Picker("Engine", selection: $backendRaw) {
                         ForEach(TranscriptionBackend.allCases, id: \.rawValue) { backend in
                             Text(backend.displayTitle).tag(backend.rawValue)
                         }
                     }
+                } header: {
+                    Text("Transcription Engine")
+                } footer: {
+                    Text(transcriptionPrivacyNote)
                 }
 
                 if selectedBackend == .onDeviceWhisperKit {
@@ -75,11 +91,11 @@ struct SettingsView: View {
                     } header: {
                         Text("OpenAI API Key")
                     } footer: {
-                        Text("Used for Whisper transcription and medical summaries. Stored only on this device.")
+                        Text("Stored only on this device. When OpenAI features are selected, audio, transcripts, or summaries are sent to OpenAI for processing.")
                     }
                 }
 
-                Section("Medical Summary Engine") {
+                Section {
                     Picker("Summary Engine", selection: $summaryBackendRaw) {
                         Text("OpenAI (cloud)").tag("openai")
                         if #available(iOS 26.0, *) {
@@ -88,6 +104,10 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.inline)
                     .labelsHidden()
+                } header: {
+                    Text("Medical Summary Engine")
+                } footer: {
+                    Text(summaryPrivacyNote)
                 }
                 if summaryBackendRaw == "onDevice" {
                     if #available(iOS 26.0, *) {
@@ -178,5 +198,23 @@ struct SettingsView: View {
         } catch {
             modelDownloadState = .failed(error.localizedDescription)
         }
+    }
+
+    private var transcriptionPrivacyNote: String {
+        switch selectedBackend {
+        case .onDeviceApple:
+            return "Audio is transcribed with Apple's on-device speech recognition when available."
+        case .openAIWhisper:
+            return "Audio is uploaded to OpenAI Whisper after recording stops."
+        case .onDeviceWhisperKit:
+            return "Audio is transcribed on this device with a downloaded WhisperKit model."
+        }
+    }
+
+    private var summaryPrivacyNote: String {
+        if summaryBackendRaw == "onDevice" {
+            return "Summaries are generated on this device when Apple Intelligence is available."
+        }
+        return "Transcripts and saved session summaries are sent to OpenAI to generate medical summaries."
     }
 }
