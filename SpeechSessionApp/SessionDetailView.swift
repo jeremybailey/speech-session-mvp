@@ -171,7 +171,12 @@ struct SessionDetailView: View {
 
         // Route to the selected backend.
         if summaryBackendRaw == "onDevice" {
-            await loadSummaryOnDevice()
+            if isOnDeviceSummaryAvailable {
+                await loadSummaryOnDevice()
+            } else {
+                summaryBackendRaw = "openai"
+                await loadSummaryOpenAI()
+            }
             return
         }
         await loadSummaryOpenAI()
@@ -205,6 +210,13 @@ struct SessionDetailView: View {
         }
     }
 
+    private var isOnDeviceSummaryAvailable: Bool {
+        if #available(iOS 26.0, *) {
+            return OnDeviceSummaryService.isAvailable
+        }
+        return false
+    }
+
     // MARK: OpenAI summary
 
     private func loadSummaryOpenAI() async {
@@ -230,7 +242,7 @@ struct SessionDetailView: View {
         Only include summary sections where information was actually mentioned:
         ## Chief Complaint
         ## Symptoms
-        ## Diagnoses / Conditions
+        ## Findings
         ## Medications
         ## Treatment Plan
         ## Vaccinations

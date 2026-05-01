@@ -35,6 +35,8 @@ public final class RecordingViewModel: ObservableObject {
     @Published public private(set) var activeSessionUsesWhisper = false
     /// True while waiting for the post-stop Whisper upload (UI can show a spinner).
     @Published public private(set) var isFinishingWhisper = false
+    /// True while transcribing a user-selected audio file.
+    @Published public private(set) var isTranscribingFile = false
     /// Set to true by the event task when the transcription stream closes.
     private var transcriptionStreamFinished = false
 
@@ -81,6 +83,9 @@ public final class RecordingViewModel: ObservableObject {
             sessionPipeline = try makePipeline()
         } catch RecordingStartError.missingOpenAIAPIKey {
             errorMessage = "Add an OpenAI API key in Transcription (testing) to use Whisper."
+            return
+        } catch RecordingStartError.unsupportedWhisperKit(let message) {
+            errorMessage = message
             return
         } catch {
             errorMessage = error.localizedDescription
@@ -189,6 +194,78 @@ public final class RecordingViewModel: ObservableObject {
         return session
     }
 
+    /// Transcribes an imported local audio file and saves it as a normal audio session.
+    @discardableResult
+    public func transcribeAudioFile(
+        _ fileURL: URL,
+        backend: TranscriptionBackend,
+        openAIAPIKey: String,
+        whisperKitModel: String = "openai_whisper-base.en",
+        locale: Locale = .current
+    ) async -> Session? {
+        guard !isRecording, !isFinishingWhisper, !isTranscribingFile else {
+            errorMessage = "Finish the current transcription before importing a file."
+            return nil
+        }
+
+        errorMessage = nil
+        isTranscribingFile = true
+        defer { isTranscribingFile = false }
+
+        do {
+            let transcript: String
+            switch backend {
+            case .onDeviceApple:
+                let speechStatus = await TranscriptionService.requestAuthorization()
+                guard speechStatus == .authorized else {
+                    errorMessage = "Speech recognition not authorized."
+                    return nil
+                }
+                transcript = try await AudioFileTranscriptionService.transcribeWithAppleSpeech(
+                    fileURL: fileURL,
+                    locale: locale
+                )
+
+            case .openAIWhisper:
+                let key = openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !key.isEmpty else {
+                    errorMessage = "Add an OpenAI API key in Settings to upload audio files to Whisper."
+                    return nil
+                }
+                transcript = try await AudioFileTranscriptionService.transcribeWithOpenAIWhisper(
+                    fileURL: fileURL,
+                    apiKey: key
+                )
+
+            case .onDeviceWhisperKit:
+                let capability = DeviceCapabilityProfile.current
+                guard capability.supportsWhisperKit,
+                      capability.supportsWhisperKitModel(whisperKitModel)
+                else {
+                    errorMessage = capability.whisperKitUnavailableReason ?? "This WhisperKit model is not available on this iPhone."
+                    return nil
+                }
+                transcript = try await AudioFileTranscriptionService.transcribeWithWhisperKit(
+                    fileURL: fileURL,
+                    modelName: whisperKitModel
+                )
+            }
+
+            let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                errorMessage = "No speech was detected in the selected audio file."
+                return nil
+            }
+
+            let session = Session(transcript: trimmed, inputType: .audio)
+            try await store.upsert(session)
+            return session
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
     private func makePipeline() throws -> LiveRecordingSession {
         switch pendingBackend {
         case .onDeviceApple:
@@ -199,6 +276,14 @@ public final class RecordingViewModel: ObservableObject {
             }
             return LiveRecordingSession(transcription: WhisperTranscriptionService(apiKey: pendingOpenAIKey))
         case .onDeviceWhisperKit:
+            let capability = DeviceCapabilityProfile.current
+            guard capability.supportsWhisperKit,
+                  capability.supportsWhisperKitModel(pendingWhisperKitModel)
+            else {
+                throw RecordingStartError.unsupportedWhisperKit(
+                    capability.whisperKitUnavailableReason ?? "This WhisperKit model is not available on this iPhone."
+                )
+            }
             return LiveRecordingSession(transcription: WhisperKitTranscriptionService(modelName: pendingWhisperKitModel))
         }
     }
@@ -445,6 +530,7 @@ public final class RecordingViewModel: ObservableObject {
 
 private enum RecordingStartError: Error {
     case missingOpenAIAPIKey
+    case unsupportedWhisperKit(String)
 }
 
 private extension TranscriptionServiceError {

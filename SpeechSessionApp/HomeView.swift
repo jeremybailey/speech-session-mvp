@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import VisionKit
 import SpeechSessionFeatures
 import SpeechSessionPersistence
@@ -15,8 +16,10 @@ struct HomeView: View {
     @State private var showSettings = false
     @State private var pulseAnimation = false
     @State private var showDocumentScanner = false
+    @State private var showAudioFileImporter = false
     @State private var isScanningDocument = false
     @State private var scanErrorMessage: String? = nil
+    @State private var fileErrorMessage: String? = nil
     @State private var showRecordingError = false
 
     private var selectedBackend: TranscriptionBackend {
@@ -24,9 +27,10 @@ struct HomeView: View {
     }
 
     // Derive recording phase purely from the ViewModel — no duplicate state.
-    private enum RecordingPhase { case idle, recording, transcribing, scanTranscribing }
+    private enum RecordingPhase { case idle, recording, transcribing, scanTranscribing, fileTranscribing }
     private var phase: RecordingPhase {
         if isScanningDocument { return .scanTranscribing }
+        if recording.isTranscribingFile { return .fileTranscribing }
         if recording.isFinishingWhisper { return .transcribing }
         if recording.isRecording { return .recording }
         return .idle
@@ -70,6 +74,12 @@ struct HomeView: View {
                         Label("Transcribe Audio", systemImage: "mic.fill")
                     }
                     Button {
+                        fileErrorMessage = nil
+                        showAudioFileImporter = true
+                    } label: {
+                        Label("Upload Audio File", systemImage: "folder.fill")
+                    }
+                    Button {
                         scanErrorMessage = nil
                         showDocumentScanner = true
                     } label: {
@@ -100,6 +110,19 @@ struct HomeView: View {
                 Task { await processDocumentScan(scan) }
             }
         }
+        .fileImporter(
+            isPresented: $showAudioFileImporter,
+            allowedContentTypes: [.audio],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                Task { await processAudioFile(url) }
+            case .failure(let error):
+                fileErrorMessage = error.localizedDescription
+            }
+        }
         // safeAreaInset is only used for the active-state pills now.
         // contentShape blocks touches from falling through to list rows beneath.
         .safeAreaInset(edge: .bottom) {
@@ -126,6 +149,13 @@ struct HomeView: View {
                 scanErrorMessage = nil
             }
         }
+        .onChange(of: fileErrorMessage) { _, newValue in
+            guard newValue != nil else { return }
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                fileErrorMessage = nil
+            }
+        }
     }
 
     // MARK: - Active-state pill (shown in safeAreaInset while recording / transcribing / scanning)
@@ -146,6 +176,11 @@ struct HomeView: View {
                         .font(.caption).foregroundStyle(.red)
                         .multilineTextAlignment(.center).padding(.horizontal, 24)
                 }
+                if let error = fileErrorMessage {
+                    Text(error)
+                        .font(.caption).foregroundStyle(.red)
+                        .multilineTextAlignment(.center).padding(.horizontal, 24)
+                }
             }
             .padding(.bottom, 8)
 
@@ -157,6 +192,9 @@ struct HomeView: View {
 
         case .scanTranscribing:
             scanTranscribingPill.padding(.bottom, 16)
+
+        case .fileTranscribing:
+            fileTranscribingPill.padding(.bottom, 16)
         }
     }
 
@@ -222,6 +260,21 @@ struct HomeView: View {
             ProgressView()
                 .scaleEffect(0.85)
             Text("Transcribing…")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 28)
+        .frame(height: 56)
+        .modifier(GlassCapsuleModifier())
+        .transition(.scale(scale: 0.85).combined(with: .opacity))
+    }
+
+    // Imported audio file pill — transcription in progress
+    private var fileTranscribingPill: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .scaleEffect(0.85)
+            Text("Transcribing file…")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -298,6 +351,43 @@ struct HomeView: View {
             scanErrorMessage = error.localizedDescription
         }
         isScanningDocument = false
+    }
+
+    // MARK: - Audio file processing
+
+    private func processAudioFile(_ sourceURL: URL) async {
+        do {
+            let tempURL = try copyImportedAudioToTemporaryFile(sourceURL)
+            defer { try? FileManager.default.removeItem(at: tempURL) }
+
+            let session = await recording.transcribeAudioFile(
+                tempURL,
+                backend: selectedBackend,
+                openAIAPIKey: openAIAPIKey,
+                whisperKitModel: whisperKitModel
+            )
+            if session != nil {
+                await home.loadSessions()
+            }
+        } catch {
+            fileErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func copyImportedAudioToTemporaryFile(_ sourceURL: URL) throws -> URL {
+        let didAccess = sourceURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                sourceURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let fileExtension = sourceURL.pathExtension.isEmpty ? "audio" : sourceURL.pathExtension
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension(fileExtension)
+        try FileManager.default.copyItem(at: sourceURL, to: tempURL)
+        return tempURL
     }
 }
 

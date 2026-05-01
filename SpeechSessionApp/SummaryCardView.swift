@@ -149,6 +149,7 @@ struct SummaryCategoryCard: View {
         let l = title.lowercased()
         if l.contains("chief") || l.contains("complaint")       { return "stethoscope" }
         if l.contains("symptom")                                 { return "waveform.path.ecg" }
+        if l.contains("finding")                                 { return "cross.case.fill" }
         if l.contains("diagnos") || l.contains("condition")     { return "cross.case.fill" }
         if l.contains("medication")                              { return "pills.fill" }
         if l.contains("care plan") || l.contains("treatment")   { return "heart.text.square.fill" }
@@ -166,6 +167,7 @@ struct SummaryCategoryCard: View {
         let l = title.lowercased()
         if l.contains("chief") || l.contains("complaint")       { return .blue }
         if l.contains("symptom")                                 { return .orange }
+        if l.contains("finding")                                 { return .red }
         if l.contains("diagnos") || l.contains("condition")     { return .red }
         if l.contains("medication")                              { return .purple }
         if l.contains("care plan") || l.contains("treatment")   { return .green }

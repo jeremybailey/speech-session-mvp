@@ -12,12 +12,27 @@ struct SettingsView: View {
         TranscriptionBackend(rawValue: backendRaw) ?? .onDeviceApple
     }
 
+    private var capabilityProfile: DeviceCapabilityProfile {
+        DeviceCapabilityProfile.current
+    }
+
+    private var availableTranscriptionBackends: [TranscriptionBackend] {
+        TranscriptionBackend.allCases.filter { backend in
+            backend != .onDeviceWhisperKit || capabilityProfile.supportsWhisperKit
+        }
+    }
+
     private let whisperKitModels: [(name: String, label: String)] = [
         ("openai_whisper-tiny.en",   "Tiny (~39 MB) — fastest"),
         ("openai_whisper-base.en",   "Base (~74 MB) — recommended"),
         ("openai_whisper-small.en",  "Small (~244 MB) — more accurate"),
         ("openai_whisper-medium.en", "Medium (~750 MB) — highest accuracy"),
     ]
+
+    private var availableWhisperKitModels: [(name: String, label: String)] {
+        let allowed = capabilityProfile.allowedWhisperKitModelNames
+        return whisperKitModels.filter { allowed.contains($0.name) }
+    }
 
     // MARK: - WhisperKit download state
 
@@ -47,7 +62,7 @@ struct SettingsView: View {
 
                 Section {
                     Picker("Engine", selection: $backendRaw) {
-                        ForEach(TranscriptionBackend.allCases, id: \.rawValue) { backend in
+                        ForEach(availableTranscriptionBackends, id: \.rawValue) { backend in
                             Text(backend.displayTitle).tag(backend.rawValue)
                         }
                     }
@@ -57,10 +72,18 @@ struct SettingsView: View {
                     Text(transcriptionPrivacyNote)
                 }
 
+                if let reason = capabilityProfile.whisperKitUnavailableReason {
+                    Section {
+                        Label(reason, systemImage: "exclamationmark.triangle")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 if selectedBackend == .onDeviceWhisperKit {
                     Section {
                         Picker("Model", selection: $whisperKitModel) {
-                            ForEach(whisperKitModels, id: \.name) { m in
+                            ForEach(availableWhisperKitModels, id: \.name) { m in
                                 Text(m.label).tag(m.name)
                             }
                         }
@@ -83,7 +106,7 @@ struct SettingsView: View {
                     }
                 }
 
-                if selectedBackend == .openAIWhisper {
+                if usesOpenAI {
                     Section {
                         SecureField("sk-…", text: $openAIAPIKey)
                             .textContentType(.password)
@@ -129,6 +152,15 @@ struct SettingsView: View {
                         .fontWeight(.semibold)
                 }
             }
+        }
+        .task {
+            normalizeSettingsForDevice()
+        }
+        .onChange(of: backendRaw) { _, _ in
+            normalizeSettingsForDevice()
+        }
+        .onChange(of: whisperKitModel) { _, _ in
+            normalizeSettingsForDevice()
         }
     }
 
@@ -185,12 +217,28 @@ struct SettingsView: View {
     // MARK: - Download logic
 
     private func checkModelStatus() async {
+        guard capabilityProfile.supportsWhisperKit,
+              capabilityProfile.supportsWhisperKitModel(whisperKitModel)
+        else {
+            modelDownloadState = .failed(
+                capabilityProfile.whisperKitUnavailableReason ?? "This WhisperKit model is not available on this iPhone."
+            )
+            return
+        }
         modelDownloadState = .checking
         let cached = await WhisperKitModelSetup.isModelCached(whisperKitModel)
         modelDownloadState = cached ? .ready : .notDownloaded
     }
 
     private func startDownload() async {
+        guard capabilityProfile.supportsWhisperKit,
+              capabilityProfile.supportsWhisperKitModel(whisperKitModel)
+        else {
+            modelDownloadState = .failed(
+                capabilityProfile.whisperKitUnavailableReason ?? "This WhisperKit model is not available on this iPhone."
+            )
+            return
+        }
         modelDownloadState = .downloading
         do {
             try await WhisperKitModelSetup.downloadModel(whisperKitModel)
@@ -200,6 +248,36 @@ struct SettingsView: View {
         }
     }
 
+    private func normalizeSettingsForDevice() {
+        if selectedBackend == .onDeviceWhisperKit,
+           !capabilityProfile.supportsWhisperKit {
+            backendRaw = capabilityProfile
+                .fallbackTranscriptionBackend(openAIAPIKey: openAIAPIKey)
+                .rawValue
+        }
+
+        if selectedBackend == .onDeviceWhisperKit,
+           !capabilityProfile.supportsWhisperKitModel(whisperKitModel),
+           let fallbackModel = availableWhisperKitModels.first?.name {
+            whisperKitModel = fallbackModel
+        }
+
+        if summaryBackendRaw == "onDevice", !isOnDeviceSummaryAvailable {
+            summaryBackendRaw = "openai"
+        }
+    }
+
+    private var isOnDeviceSummaryAvailable: Bool {
+        if #available(iOS 26.0, *) {
+            return OnDeviceSummaryService.isAvailable
+        }
+        return false
+    }
+
+    private var usesOpenAI: Bool {
+        selectedBackend == .openAIWhisper || summaryBackendRaw == "openai"
+    }
+
     private var transcriptionPrivacyNote: String {
         switch selectedBackend {
         case .onDeviceApple:
@@ -207,12 +285,18 @@ struct SettingsView: View {
         case .openAIWhisper:
             return "Audio is uploaded to OpenAI Whisper after recording stops."
         case .onDeviceWhisperKit:
+            if let reason = capabilityProfile.whisperKitUnavailableReason {
+                return reason
+            }
             return "Audio is transcribed on this device with a downloaded WhisperKit model."
         }
     }
 
     private var summaryPrivacyNote: String {
         if summaryBackendRaw == "onDevice" {
+            guard isOnDeviceSummaryAvailable else {
+                return "On-device summaries are not available on this iPhone. OpenAI summaries will be used instead."
+            }
             return "Summaries are generated on this device when Apple Intelligence is available."
         }
         return "Transcripts and saved session summaries are sent to OpenAI to generate medical summaries."

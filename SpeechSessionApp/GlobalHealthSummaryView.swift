@@ -9,8 +9,11 @@ struct GlobalHealthSummaryView: View {
     let store: SessionStore
 
     @AppStorage("speechSession.openaiAPIKey") private var openAIAPIKey = ""
+    @AppStorage("speechSession.summaryBackend") private var summaryBackendRaw = "openai"
     /// Cached JSON string of the last successful GlobalSummaryPayload.
     @AppStorage("speechSession.globalSummaryJSON") private var cachedJSON = ""
+    /// Backend that produced the cached global summary.
+    @AppStorage("speechSession.globalSummaryBackend") private var cachedBackendRaw = ""
 
     @State private var summaryState: GlobalSummaryState = .idle
 
@@ -27,7 +30,7 @@ struct GlobalHealthSummaryView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
-                        cachedJSON = ""
+                        clearCachedSummary()
                         summaryState = .idle
                         Task { await generateSummary() }
                     } label: {
@@ -40,13 +43,19 @@ struct GlobalHealthSummaryView: View {
         .task {
             await home.loadSessions()
             // Restore from cache, or kick off generation.
-            if !cachedJSON.isEmpty,
+            if cachedBackendRaw == selectedSummaryBackendRaw,
+               !cachedJSON.isEmpty,
                let data = cachedJSON.data(using: .utf8),
                let cached = try? JSONDecoder().decode(GlobalSummaryPayload.self, from: data) {
                 summaryState = .loaded(cached)
             } else {
                 await generateSummary()
             }
+        }
+        .onChange(of: selectedSummaryBackendRaw) { _, _ in
+            clearCachedSummary()
+            summaryState = .idle
+            Task { await generateSummary() }
         }
     }
 
@@ -146,7 +155,7 @@ struct GlobalHealthSummaryView: View {
     private func summaryCards(for payload: GlobalSummaryPayload) -> some View {
         let entries: [(title: String, content: String?)] = [
             ("Symptoms",                  payload.symptoms),
-            ("Diagnoses / Conditions",    payload.diagnoses),
+            ("Findings",                  payload.diagnoses),
             ("Medications",               payload.medications),
             ("Care Plans",                payload.carePlans),
             ("Vaccinations",              payload.vaccinations),
@@ -167,6 +176,22 @@ struct GlobalHealthSummaryView: View {
         return false
     }
 
+    private var selectedSummaryBackendRaw: String {
+        summaryBackendRaw == "onDevice" && isOnDeviceSummaryAvailable ? "onDevice" : "openai"
+    }
+
+    private var isOnDeviceSummaryAvailable: Bool {
+        if #available(iOS 26.0, *) {
+            return OnDeviceSummaryService.isAvailable
+        }
+        return false
+    }
+
+    private func clearCachedSummary() {
+        cachedJSON = ""
+        cachedBackendRaw = ""
+    }
+
     // MARK: - Summary Generation
 
     private static let minimumTotalWords = 30
@@ -181,21 +206,36 @@ struct GlobalHealthSummaryView: View {
             return
         }
 
-        let key = openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else {
-            summaryState = .failed("Add an OpenAI API key in Settings to generate your health summary.")
+        summaryState = .loading
+
+        if summaryBackendRaw == "onDevice", !isOnDeviceSummaryAvailable {
+            summaryBackendRaw = "openai"
+        }
+
+        if selectedSummaryBackendRaw == "onDevice" {
+            await generateSummaryOnDevice()
             return
         }
 
-        summaryState = .loading
+        await generateSummaryOpenAI()
+    }
 
+    private func sessionBlocks() -> String {
         // Build session context — prefer the generated summary, fall back to raw transcript.
-        let sessionBlocks = home.sessions.enumerated().map { i, session -> String in
+        home.sessions.enumerated().map { i, session -> String in
             let dateLabel = session.date.formatted(date: .abbreviated, time: .shortened)
             let heading = session.title.map { "\($0) — \(dateLabel)" } ?? dateLabel
             let body = session.summary ?? session.transcript
             return "=== Session \(i + 1): \(heading) ===\n\(body)"
         }.joined(separator: "\n\n")
+    }
+
+    private func generateSummaryOpenAI() async {
+        let key = openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            summaryState = .failed("Add an OpenAI API key in Settings to generate your health summary.")
+            return
+        }
 
         let systemPrompt = """
         You are a medical scribe synthesizing a longitudinal health profile across \
@@ -206,7 +246,7 @@ struct GlobalHealthSummaryView: View {
 
         Return a JSON object with only the fields that have content:
         - "symptoms": consolidated current and historical symptoms across all visits
-        - "diagnoses": all diagnosed conditions and confirmed medical history
+        - "diagnoses": findings from diagnosed conditions, confirmed medical history, and clinically relevant observations
         - "medications": current medication list (prioritise most recent session data)
         - "carePlans": ongoing treatment and care plans mentioned across visits
         - "vaccinations": vaccination history explicitly mentioned
@@ -221,7 +261,7 @@ struct GlobalHealthSummaryView: View {
         or a single sentence when there is only one item.
         """
 
-        let userPrompt = "Synthesise a health summary from these appointments:\n\n\(sessionBlocks)"
+        let userPrompt = "Synthesise a health summary from these appointments:\n\n\(sessionBlocks())"
 
         struct Msg: Encodable { let role: String; let content: String }
         struct ResponseFormat: Encodable { let type: String }
@@ -285,14 +325,50 @@ struct GlobalHealthSummaryView: View {
             }
 
             // Persist to cache.
-            if let encoded = try? JSONEncoder().encode(payload),
-               let json = String(data: encoded, encoding: .utf8) {
-                cachedJSON = json
-            }
+            cache(payload)
             summaryState = .loaded(payload)
 
         } catch {
             summaryState = error is CancellationError ? .idle : .failed(error.localizedDescription)
+        }
+    }
+
+    private func generateSummaryOnDevice() async {
+        guard #available(iOS 26.0, *) else {
+            summaryState = .failed("On-device health summaries require iOS 26.0 or later.")
+            return
+        }
+        guard OnDeviceSummaryService.isAvailable else {
+            summaryState = .failed(OnDeviceSummaryService.unavailabilityReason)
+            return
+        }
+
+        let prompt = """
+        Create a longitudinal health summary across \(home.sessions.count) appointment\(home.sessions.count == 1 ? "" : "s").
+        Only include information explicitly stated in the provided session data.
+        Return a JSON object using only these keys when relevant:
+        symptoms, diagnoses, medications, carePlans, vaccinations, allergies, testsAndLabs, followUp, biopsychosocialContext.
+        Use markdown bullet lists for fields with multiple items.
+
+        Session data:
+
+        \(sessionBlocks())
+        """
+
+        do {
+            let payload = try await OnDeviceSummaryService().generateGlobalSummary(prompt: prompt)
+            cache(payload)
+            summaryState = .loaded(payload)
+        } catch {
+            summaryState = error is CancellationError ? .idle : .failed(error.localizedDescription)
+        }
+    }
+
+    private func cache(_ payload: GlobalSummaryPayload) {
+        if let encoded = try? JSONEncoder().encode(payload),
+           let json = String(data: encoded, encoding: .utf8) {
+            cachedJSON = json
+            cachedBackendRaw = selectedSummaryBackendRaw
         }
     }
 }
@@ -315,6 +391,28 @@ struct GlobalSummaryPayload: Codable {
     enum CodingKeys: String, CodingKey {
         case symptoms, diagnoses, medications, carePlans, vaccinations
         case allergies, testsAndLabs, followUp, biopsychosocialContext
+    }
+
+    init(
+        symptoms: String? = nil,
+        diagnoses: String? = nil,
+        medications: String? = nil,
+        carePlans: String? = nil,
+        vaccinations: String? = nil,
+        allergies: String? = nil,
+        testsAndLabs: String? = nil,
+        followUp: String? = nil,
+        biopsychosocialContext: String? = nil
+    ) {
+        self.symptoms = symptoms
+        self.diagnoses = diagnoses
+        self.medications = medications
+        self.carePlans = carePlans
+        self.vaccinations = vaccinations
+        self.allergies = allergies
+        self.testsAndLabs = testsAndLabs
+        self.followUp = followUp
+        self.biopsychosocialContext = biopsychosocialContext
     }
 
     init(from decoder: Decoder) throws {
