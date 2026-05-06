@@ -8,6 +8,7 @@ struct HomeView: View {
     @ObservedObject var home: HomeViewModel
     @ObservedObject var recording: RecordingViewModel
     let store: SessionStore
+    @Binding var pendingSharedAudioURL: URL?
 
     @AppStorage("speechSession.transcriptionBackend") private var backendRaw = TranscriptionBackend.onDeviceApple.rawValue
     @AppStorage("speechSession.openaiAPIKey") private var openAIAPIKey = ""
@@ -21,6 +22,8 @@ struct HomeView: View {
     @State private var scanErrorMessage: String? = nil
     @State private var fileErrorMessage: String? = nil
     @State private var showRecordingError = false
+    /// Prevents overlapping share/import consumes when multiple triggers enqueue the same App Group file.
+    @State private var isConsumingPendingSharedAudio = false
 
     private var selectedBackend: TranscriptionBackend {
         TranscriptionBackend(rawValue: backendRaw) ?? .onDeviceApple
@@ -132,6 +135,10 @@ struct HomeView: View {
         }
         .task {
             await home.loadSessions()
+            await consumePendingSharedAudioURLIfNeeded()
+        }
+        .onChange(of: pendingSharedAudioURL) { _, _ in
+            Task { await consumePendingSharedAudioURLIfNeeded() }
         }
         // Auto-dismiss error messages after 4 seconds.
         .onChange(of: recording.errorMessage) { _, newValue in
@@ -355,23 +362,113 @@ struct HomeView: View {
 
     // MARK: - Audio file processing
 
+    private func consumePendingSharedAudioURLIfNeeded() async {
+        guard !isConsumingPendingSharedAudio else { return }
+        guard let sourceURL = pendingSharedAudioURL else { return }
+        isConsumingPendingSharedAudio = true
+        defer { isConsumingPendingSharedAudio = false }
+        pendingSharedAudioURL = nil
+
+        let isFileURL = sourceURL.isFileURL
+        let isSupportedAudio = isSupportedAudioURL(sourceURL)
+
+        guard isFileURL else {
+            fileErrorMessage = "Shared item is not a local audio file."
+            return
+        }
+        guard isSupportedAudio else {
+            fileErrorMessage = "Shared item is not a supported audio file."
+            return
+        }
+
+        fileErrorMessage = nil
+        await processAudioFile(sourceURL)
+    }
+
     private func processAudioFile(_ sourceURL: URL) async {
+        let claimedURL: URL
         do {
-            let tempURL = try copyImportedAudioToTemporaryFile(sourceURL)
+            claimedURL = try claimAppGroupSharedImportIfNeeded(sourceURL)
+        } catch {
+            fileErrorMessage = error.localizedDescription
+            return
+        }
+
+        do {
+            let tempURL = try copyImportedAudioToTemporaryFile(claimedURL)
             defer { try? FileManager.default.removeItem(at: tempURL) }
 
-            let session = await recording.transcribeAudioFile(
+            let isShareHandoffImport = claimedURL.path.contains("/SharedAudioImports/")
+
+            var session = await recording.transcribeAudioFile(
                 tempURL,
                 backend: selectedBackend,
                 openAIAPIKey: openAIAPIKey,
                 whisperKitModel: whisperKitModel
             )
-            if session != nil {
+
+            if session == nil,
+               isShareHandoffImport,
+               selectedBackend == .onDeviceApple
+            {
+                let profile = DeviceCapabilityProfile.current
+                let modelName = whisperKitModel
+                let canWK = profile.supportsWhisperKit && profile.supportsWhisperKitModel(modelName)
+                if canWK {
+                    session = await recording.transcribeAudioFile(
+                        tempURL,
+                        backend: .onDeviceWhisperKit,
+                        openAIAPIKey: openAIAPIKey,
+                        whisperKitModel: modelName
+                    )
+                }
+            }
+            if let session {
+                removeSharedImportIfNeeded(claimedURL)
                 await home.loadSessions()
+            } else {
+                revertSharedImportClaimIfNeeded(claimedURL)
             }
         } catch {
             fileErrorMessage = error.localizedDescription
+            revertSharedImportClaimIfNeeded(claimedURL)
         }
+    }
+
+    /// Moves a queued App Group audio file into `InProgress` so foreground rescans cannot enqueue it twice.
+    private func claimAppGroupSharedImportIfNeeded(_ url: URL) throws -> URL {
+        guard url.path.contains("/SharedAudioImports/"),
+              !url.path.contains("/SharedAudioImports/InProgress/") else {
+            return url
+        }
+
+        let fm = FileManager.default
+        let parentDir = url.deletingLastPathComponent()
+        let inProgressDir = parentDir.appendingPathComponent("InProgress", isDirectory: true)
+        try fm.createDirectory(at: inProgressDir, withIntermediateDirectories: true)
+        let destination = inProgressDir.appendingPathComponent(url.lastPathComponent)
+        if fm.fileExists(atPath: destination.path) {
+            try fm.removeItem(at: destination)
+        }
+        try fm.moveItem(at: url, to: destination)
+        return destination
+    }
+
+    private func revertSharedImportClaimIfNeeded(_ claimedURL: URL) {
+        guard claimedURL.path.contains("/SharedAudioImports/InProgress/") else { return }
+        let fm = FileManager.default
+        let importsRoot = claimedURL.deletingLastPathComponent().deletingLastPathComponent()
+        let failedDir = importsRoot.appendingPathComponent("Failed", isDirectory: true)
+        try? fm.createDirectory(at: failedDir, withIntermediateDirectories: true)
+        // Unique name so repeated failures never block moves; never return poison files to queue root.
+        let dest = failedDir.appendingPathComponent(
+            UUID().uuidString + "_" + claimedURL.lastPathComponent,
+            isDirectory: false
+        )
+        if fm.fileExists(atPath: dest.path) {
+            try? fm.removeItem(at: dest)
+        }
+        try? fm.moveItem(at: claimedURL, to: dest)
     }
 
     private func copyImportedAudioToTemporaryFile(_ sourceURL: URL) throws -> URL {
@@ -388,6 +485,20 @@ struct HomeView: View {
             .appendingPathExtension(fileExtension)
         try FileManager.default.copyItem(at: sourceURL, to: tempURL)
         return tempURL
+    }
+
+    private func removeSharedImportIfNeeded(_ sourceURL: URL) {
+        guard sourceURL.path.contains("/SharedAudioImports/") else { return }
+        try? FileManager.default.removeItem(at: sourceURL)
+    }
+
+    private func isSupportedAudioURL(_ url: URL) -> Bool {
+        let fileExtension = url.pathExtension.lowercased()
+        let commonAudioExtensions: Set<String> = ["aac", "aif", "aiff", "caf", "m4a", "mp3", "mp4", "wav"]
+        if commonAudioExtensions.contains(fileExtension) {
+            return true
+        }
+        return UTType(filenameExtension: fileExtension)?.conforms(to: .audio) == true
     }
 }
 

@@ -35,22 +35,48 @@ public enum AudioFileTranscriptionError: LocalizedError, Sendable {
 }
 
 public enum AudioFileTranscriptionService {
+    /// Transcribes a local audio file with Apple Speech. Voice Memos M4A imports often yield an empty
+    /// ``AudioFileTranscriptionError/emptyTranscript`` when `requiresOnDeviceRecognition` is true; this method
+    /// retries once with ``SFSpeechURLRecognitionRequest/requiresOnDeviceRecognition`` disabled so Apple's
+    /// server-assisted path can transcribe (network + cloud policy apply).
     public static func transcribeWithAppleSpeech(
         fileURL: URL,
         locale: Locale = .current
     ) async throws -> String {
+        do {
+            return try await transcribeAppleSpeechFromFileOnce(
+                fileURL: fileURL,
+                locale: locale,
+                requiresOnDeviceRecognition: true
+            )
+        } catch AudioFileTranscriptionError.emptyTranscript {
+            return try await transcribeAppleSpeechFromFileOnce(
+                fileURL: fileURL,
+                locale: locale,
+                requiresOnDeviceRecognition: false
+            )
+        }
+    }
+
+    private static func transcribeAppleSpeechFromFileOnce(
+        fileURL: URL,
+        locale: Locale,
+        requiresOnDeviceRecognition: Bool
+    ) async throws -> String {
         guard let recognizer = SFSpeechRecognizer(locale: locale) else {
             throw AudioFileTranscriptionError.noRecognizer
         }
-        guard recognizer.supportsOnDeviceRecognition else {
-            throw AudioFileTranscriptionError.onDeviceNotSupported
+        if requiresOnDeviceRecognition {
+            guard recognizer.supportsOnDeviceRecognition else {
+                throw AudioFileTranscriptionError.onDeviceNotSupported
+            }
         }
 
         let request = SFSpeechURLRecognitionRequest(url: fileURL)
-        request.requiresOnDeviceRecognition = true
+        request.requiresOnDeviceRecognition = requiresOnDeviceRecognition
         request.shouldReportPartialResults = false
 
-        let transcript = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
             var didResume = false
             var task: SFSpeechRecognitionTask?
 
@@ -79,8 +105,6 @@ public enum AudioFileTranscriptionService {
                 }
             }
         }
-
-        return transcript
     }
 
     public static func transcribeWithOpenAIWhisper(
