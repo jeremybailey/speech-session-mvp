@@ -127,7 +127,7 @@ public final class RecordingViewModel: ObservableObject {
         }
     }
 
-    /// Stops the recording and returns the saved session, or `nil` if saving failed.
+    /// Stops the recording and returns the saved entry, or `nil` if saving failed.
     @discardableResult
     public func stop() async -> Session? {
         let wasWhisper = activeSessionUsesWhisper
@@ -173,7 +173,7 @@ public final class RecordingViewModel: ObservableObject {
         do {
             try await store.upsert(session)
         } catch {
-            errorMessage = "Could not save session."
+            errorMessage = "Could not save entry."
             committedText = ""
             partialTail = ""
             lastNonEmptyPartialAt = nil
@@ -194,7 +194,7 @@ public final class RecordingViewModel: ObservableObject {
         return session
     }
 
-    /// Transcribes an imported local audio file and saves it as a normal audio session.
+    /// Transcribes an imported local audio file and saves it as a normal audio-backed entry.
     @discardableResult
     public func transcribeAudioFile(
         _ fileURL: URL,

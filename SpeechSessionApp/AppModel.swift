@@ -4,15 +4,22 @@ import SpeechSessionFeatures
 import SpeechSessionPersistence
 
 extension Notification.Name {
-    static let sharedAudioURLReceived = Notification.Name("SpeechSessionSharedAudioURLReceived")
+    /// Posted when a queued App Group URL (audio or photo handoff, or opener URL) is ready to consume.
+    static let sharedImportURLReceived = Notification.Name("SpeechSessionSharedImportURLReceived")
 }
 
+/// Drains queued files from `SharedAudioImports` and `SharedPhotoImports` in the App Group (newest first across both queues).
 @MainActor
-final class SharedAudioURLInbox {
-    static let shared = SharedAudioURLInbox()
+final class SharedImportURLInbox {
+    static let shared = SharedImportURLInbox()
 
     private let appGroupID = "group.com.CollectiveCare.pilot"
-    private let sharedImportsDirectoryName = "SharedAudioImports"
+    private let audioImportsDirectoryName = "SharedAudioImports"
+    private let photoImportsDirectoryName = "SharedPhotoImports"
+
+    /// Legacy opener URLs referenced only the audio folder; keep resolving there.
+    private var legacySchemeImportsDirectoryName: String { audioImportsDirectoryName }
+
     private var pendingURLs: [URL] = []
 
     private init() {}
@@ -24,7 +31,7 @@ final class SharedAudioURLInbox {
 
         let resolvedURL = resolveHandoffURL(url) ?? url
         pendingURLs.append(resolvedURL)
-        NotificationCenter.default.post(name: .sharedAudioURLReceived, object: resolvedURL)
+        NotificationCenter.default.post(name: .sharedImportURLReceived, object: resolvedURL)
     }
 
     func drain() -> [URL] {
@@ -33,7 +40,7 @@ final class SharedAudioURLInbox {
     }
 
     func enqueueNextSharedImportIfAvailable() {
-        guard let nextURL = nextSharedImportURL() else {
+        guard let nextURL = nextCombinedQueueURL() else {
             return
         }
         enqueue(nextURL)
@@ -50,40 +57,54 @@ final class SharedAudioURLInbox {
         }
 
         return containerURL
-            .appendingPathComponent(sharedImportsDirectoryName, isDirectory: true)
+            .appendingPathComponent(legacySchemeImportsDirectoryName, isDirectory: true)
             .appendingPathComponent(fileName, isDirectory: false)
     }
 
-    private func nextSharedImportURL() -> URL? {
+    private func nextCombinedQueueURL() -> URL? {
         guard let containerURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: appGroupID
         ) else {
             return nil
         }
 
-        let importsURL = containerURL.appendingPathComponent(sharedImportsDirectoryName, isDirectory: true)
+        let audioDir = containerURL.appendingPathComponent(audioImportsDirectoryName, isDirectory: true)
+        let photoDir = containerURL.appendingPathComponent(photoImportsDirectoryName, isDirectory: true)
+
+        var candidates: [(url: URL, date: Date)] = []
+        candidates.append(contentsOf: collectQueuedFiles(directory: audioDir, extensions: SharedImportURLInbox.audioExtensions))
+        candidates.append(contentsOf: collectQueuedFiles(directory: photoDir, extensions: SharedImportURLInbox.photoExtensions))
+
+        return candidates.max(by: { $0.date < $1.date })?.url
+    }
+
+    private func collectQueuedFiles(directory: URL, extensions: Set<String>) -> [(url: URL, date: Date)] {
         guard let urls = try? FileManager.default.contentsOfDirectory(
-            at: importsURL,
+            at: directory,
             includingPropertiesForKeys: [.creationDateKey, .isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else {
-            return nil
+            return []
         }
 
-        let audioExtensions: Set<String> = ["aac", "aif", "aiff", "caf", "m4a", "mp3", "mp4", "wav"]
-        // Newest-first: favor the memo the user just shared; stale orphans must not starve fresher imports.
         return urls
-            .filter { url in
-                (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == false
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == false }
+            .filter {
+                !$0.lastPathComponent.hasPrefix(".")
+                    && !$0.path.contains("/InProgress/")
+                    && !$0.path.contains("/Failed/")
             }
-            .filter { audioExtensions.contains($0.pathExtension.lowercased()) }
-            .sorted {
-                let lhsDate = (try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
-                let rhsDate = (try? $1.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
-                return lhsDate > rhsDate
+            .filter { extensions.contains($0.pathExtension.lowercased()) }
+            .compactMap { fileURL -> (URL, Date)? in
+                let date = (try? fileURL.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+                return (fileURL, date)
             }
-            .first
     }
+
+    private static let audioExtensions: Set<String> = ["aac", "aif", "aiff", "caf", "m4a", "mp3", "mp4", "wav"]
+
+    /// Extensions we write / accept for share-handoff images.
+    private static let photoExtensions: Set<String> = ["jpg", "jpeg", "png", "heic", "heif", "gif"]
 }
 
 @MainActor
@@ -91,44 +112,45 @@ final class AppModel: ObservableObject {
     let store: SessionStore
     let home: HomeViewModel
     let recording: RecordingViewModel
-    private var sharedAudioURLObserver: NSObjectProtocol?
+    private var sharedImportURLObserver: NSObjectProtocol?
 
-    @Published var pendingSharedAudioURL: URL?
+    /// Shared handoff queue (Voice Memos / Photos share extensions → App Group paths).
+    @Published var pendingSharedImportURL: URL?
 
     init(store: SessionStore) {
         self.store = store
         self.home = HomeViewModel(store: store)
         self.recording = RecordingViewModel(store: store)
-        self.sharedAudioURLObserver = NotificationCenter.default.addObserver(
-            forName: .sharedAudioURLReceived,
+        self.sharedImportURLObserver = NotificationCenter.default.addObserver(
+            forName: .sharedImportURLReceived,
             object: nil,
             queue: .main
         ) { [weak self] notification in
             guard let url = notification.object as? URL else { return }
             Task { @MainActor [weak self] in
-                self?.enqueueSharedAudioURL(url)
+                self?.enqueueSharedImportURL(url)
             }
         }
-        let drainedURLs = SharedAudioURLInbox.shared.drain()
+        let drainedURLs = SharedImportURLInbox.shared.drain()
         if let url = drainedURLs.last {
-            pendingSharedAudioURL = url
+            pendingSharedImportURL = url
         }
-        SharedAudioURLInbox.shared.enqueueNextSharedImportIfAvailable()
+        SharedImportURLInbox.shared.enqueueNextSharedImportIfAvailable()
     }
 
     deinit {
-        if let sharedAudioURLObserver {
-            NotificationCenter.default.removeObserver(sharedAudioURLObserver)
+        if let sharedImportURLObserver {
+            NotificationCenter.default.removeObserver(sharedImportURLObserver)
         }
     }
 
-    func enqueueSharedAudioURL(_ url: URL) {
-        pendingSharedAudioURL = url
+    func enqueueSharedImportURL(_ url: URL) {
+        pendingSharedImportURL = url
     }
 
     func enqueuePendingSharedImportIfAvailable() {
-        guard pendingSharedAudioURL == nil else { return }
+        guard pendingSharedImportURL == nil else { return }
         guard !recording.isRecording, !recording.isFinishingWhisper, !recording.isTranscribingFile else { return }
-        SharedAudioURLInbox.shared.enqueueNextSharedImportIfAvailable()
+        SharedImportURLInbox.shared.enqueueNextSharedImportIfAvailable()
     }
 }

@@ -29,6 +29,13 @@ struct GlobalHealthSummaryView: View {
             .navigationTitle("Health Summary")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
+                    if let payload = sharePayload {
+                        ShareLink(item: payload.text, subject: Text(payload.subject)) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         clearCachedSummary()
                         summaryState = .idle
@@ -64,10 +71,10 @@ struct GlobalHealthSummaryView: View {
     private var content: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Care Timeline — always built from session data, no API call needed.
+                // Care Timeline — always built from entry data, no API call needed.
                 CareTimelineCard(sessions: home.sessions)
 
-                // AI-generated cross-session cards.
+                // AI-generated cross-entry cards.
                 switch summaryState {
                 case .idle:
                     EmptyView()
@@ -93,7 +100,7 @@ struct GlobalHealthSummaryView: View {
             Image(systemName: "waveform.circle")
                 .font(.system(size: 52))
                 .foregroundStyle(.secondary)
-            Text("No sessions yet")
+            Text("No entries yet")
                 .font(.headline)
             Text("Record your first appointment to start building your health summary.")
                 .font(.subheadline)
@@ -108,7 +115,7 @@ struct GlobalHealthSummaryView: View {
     private var loadingCard: some View {
         HStack(spacing: 12) {
             ProgressView().scaleEffect(0.9)
-            Text("Building health summary across \(home.sessions.count) session\(home.sessions.count == 1 ? "" : "s")…")
+            Text("Building health summary across \(home.sessions.count) entr\(home.sessions.count == 1 ? "y" : "ies")…")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -153,6 +160,59 @@ struct GlobalHealthSummaryView: View {
 
     @ViewBuilder
     private func summaryCards(for payload: GlobalSummaryPayload) -> some View {
+        ForEach(Self.nonemptyPayloadSections(for: payload), id: \.title) { row in
+            SummaryCategoryCard(title: row.title, content: row.content)
+        }
+    }
+
+    // MARK: - Share
+
+    /// Plain text for the share sheet when the cross-entry summary has finished loading.
+    private var sharePayload: (text: String, subject: String)? {
+        guard case .loaded(let payload) = summaryState else { return nil }
+        guard !home.sessions.isEmpty else { return nil }
+
+        var parts: [String] = []
+
+        parts.append("Care timeline")
+        for session in home.sessions {
+            let dateLabel = session.date.formatted(date: .abbreviated, time: .shortened)
+            let line: String
+            if let title = session.title {
+                line = "• \(dateLabel) — \(title)"
+            } else if !session.transcript.isEmpty {
+                let snippet = session.transcript
+                    .split(whereSeparator: \.isNewline)
+                    .first
+                    .map(String.init) ?? String(session.transcript.prefix(120))
+                line = "• \(dateLabel) — \(snippet)"
+            } else {
+                line = "• \(dateLabel) — Untitled entry"
+            }
+            parts.append(line)
+        }
+
+        let sections = Self.nonemptyPayloadSections(for: payload)
+        if !sections.isEmpty {
+            parts.append("")
+            parts.append("Medical summary")
+            for section in sections {
+                parts.append("")
+                parts.append(section.title)
+                parts.append(section.content)
+            }
+        }
+
+        let text = parts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+
+        let count = home.sessions.count
+        let subject = "Health Summary (\(count) entr\(count == 1 ? "y" : "ies"))"
+        return (text, subject)
+    }
+
+    /// Category rows that have content, in display order — shared by cards and share text.
+    private static func nonemptyPayloadSections(for payload: GlobalSummaryPayload) -> [(title: String, content: String)] {
         let entries: [(title: String, content: String?)] = [
             ("Symptoms",                  payload.symptoms),
             ("Findings",                  payload.diagnoses),
@@ -164,8 +224,9 @@ struct GlobalHealthSummaryView: View {
             ("Follow-up",                 payload.followUp),
             ("Biopsychosocial Context",   payload.biopsychosocialContext),
         ]
-        ForEach(entries.filter { !($0.content ?? "").isEmpty }, id: \.title) { entry in
-            SummaryCategoryCard(title: entry.title, content: entry.content!)
+        return entries.compactMap { title, content in
+            guard let content, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return (title, content)
         }
     }
 
@@ -202,7 +263,7 @@ struct GlobalHealthSummaryView: View {
 
         let totalWords = home.sessions.reduce(0) { $0 + $1.transcript.split(separator: " ").count }
         guard totalWords >= Self.minimumTotalWords else {
-            summaryState = .failed("Sessions are too short to summarize. Record more appointment content and try again.")
+            summaryState = .failed("Entries are too short to summarize. Record more appointment content and try again.")
             return
         }
 
@@ -220,13 +281,13 @@ struct GlobalHealthSummaryView: View {
         await generateSummaryOpenAI()
     }
 
-    private func sessionBlocks() -> String {
-        // Build session context — prefer the generated summary, fall back to raw transcript.
+    private func entryBlocks() -> String {
+        // Build entry context — prefer the generated summary, fall back to raw transcript.
         home.sessions.enumerated().map { i, session -> String in
             let dateLabel = session.date.formatted(date: .abbreviated, time: .shortened)
             let heading = session.title.map { "\($0) — \(dateLabel)" } ?? dateLabel
             let body = session.summary ?? session.transcript
-            return "=== Session \(i + 1): \(heading) ===\n\(body)"
+            return "=== Entry \(i + 1): \(heading) ===\n\(body)"
         }.joined(separator: "\n\n")
     }
 
@@ -240,28 +301,28 @@ struct GlobalHealthSummaryView: View {
         let systemPrompt = """
         You are a medical scribe synthesizing a longitudinal health profile across \
         \(home.sessions.count) appointment\(home.sessions.count == 1 ? "" : "s").
-        Review all provided session data and create a comprehensive cross-visit health overview.
+        Review all provided entry data and create a comprehensive cross-visit health overview.
         Only include information explicitly stated — do not infer or invent clinical details.
-        Omit any JSON field where there is no relevant information across the sessions.
+        Omit any JSON field where there is no relevant information across the entries.
 
         Return a JSON object with only the fields that have content:
         - "symptoms": consolidated current and historical symptoms across all visits
         - "diagnoses": findings from diagnosed conditions, confirmed medical history, and clinically relevant observations
-        - "medications": current medication list (prioritise most recent session data)
+        - "medications": current medication list (prioritise most recent entry data)
         - "carePlans": ongoing treatment and care plans mentioned across visits
         - "vaccinations": vaccination history explicitly mentioned
         - "allergies": known allergies and adverse reactions
         - "testsAndLabs": ordered, pending, or completed tests and labs
         - "followUp": upcoming or recommended follow-up actions
         - "biopsychosocialContext": psychosocial and life-context factors mentioned \
-        across sessions (e.g. work stress, bereavement, family changes, housing, \
+        across entries (e.g. work stress, bereavement, family changes, housing, \
         social support, financial pressures, mental health themes)
 
         Format each field as a markdown bulleted list (- item) when multiple items exist, \
         or a single sentence when there is only one item.
         """
 
-        let userPrompt = "Synthesise a health summary from these appointments:\n\n\(sessionBlocks())"
+        let userPrompt = "Synthesise a health summary from these appointments:\n\n\(entryBlocks())"
 
         struct Msg: Encodable { let role: String; let content: String }
         struct ResponseFormat: Encodable { let type: String }
@@ -345,14 +406,14 @@ struct GlobalHealthSummaryView: View {
 
         let prompt = """
         Create a longitudinal health summary across \(home.sessions.count) appointment\(home.sessions.count == 1 ? "" : "s").
-        Only include information explicitly stated in the provided session data.
+        Only include information explicitly stated in the provided entry data.
         Return a JSON object using only these keys when relevant:
         symptoms, diagnoses, medications, carePlans, vaccinations, allergies, testsAndLabs, followUp, biopsychosocialContext.
         Use markdown bullet lists for fields with multiple items.
 
-        Session data:
+        Entry data:
 
-        \(sessionBlocks())
+        \(entryBlocks())
         """
 
         do {
@@ -527,7 +588,7 @@ private struct CareTimelineCard: View {
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                 } else {
-                                    Text("Untitled session")
+                                    Text("Untitled entry")
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
                                         .italic()

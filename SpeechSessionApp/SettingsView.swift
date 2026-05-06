@@ -299,6 +299,6 @@ struct SettingsView: View {
             }
             return "Summaries are generated on this device when Apple Intelligence is available."
         }
-        return "Transcripts and saved session summaries are sent to OpenAI to generate medical summaries."
+        return "Transcripts and saved entry summaries are sent to OpenAI to generate medical summaries."
     }
 }

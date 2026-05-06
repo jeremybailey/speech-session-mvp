@@ -34,11 +34,11 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Scan visit documents so CollectiveCare can extract text for your session notes.</string>
+	<string>Scan visit documents so CollectiveCare can extract text for your visit notes.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Record appointment audio so CollectiveCare can create a transcript for your session notes.</string>
+	<string>Record appointment audio so CollectiveCare can create a transcript for your visit notes.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Transcribe appointment audio into session notes using Apple's speech recognition when selected.</string>
+	<string>Transcribe appointment audio into visit notes using Apple's speech recognition when selected.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

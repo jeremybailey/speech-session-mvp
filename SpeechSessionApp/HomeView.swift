@@ -1,6 +1,8 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 import VisionKit
+import PhotosUI
 import SpeechSessionFeatures
 import SpeechSessionPersistence
 
@@ -8,7 +10,9 @@ struct HomeView: View {
     @ObservedObject var home: HomeViewModel
     @ObservedObject var recording: RecordingViewModel
     let store: SessionStore
-    @Binding var pendingSharedAudioURL: URL?
+    @Binding var pendingSharedImportURL: URL?
+    /// Called after consuming (or rejecting) one App Group handoff so queued files + folder scan can drain.
+    var advanceSharedImportQueue: () -> Void = {}
 
     @AppStorage("speechSession.transcriptionBackend") private var backendRaw = TranscriptionBackend.onDeviceApple.rawValue
     @AppStorage("speechSession.openaiAPIKey") private var openAIAPIKey = ""
@@ -18,12 +22,14 @@ struct HomeView: View {
     @State private var pulseAnimation = false
     @State private var showDocumentScanner = false
     @State private var showAudioFileImporter = false
+    @State private var showPhotosPicker = false
+    @State private var photoPickerItems: [PhotosPickerItem] = []
     @State private var isScanningDocument = false
     @State private var scanErrorMessage: String? = nil
     @State private var fileErrorMessage: String? = nil
     @State private var showRecordingError = false
-    /// Prevents overlapping share/import consumes when multiple triggers enqueue the same App Group file.
-    @State private var isConsumingPendingSharedAudio = false
+    /// Prevents overlapping App Group consumes when audio and photo handlers race.
+    @State private var isConsumingPendingSharedImport = false
 
     private var selectedBackend: TranscriptionBackend {
         TranscriptionBackend(rawValue: backendRaw) ?? .onDeviceApple
@@ -59,7 +65,7 @@ struct HomeView: View {
         }
         .listStyle(.plain)
         .animation(.default, value: home.sessions.map(\.id))
-        .navigationTitle("Sessions")
+        .navigationTitle("Entries")
         .toolbar {
             // + menu — far-right trailing (declared first = rightmost)
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -88,6 +94,15 @@ struct HomeView: View {
                     } label: {
                         Label("Scan Documents", systemImage: "camera.fill")
                     }
+                    Button {
+                        scanErrorMessage = nil
+                        // Defer so the toolbar menu can dismiss before the picker presents (avoids nested context menus).
+                        DispatchQueue.main.async {
+                            showPhotosPicker = true
+                        }
+                    } label: {
+                        Label("Import Photos", systemImage: "photo.on.rectangle.angled")
+                    }
                 } label: {
                     Image(systemName: "square.and.pencil")
                 }
@@ -100,6 +115,13 @@ struct HomeView: View {
                 }
                 .disabled(phase != .idle)
             }
+        }
+        .photosPicker(isPresented: $showPhotosPicker, selection: $photoPickerItems, maxSelectionCount: 24, matching: .images, photoLibrary: .shared())
+        .onChange(of: photoPickerItems) { _, newItems in
+            guard !newItems.isEmpty else { return }
+            isScanningDocument = true
+            scanErrorMessage = nil
+            Task { await processPhotoPickerItems(newItems) }
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -135,10 +157,10 @@ struct HomeView: View {
         }
         .task {
             await home.loadSessions()
-            await consumePendingSharedAudioURLIfNeeded()
+            await consumePendingSharedImportIfNeeded()
         }
-        .onChange(of: pendingSharedAudioURL) { _, _ in
-            Task { await consumePendingSharedAudioURLIfNeeded() }
+        .onChange(of: pendingSharedImportURL) { _, _ in
+            Task { await consumePendingSharedImportIfNeeded() }
         }
         // Auto-dismiss error messages after 4 seconds.
         .onChange(of: recording.errorMessage) { _, newValue in
@@ -209,7 +231,7 @@ struct HomeView: View {
     private var scanTranscribingPill: some View {
         HStack(spacing: 10) {
             ProgressView().scaleEffect(0.85)
-            Text("Reading document…")
+            Text("Extracting text…")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -291,7 +313,7 @@ struct HomeView: View {
         .transition(.scale(scale: 0.85).combined(with: .opacity))
     }
 
-    // MARK: - Session list rows
+    // MARK: - Entry list rows
 
     private var emptyStateRow: some View {
         VStack(spacing: 12) {
@@ -346,44 +368,123 @@ struct HomeView: View {
         let s = Int(t); return String(format: "%d:%02d", s / 60, s % 60)
     }
 
-    // MARK: - Document scan processing
+    // MARK: - Document / photo OCR
 
     private func processDocumentScan(_ scan: VNDocumentCameraScan) async {
+        defer { isScanningDocument = false }
         do {
             let transcript = try await DocumentScanService().transcribe(scan: scan)
-            let session = Session(transcript: transcript, inputType: .document)
-            try? await store.upsert(session)
-            await home.loadSessions()
+            try await persistDocumentTranscript(transcript)
         } catch {
             scanErrorMessage = error.localizedDescription
         }
-        isScanningDocument = false
+    }
+
+    /// Loads picker items and OCRs images with the same pipeline as scans.
+    private func processPhotoPickerItems(_ items: [PhotosPickerItem]) async {
+        await MainActor.run { photoPickerItems.removeAll(keepingCapacity: false) }
+
+        defer { isScanningDocument = false }
+
+        var images: [UIImage] = []
+        images.reserveCapacity(items.count)
+
+        for item in items {
+            if let data = try? await item.loadTransferable(type: Data.self),
+               let uiImage = UIImage(data: data) {
+                images.append(uiImage)
+            }
+        }
+
+        guard !images.isEmpty else {
+            scanErrorMessage = DocumentScanError.noImages.errorDescription
+            return
+        }
+
+        do {
+            let transcript = try await DocumentScanService().transcribe(images: images)
+            try await persistDocumentTranscript(transcript)
+        } catch {
+            scanErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func persistDocumentTranscript(_ transcript: String) async throws {
+        let session = Session(transcript: transcript, inputType: .document)
+        try await store.upsert(session)
+        await home.loadSessions()
+    }
+
+    // MARK: - Shared handoff (App Group audio + photo share extensions)
+
+    private func consumePendingSharedImportIfNeeded() async {
+        guard !isConsumingPendingSharedImport else { return }
+        guard let sourceURL = pendingSharedImportURL else { return }
+
+        isConsumingPendingSharedImport = true
+        defer {
+            isConsumingPendingSharedImport = false
+            Task { @MainActor in
+                advanceSharedImportQueue()
+                await consumePendingSharedImportIfNeeded()
+            }
+        }
+        pendingSharedImportURL = nil
+
+        guard sourceURL.isFileURL else {
+            fileErrorMessage = "Shared item is not a local file."
+            return
+        }
+
+        if isSharedPhotoHandoffQueuedFile(sourceURL) {
+            scanErrorMessage = nil
+            await consumeSharedPhotoHandoff(sourceURL)
+        } else {
+            guard isSupportedAudioURL(sourceURL) else {
+                fileErrorMessage = "Shared item is not a supported audio file."
+                return
+            }
+            fileErrorMessage = nil
+            await processAudioFile(sourceURL)
+        }
+    }
+
+    private func isSharedPhotoHandoffQueuedFile(_ url: URL) -> Bool {
+        let path = url.path
+        guard path.contains("/SharedPhotoImports/") else { return false }
+        return !path.contains("/SharedPhotoImports/InProgress/")
+            && !path.contains("/SharedPhotoImports/Failed/")
+    }
+
+    private func consumeSharedPhotoHandoff(_ url: URL) async {
+        isScanningDocument = true
+        defer { isScanningDocument = false }
+
+        let claimedURL: URL
+        do {
+            claimedURL = try claimAppGroupSharedImportIfNeeded(url)
+        } catch {
+            scanErrorMessage = error.localizedDescription
+            return
+        }
+
+        do {
+            let data = try Data(contentsOf: claimedURL)
+            guard let uiImage = UIImage(data: data) else {
+                scanErrorMessage = "Could not read the photo data."
+                revertSharedImportClaimIfNeeded(claimedURL)
+                return
+            }
+            let transcript = try await DocumentScanService().transcribe(images: [uiImage])
+            try await persistDocumentTranscript(transcript)
+            removeSharedImportIfNeeded(claimedURL)
+        } catch {
+            scanErrorMessage = error.localizedDescription
+            revertSharedImportClaimIfNeeded(claimedURL)
+        }
     }
 
     // MARK: - Audio file processing
-
-    private func consumePendingSharedAudioURLIfNeeded() async {
-        guard !isConsumingPendingSharedAudio else { return }
-        guard let sourceURL = pendingSharedAudioURL else { return }
-        isConsumingPendingSharedAudio = true
-        defer { isConsumingPendingSharedAudio = false }
-        pendingSharedAudioURL = nil
-
-        let isFileURL = sourceURL.isFileURL
-        let isSupportedAudio = isSupportedAudioURL(sourceURL)
-
-        guard isFileURL else {
-            fileErrorMessage = "Shared item is not a local audio file."
-            return
-        }
-        guard isSupportedAudio else {
-            fileErrorMessage = "Shared item is not a supported audio file."
-            return
-        }
-
-        fileErrorMessage = nil
-        await processAudioFile(sourceURL)
-    }
 
     private func processAudioFile(_ sourceURL: URL) async {
         let claimedURL: URL
@@ -435,10 +536,18 @@ struct HomeView: View {
         }
     }
 
-    /// Moves a queued App Group audio file into `InProgress` so foreground rescans cannot enqueue it twice.
+    /// Moves a queued App Group file into `InProgress` so foreground rescans cannot enqueue it twice.
     private func claimAppGroupSharedImportIfNeeded(_ url: URL) throws -> URL {
-        guard url.path.contains("/SharedAudioImports/"),
-              !url.path.contains("/SharedAudioImports/InProgress/") else {
+        guard url.isFileURL else { return url }
+        let path = url.path
+        let isQueuedAudioShare = path.contains("/SharedAudioImports/")
+            && !path.contains("/SharedAudioImports/InProgress/")
+            && !path.contains("/SharedAudioImports/Failed/")
+        let isQueuedPhotoShare = path.contains("/SharedPhotoImports/")
+            && !path.contains("/SharedPhotoImports/InProgress/")
+            && !path.contains("/SharedPhotoImports/Failed/")
+
+        guard isQueuedAudioShare || isQueuedPhotoShare else {
             return url
         }
 
@@ -455,12 +564,15 @@ struct HomeView: View {
     }
 
     private func revertSharedImportClaimIfNeeded(_ claimedURL: URL) {
-        guard claimedURL.path.contains("/SharedAudioImports/InProgress/") else { return }
+        guard claimedURL.path.contains("/InProgress/") else { return }
+        let path = claimedURL.path
+        guard path.contains("/SharedAudioImports/")
+            || path.contains("/SharedPhotoImports/") else { return }
+
         let fm = FileManager.default
         let importsRoot = claimedURL.deletingLastPathComponent().deletingLastPathComponent()
         let failedDir = importsRoot.appendingPathComponent("Failed", isDirectory: true)
         try? fm.createDirectory(at: failedDir, withIntermediateDirectories: true)
-        // Unique name so repeated failures never block moves; never return poison files to queue root.
         let dest = failedDir.appendingPathComponent(
             UUID().uuidString + "_" + claimedURL.lastPathComponent,
             isDirectory: false
@@ -488,7 +600,8 @@ struct HomeView: View {
     }
 
     private func removeSharedImportIfNeeded(_ sourceURL: URL) {
-        guard sourceURL.path.contains("/SharedAudioImports/") else { return }
+        guard sourceURL.path.contains("/SharedAudioImports/")
+            || sourceURL.path.contains("/SharedPhotoImports/") else { return }
         try? FileManager.default.removeItem(at: sourceURL)
     }
 

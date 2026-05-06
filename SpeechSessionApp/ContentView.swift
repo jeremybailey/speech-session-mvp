@@ -6,24 +6,25 @@ struct ContentView: View {
     @ObservedObject var appModel: AppModel
 
     private enum AppTab: Hashable {
-        case sessions
+        case events
         case summary
     }
 
-    /// Per-tab navigation path for the Sessions stack.
-    @State private var selectedTab: AppTab = .sessions
+    /// Per-tab navigation path for the Entries stack.
+    @State private var selectedTab: AppTab = .events
     @State private var navPath = NavigationPath()
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            // MARK: Sessions tab
-            Tab("Sessions", systemImage: "waveform.circle.fill", value: .sessions) {
+            // MARK: Entries tab
+            Tab("Entries", systemImage: "waveform.circle.fill", value: .events) {
                 NavigationStack(path: $navPath) {
                     HomeView(
                         home: appModel.home,
                         recording: appModel.recording,
                         store: appModel.store,
-                        pendingSharedAudioURL: $appModel.pendingSharedAudioURL
+                        pendingSharedImportURL: $appModel.pendingSharedImportURL,
+                        advanceSharedImportQueue: appModel.enqueuePendingSharedImportIfAvailable
                     )
                     .navigationDestination(for: Session.self) { session in
                         SessionDetailView(session: session, store: appModel.store)
@@ -36,9 +37,9 @@ struct ContentView: View {
                 GlobalHealthSummaryView(home: appModel.home, store: appModel.store)
             }
         }
-        .onChange(of: appModel.pendingSharedAudioURL) { _, newValue in
+        .onChange(of: appModel.pendingSharedImportURL) { _, newValue in
             guard newValue != nil else { return }
-            selectedTab = .sessions
+            selectedTab = .events
             navPath = NavigationPath()
         }
         .onChange(of: scenePhase) { _, newPhase in

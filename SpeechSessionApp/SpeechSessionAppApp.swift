@@ -12,7 +12,7 @@ struct SpeechSessionAppApp: App {
             let store = try SessionStore.appDefault()
             _appModel = StateObject(wrappedValue: AppModel(store: store))
         } catch {
-            fatalError("Could not open session store: \(error)")
+            fatalError("Could not open saved entries: \(error)")
         }
     }
 
@@ -20,7 +20,7 @@ struct SpeechSessionAppApp: App {
         WindowGroup {
             ContentView(appModel: appModel)
                 .onOpenURL { url in
-                    SharedAudioURLInbox.shared.enqueue(url)
+                    SharedImportURLInbox.shared.enqueue(url)
                 }
         }
     }
@@ -34,7 +34,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     ) -> UISceneConfiguration {
         Task { @MainActor in
             for context in options.urlContexts {
-                SharedAudioURLInbox.shared.enqueue(context.url)
+                SharedImportURLInbox.shared.enqueue(context.url)
             }
         }
         return UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
         Task { @MainActor in
-            SharedAudioURLInbox.shared.enqueue(url)
+            SharedImportURLInbox.shared.enqueue(url)
         }
         return true
     }

@@ -148,7 +148,7 @@ struct RecordingView: View {
                 Button {
                     onStopped(session)
                 } label: {
-                    Label("View Session", systemImage: "doc.text")
+                    Label("View Entry", systemImage: "doc.text")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)

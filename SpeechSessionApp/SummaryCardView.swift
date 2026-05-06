@@ -1,7 +1,7 @@
 import SwiftUI
 
 // MARK: - Shared summary card components
-// Used by both SessionDetailView (per-session) and GlobalHealthSummaryView (cross-session).
+// Used by both SessionDetailView (per-entry) and GlobalHealthSummaryView (cross-entry).
 
 // MARK: SummaryCardsView
 

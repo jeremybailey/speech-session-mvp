@@ -53,7 +53,7 @@ struct OnDeviceSummaryService {
         @Guide(description: "Findings from diagnosed conditions, confirmed medical history, and clinically relevant observations.")
         var diagnoses: String?
 
-        @Guide(description: "Current medications and explicitly stated medication changes, prioritizing recent session data.")
+        @Guide(description: "Current medications and explicitly stated medication changes, prioritizing recent entry data.")
         var medications: String?
 
         @Guide(description: "Ongoing treatment and care plans mentioned across visits.")
@@ -71,7 +71,7 @@ struct OnDeviceSummaryService {
         @Guide(description: "Upcoming or recommended follow-up actions.")
         var followUp: String?
 
-        @Guide(description: "Psychosocial and life-context factors mentioned across sessions.")
+        @Guide(description: "Psychosocial and life-context factors mentioned across entries.")
         var biopsychosocialContext: String?
     }
 
@@ -99,7 +99,7 @@ struct OnDeviceSummaryService {
     func generateGlobalSummary(prompt: String) async throws -> GlobalSummaryPayload {
         let session = LanguageModelSession(instructions: """
         You are a medical scribe synthesizing a longitudinal health profile. \
-        Extract only clinically relevant information explicitly stated in the provided session data. \
+        Extract only clinically relevant information explicitly stated in the provided entry data. \
         Do not infer, assume, or invent any clinical details. \
         Omit fields that have no relevant content. \
         Be concise and format multi-item fields as markdown bullet lists.

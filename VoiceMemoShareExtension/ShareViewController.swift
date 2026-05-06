@@ -1,9 +1,9 @@
 import AVFoundation
 import CoreMedia
-import UIKit
 import UniformTypeIdentifiers
+import UIKit
 
-/// Voice Memos → App Group (“export”). User opens CollectiveCare to “import”; the host app scans `SharedAudioImports` on foreground.
+/// Share extension → App Group handoff for audio (Voice Memos) or images (Photos). CollectiveCare consumes on foreground.
 final class ShareViewController: UIViewController {
     private let appGroupID = "group.com.CollectiveCare.pilot"
 
@@ -21,6 +21,17 @@ final class ShareViewController: UIViewController {
         "public.audio",
         "public.mpeg-4",
         "com.apple.quicktime-movie",
+    ]
+
+    private static let preferredImageTypeIdentifiers: [String] = [
+        UTType.heic.identifier,
+        "public.heic",
+        UTType.heif.identifier,
+        UTType.jpeg.identifier,
+        UTType.png.identifier,
+        UTType.gif.identifier,
+        UTType.livePhoto.identifier,
+        UTType.image.identifier,
     ]
 
     private var didStartImport = false
@@ -62,9 +73,10 @@ final class ShareViewController: UIViewController {
     }
 
     private func copySuppliedRepresentationToTemporaryFile(
-        suppliedURL: URL
+        suppliedURL: URL,
+        preferredExtension fallbackExt: String
     ) throws -> URL {
-        let ext = suppliedURL.pathExtension.isEmpty ? "m4a" : suppliedURL.pathExtension
+        let ext = suppliedURL.pathExtension.isEmpty ? fallbackExt : suppliedURL.pathExtension
         let owned = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension(ext)
@@ -75,7 +87,7 @@ final class ShareViewController: UIViewController {
         return owned
     }
 
-    private func loadOwnedCopy(of provider: NSItemProvider, typeIdentifier: String) async throws -> URL {
+    private func loadOwnedCopy(of provider: NSItemProvider, typeIdentifier: String, fallbackExtension: String) async throws -> URL {
         try await withCheckedThrowingContinuation { continuation in
             provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { suppliedURL, error in
                 if let error {
@@ -87,7 +99,10 @@ final class ShareViewController: UIViewController {
                     return
                 }
                 do {
-                    let copied = try self.copySuppliedRepresentationToTemporaryFile(suppliedURL: suppliedURL)
+                    let copied = try self.copySuppliedRepresentationToTemporaryFile(
+                        suppliedURL: suppliedURL,
+                        preferredExtension: fallbackExtension
+                    )
                     continuation.resume(returning: copied)
                 } catch {
                     continuation.resume(throwing: error)
@@ -112,17 +127,61 @@ final class ShareViewController: UIViewController {
         return true
     }
 
-    private func copyToSharedContainer(_ sourceURL: URL) throws -> URL {
+    private func fallbackExtension(for typeIdentifier: String) -> String {
+        if UTType(typeIdentifier)?.conforms(to: .jpeg) == true { return "jpg" }
+        if UTType(typeIdentifier)?.conforms(to: .png) == true { return "png" }
+        if UTType(typeIdentifier)?.conforms(to: .heic) == true || typeIdentifier.lowercased().contains("heic") { return "heic" }
+        if UTType(typeIdentifier)?.conforms(to: .heif) == true { return "heif" }
+        if UTType(typeIdentifier)?.conforms(to: .gif) == true { return "gif" }
+        if UTType(typeIdentifier)?.conforms(to: .image) == true { return "heic" }
+        return "jpg"
+    }
+
+    private func isPlausiblePhoto(at url: URL) -> Bool {
+        guard fileByteSize(at: url) >= 512 else { return false }
+
+        guard let data = try? Data(contentsOf: url, options: [.mappedIfSafe]), !data.isEmpty else {
+            return false
+        }
+
+        guard data.count <= 52_428_800 else { return false }
+
+        guard UIImage(contentsOfFile: url.path) != nil || UIImage(data: data) != nil else {
+            return false
+        }
+        return true
+    }
+
+    private func copyToSharedPhotoContainer(_ sourceURL: URL) throws -> URL {
+        try copyToRelativeSharedContainer(sourceURL: sourceURL, subfolder: "SharedPhotoImports") { ext in
+            if ext.lowercased() == "" { return "jpg" }
+            return ext.lowercased()
+        }
+    }
+
+    private func copyToSharedAudioContainer(_ sourceURL: URL) throws -> URL {
+        try copyToRelativeSharedContainer(sourceURL: sourceURL, subfolder: "SharedAudioImports") { ext in
+            ext.isEmpty ? "m4a" : ext
+        }
+    }
+
+    /// Copies imported bytes into Apps Group `{subfolder}/<uuid>.<ext>`.
+    private func copyToRelativeSharedContainer(
+        sourceURL: URL,
+        subfolder: String,
+        normalizedExtension: (String) -> String
+    ) throws -> URL {
         guard let containerURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: appGroupID
         ) else {
             throw CocoaError(.fileNoSuchFile)
         }
 
-        let importsURL = containerURL.appendingPathComponent("SharedAudioImports", isDirectory: true)
+        let importsURL = containerURL.appendingPathComponent(subfolder, isDirectory: true)
         try FileManager.default.createDirectory(at: importsURL, withIntermediateDirectories: true)
 
-        let fileExtension = sourceURL.pathExtension.isEmpty ? "m4a" : sourceURL.pathExtension
+        let rawExtension = sourceURL.pathExtension.lowercased()
+        let fileExtension = normalizedExtension(rawExtension)
         let destinationURL = importsURL
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension(fileExtension)
@@ -136,6 +195,13 @@ final class ShareViewController: UIViewController {
     private func runExportAndDismiss() async {
         let providers = (extensionContext?.inputItems as? [NSExtensionItem] ?? [])
             .flatMap { $0.attachments ?? [] }
+
+        // Prefer images first (Photos shares); fall back to audio (Voice Memos).
+        let imageOrdered = preferredImageIdentifiersForScanning(providers)
+
+        if await tryExportImage(from: providers, orderedTypes: imageOrdered) {
+            return
+        }
 
         for provider in providers {
             let preferredMatches = Self.preferredAudioTypeIdentifiers.filter {
@@ -152,12 +218,16 @@ final class ShareViewController: UIViewController {
 
             for typeIdentifier in typesForProvider {
                 do {
-                    let owned = try await loadOwnedCopy(of: provider, typeIdentifier: typeIdentifier)
+                    let owned = try await loadOwnedCopy(
+                        of: provider,
+                        typeIdentifier: typeIdentifier,
+                        fallbackExtension: "m4a"
+                    )
                     defer { try? FileManager.default.removeItem(at: owned) }
 
                     guard isPlausibleTranscribeableAudio(at: owned) else { continue }
 
-                    _ = try copyToSharedContainer(owned)
+                    _ = try copyToSharedAudioContainer(owned)
 
                     await MainActor.run {
                         self.spinner.stopAnimating()
@@ -175,10 +245,10 @@ final class ShareViewController: UIViewController {
 
         await MainActor.run {
             self.spinner.stopAnimating()
-            self.statusLabel.text = "Couldn’t read this audio."
+            self.statusLabel.text = "Couldn’t save this shared item."
             let alert = UIAlertController(
                 title: "Import failed",
-                message: "Export the memo from Voice Memos to Files, then use Upload in CollectiveCare.",
+                message: "Photos and Voice Memos are supported via Share.\nAlternatively use CollectiveCare directly (Import Photos or Upload).",
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
@@ -187,4 +257,73 @@ final class ShareViewController: UIViewController {
             self.present(alert, animated: true)
         }
     }
+
+    /// De-duplicates image type identifiers in a stable order suitable for iterating every provider once per type bucket.
+    private func preferredImageIdentifiersForScanning(_ providers: [NSItemProvider]) -> [String] {
+        let seenMatches = Self.preferredImageTypeIdentifiers.filter { typeId in
+            providers.contains { $0.hasItemConformingToTypeIdentifier(typeId) }
+        }
+
+        guard !seenMatches.isEmpty else { return [] }
+
+        var appended: [String] = []
+        for provider in providers {
+            let dynamic = provider.registeredTypeIdentifiers.filter { id in
+                UTType(id)?.conforms(to: .image) == true && !seenMatches.contains(id)
+            }
+            appended.append(contentsOf: dynamic)
+        }
+
+        let unique = OrderedUniqueStrings(seenMatches + appended)
+        return Array(unique.values)
+    }
+
+    private func tryExportImage(from providers: [NSItemProvider], orderedTypes: [String]) async -> Bool {
+        guard !orderedTypes.isEmpty else { return false }
+
+        for provider in providers {
+            let typesForProvider = orderedTypes.filter { provider.hasItemConformingToTypeIdentifier($0) }
+            for typeIdentifier in typesForProvider {
+                do {
+                    let fallbackExt = fallbackExtension(for: typeIdentifier)
+                    let owned = try await loadOwnedCopy(
+                        of: provider,
+                        typeIdentifier: typeIdentifier,
+                        fallbackExtension: fallbackExt
+                    )
+                    defer { try? FileManager.default.removeItem(at: owned) }
+
+                    guard isPlausiblePhoto(at: owned) else { continue }
+
+                    _ = try copyToSharedPhotoContainer(owned)
+
+                    await MainActor.run {
+                        self.spinner.stopAnimating()
+                        self.statusLabel.textAlignment = .center
+                        self.statusLabel.text = "Saved.\nOpen CollectiveCare to extract text."
+                    }
+                    try? await Task.sleep(for: .milliseconds(550))
+                    await MainActor.run {
+                        self.extensionContext?.completeRequest(returningItems: nil)
+                    }
+                    return true
+                } catch {}
+            }
+        }
+
+        return false
+    }
+}
+
+/// Small helper to preserve insertion order while de-duplicating.
+private struct OrderedUniqueStrings: Sequence {
+    private(set) var values: [String] = []
+    init(_ items: some Sequence<String>) {
+        var seen = Set<String>()
+        for item in items where !seen.contains(item) {
+            seen.insert(item)
+            values.append(item)
+        }
+    }
+    func makeIterator() -> Array<String>.Iterator { values.makeIterator() }
 }
