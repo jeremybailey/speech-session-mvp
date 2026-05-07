@@ -226,29 +226,17 @@ struct SessionDetailView: View {
             return
         }
 
-        // Ask the model to return a JSON object with a short title AND the full medical summary
-        // so we can persist both in a single API call.
+        // Ask the model for structured JSON sections + title; we assemble fixed ## headers in VisitSummaryFields.
         let systemPrompt = """
         You are a medical scribe reviewing an appointment transcript. \
         Extract only clinically relevant information. \
         Ignore all greetings, small talk, and scheduling chatter. \
-        Only include information that is explicitly stated in the transcript — do not infer, assume, or invent any clinical details. \
-        If the transcript contains insufficient medical content to populate a section, omit that section entirely.
+        Only include details explicitly stated — do not infer, assume, or invent clinical facts. \
+        Omit any JSON keys where there is no relevant transcript content.
 
-        Return a JSON object with exactly two fields:
-        - "title": a 3–6 word appointment title (e.g. "Annual physical exam", "Back pain follow-up", "Diabetes management visit")
-        - "summary": a markdown-formatted medical summary using ## section headers
+        \(VisitSummaryPromptGuidance.structuredOutputConstraint)
 
-        Only include summary sections where information was actually mentioned:
-        ## Chief Complaint
-        ## Symptoms
-        ## Findings
-        ## Medications
-        ## Treatment Plan
-        ## Vaccinations
-        ## Allergies
-        ## Tests & Labs Ordered
-        ## Follow-up
+        \(VisitSummaryPromptGuidance.categoryRoutingRules)
         """
 
         let userPrompt = "Summarize this medical appointment transcript:\n\n\(localSession.transcript)"
@@ -266,7 +254,6 @@ struct SessionDetailView: View {
         struct Choice: Decodable { let message: RespMsg }
         struct ChatResponse: Decodable { let choices: [Choice] }
         struct APIErr: Decodable { struct Err: Decodable { let message: String? }; let error: Err? }
-        struct SummaryPayload: Decodable { let title: String; let summary: String }
 
         guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else { return }
         var req = URLRequest(url: url)
@@ -282,8 +269,8 @@ struct SessionDetailView: View {
                 Msg(role: "user", content: userPrompt)
             ],
             response_format: ResponseFormat(type: "json_object"),
-            max_tokens: 1500,
-            temperature: 0.2
+            max_tokens: 2200,
+            temperature: 0.15
         )
 
         do {
@@ -302,18 +289,18 @@ struct SessionDetailView: View {
 
             guard
                 let chatResponse = try? JSONDecoder().decode(ChatResponse.self, from: data),
-                let content = chatResponse.choices.first?.message.content,
-                let contentData = content.data(using: .utf8),
-                let payload = try? JSONDecoder().decode(SummaryPayload.self, from: contentData)
+                let content = chatResponse.choices.first?.message.content
             else {
                 summaryState = .failed("Could not parse summary response. Try again.")
                 return
             }
 
-            let summaryText = payload.summary.trimmingCharacters(in: .whitespacesAndNewlines)
-            let titleText = payload.title.trimmingCharacters(in: .whitespacesAndNewlines)
-
-            guard !summaryText.isEmpty else {
+            let defaultTitle = localSession.date.formatted(date: .abbreviated, time: .shortened)
+            guard let fields = VisitSummaryJSONParser.fields(fromAssistantContent: content) else {
+                summaryState = .failed("Could not parse summary JSON. Try again.")
+                return
+            }
+            guard let (titleText, summaryText) = fields.resolved(defaultTitle: defaultTitle) else {
                 summaryState = .failed("The model returned an empty summary. Try again.")
                 return
             }

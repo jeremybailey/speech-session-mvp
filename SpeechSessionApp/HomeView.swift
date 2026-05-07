@@ -7,6 +7,12 @@ import SpeechSessionFeatures
 import SpeechSessionPersistence
 
 struct HomeView: View {
+    /// Which menu action opened the Files sheet (drives `allowedContentTypes` for the single `fileImporter`).
+    private enum FileImportKind: Equatable {
+        case audio
+        case pdfOrPlainText
+    }
+
     @ObservedObject var home: HomeViewModel
     @ObservedObject var recording: RecordingViewModel
     let store: SessionStore
@@ -21,8 +27,9 @@ struct HomeView: View {
     @State private var showSettings = false
     @State private var pulseAnimation = false
     @State private var showDocumentScanner = false
-    @State private var showAudioFileImporter = false
-    @State private var showDocumentFileImporter = false
+    /// Populated immediately before presenting the unified file importer (`showFileImporter`).
+    @State private var pendingFileImportKind: FileImportKind?
+    @State private var showFileImporter = false
     @State private var showPhotosPicker = false
     @State private var photoPickerItems: [PhotosPickerItem] = []
     @State private var isScanningDocument = false
@@ -34,6 +41,17 @@ struct HomeView: View {
 
     private var selectedBackend: TranscriptionBackend {
         TranscriptionBackend(rawValue: backendRaw) ?? .onDeviceApple
+    }
+
+    private var fileImporterAllowedTypes: [UTType] {
+        switch pendingFileImportKind {
+        case .audio:
+            return [.audio]
+        case .pdfOrPlainText:
+            return [.pdf, .plainText, .utf8PlainText]
+        case nil:
+            return [.item]
+        }
     }
 
     // Derive recording phase purely from the ViewModel — no duplicate state.
@@ -85,7 +103,10 @@ struct HomeView: View {
                     }
                     Button {
                         fileErrorMessage = nil
-                        showAudioFileImporter = true
+                        DispatchQueue.main.async {
+                            pendingFileImportKind = .audio
+                            showFileImporter = true
+                        }
                     } label: {
                         Label("Upload Audio File", systemImage: "folder.fill")
                     }
@@ -107,7 +128,8 @@ struct HomeView: View {
                     Button {
                         scanErrorMessage = nil
                         DispatchQueue.main.async {
-                            showDocumentFileImporter = true
+                            pendingFileImportKind = .pdfOrPlainText
+                            showFileImporter = true
                         }
                     } label: {
                         Label("Import PDF or Text", systemImage: "doc.text")
@@ -145,29 +167,31 @@ struct HomeView: View {
             }
         }
         .fileImporter(
-            isPresented: $showAudioFileImporter,
-            allowedContentTypes: [.audio],
+            isPresented: $showFileImporter,
+            allowedContentTypes: fileImporterAllowedTypes,
             allowsMultipleSelection: false
         ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                Task { await processAudioFile(url) }
-            case .failure(let error):
-                fileErrorMessage = error.localizedDescription
-            }
-        }
-        .fileImporter(
-            isPresented: $showDocumentFileImporter,
-            allowedContentTypes: [.pdf, .plainText, .utf8PlainText],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                Task { await processImportedDocumentFile(url) }
-            case .failure(let error):
-                scanErrorMessage = error.localizedDescription
+            Task { @MainActor in
+                let kind = pendingFileImportKind
+                pendingFileImportKind = nil
+                guard let kind else { return }
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    switch kind {
+                    case .audio:
+                        await processAudioFile(url)
+                    case .pdfOrPlainText:
+                        await processImportedDocumentFile(url)
+                    }
+                case .failure(let error):
+                    switch kind {
+                    case .audio:
+                        fileErrorMessage = error.localizedDescription
+                    case .pdfOrPlainText:
+                        scanErrorMessage = error.localizedDescription
+                    }
+                }
             }
         }
         // safeAreaInset is only used for the active-state pills now.

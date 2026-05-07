@@ -297,7 +297,8 @@ struct SettingsView: View {
             guard isOnDeviceSummaryAvailable else {
                 return "On-device summaries are not available on this iPhone. OpenAI summaries will be used instead."
             }
-            return "Summaries are generated on this device when Apple Intelligence is available."
+            return "Summaries are generated on this device when Apple Intelligence is available. "
+                + "For stricter grouping of treatment plans and clinical details, testers often prefer OpenAI (cloud)."
         }
         return "Transcripts and saved entry summaries are sent to OpenAI to generate medical summaries."
     }

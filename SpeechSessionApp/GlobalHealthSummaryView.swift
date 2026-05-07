@@ -71,10 +71,7 @@ struct GlobalHealthSummaryView: View {
     private var content: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Care Timeline — always built from entry data, no API call needed.
-                CareTimelineCard(sessions: home.sessions)
-
-                // AI-generated cross-entry cards.
+                // AI-generated cards first — chief complaint and clinical sections.
                 switch summaryState {
                 case .idle:
                     EmptyView()
@@ -85,6 +82,9 @@ struct GlobalHealthSummaryView: View {
                 case .failed(let message):
                     errorCard(message: message)
                 }
+
+                // Care timeline anchored at bottom for chronological context last.
+                CareTimelineCard(sessions: home.sessions)
             }
             .padding(.vertical)
             .padding(.horizontal)
@@ -174,6 +174,17 @@ struct GlobalHealthSummaryView: View {
 
         var parts: [String] = []
 
+        let sections = Self.nonemptyPayloadSections(for: payload)
+        if !sections.isEmpty {
+            parts.append("Medical summary")
+            for section in sections {
+                parts.append("")
+                parts.append(section.title.uppercased())
+                parts.append(section.content)
+            }
+        }
+
+        parts.append("")
         parts.append("Care timeline")
         for session in home.sessions {
             let dateLabel = session.date.formatted(date: .abbreviated, time: .shortened)
@@ -192,17 +203,6 @@ struct GlobalHealthSummaryView: View {
             parts.append(line)
         }
 
-        let sections = Self.nonemptyPayloadSections(for: payload)
-        if !sections.isEmpty {
-            parts.append("")
-            parts.append("Medical summary")
-            for section in sections {
-                parts.append("")
-                parts.append(section.title)
-                parts.append(section.content)
-            }
-        }
-
         let text = parts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
 
@@ -214,6 +214,7 @@ struct GlobalHealthSummaryView: View {
     /// Category rows that have content, in display order — shared by cards and share text.
     private static func nonemptyPayloadSections(for payload: GlobalSummaryPayload) -> [(title: String, content: String)] {
         let entries: [(title: String, content: String?)] = [
+            ("Chief Complaint",           payload.chiefComplaint),
             ("Symptoms",                  payload.symptoms),
             ("Findings",                  payload.diagnoses),
             ("Medications",               payload.medications),
@@ -305,18 +306,27 @@ struct GlobalHealthSummaryView: View {
         Only include information explicitly stated — do not infer or invent clinical details.
         Omit any JSON field where there is no relevant information across the entries.
 
+        LONGITUDINAL CATEGORY RULES:
+        - carePlans: Consolidate ALL clinician-directed treatment and planning (medication changes/initiation, \
+        referrals, procedures, therapies, devices, clinical lifestyle/diet instructions from the care team, patient \
+        education, care coordination). Prefer carePlans over biopsychosocialContext for any actionable clinical plan.
+        - followUp: Scheduling and return logistics only (when to return, call-backs)—not the substantive treatment plan.
+        - biopsychosocialContext: ONLY non-clinical psychosocial / life context (stress, bereavement, housing, finances, \
+        support systems, broad mental health themes). Never place referrals, medication plans, procedures, or clinician \
+        orders here; those belong in carePlans, medications, or testsAndLabs.
+
         Return a JSON object with only the fields that have content:
+        - "chiefComplaint": a concise longitudinal overview of the main problems, reasons for care, and presenting concerns \
+        across visits—the high-level "why" tying entries together—not a verbatim list of labels from every visit unless needed
         - "symptoms": consolidated current and historical symptoms across all visits
         - "diagnoses": findings from diagnosed conditions, confirmed medical history, and clinically relevant observations
         - "medications": current medication list (prioritise most recent entry data)
-        - "carePlans": ongoing treatment and care plans mentioned across visits
+        - "carePlans": ongoing treatment and care plans mentioned across visits (see rules above)
         - "vaccinations": vaccination history explicitly mentioned
         - "allergies": known allergies and adverse reactions
         - "testsAndLabs": ordered, pending, or completed tests and labs
-        - "followUp": upcoming or recommended follow-up actions
-        - "biopsychosocialContext": psychosocial and life-context factors mentioned \
-        across entries (e.g. work stress, bereavement, family changes, housing, \
-        social support, financial pressures, mental health themes)
+        - "followUp": scheduling/return actions (see rules above)
+        - "biopsychosocialContext": ONLY psychosocial life context (see rules above)
 
         Format each field as a markdown bulleted list (- item) when multiple items exist, \
         or a single sentence when there is only one item.
@@ -350,7 +360,7 @@ struct GlobalHealthSummaryView: View {
             ],
             response_format: ResponseFormat(type: "json_object"),
             max_tokens: 2000,
-            temperature: 0.2
+            temperature: 0.15
         )
 
         do {
@@ -407,8 +417,12 @@ struct GlobalHealthSummaryView: View {
         let prompt = """
         Create a longitudinal health summary across \(home.sessions.count) appointment\(home.sessions.count == 1 ? "" : "s").
         Only include information explicitly stated in the provided entry data.
+
+        LONGITUDINAL CATEGORY RULES: Put actionable clinical plans in carePlans, not biopsychosocialContext. \
+        followUp is for scheduling only. biopsychosocialContext is for non-clinical life/psychosocial context only.
+
         Return a JSON object using only these keys when relevant:
-        symptoms, diagnoses, medications, carePlans, vaccinations, allergies, testsAndLabs, followUp, biopsychosocialContext.
+        chiefComplaint, symptoms, diagnoses, medications, carePlans, vaccinations, allergies, testsAndLabs, followUp, biopsychosocialContext.
         Use markdown bullet lists for fields with multiple items.
 
         Entry data:
@@ -439,6 +453,8 @@ struct GlobalHealthSummaryView: View {
 /// The model sometimes returns a plain string, sometimes a JSON array of strings.
 /// This struct handles both by normalising arrays into "- item" bullet strings.
 struct GlobalSummaryPayload: Codable {
+    /// Cross-visit narrative: primary problems and reasons for care (high-level context).
+    var chiefComplaint: String?
     var symptoms: String?
     var diagnoses: String?
     var medications: String?
@@ -450,11 +466,13 @@ struct GlobalSummaryPayload: Codable {
     var biopsychosocialContext: String?
 
     enum CodingKeys: String, CodingKey {
+        case chiefComplaint
         case symptoms, diagnoses, medications, carePlans, vaccinations
         case allergies, testsAndLabs, followUp, biopsychosocialContext
     }
 
     init(
+        chiefComplaint: String? = nil,
         symptoms: String? = nil,
         diagnoses: String? = nil,
         medications: String? = nil,
@@ -465,6 +483,7 @@ struct GlobalSummaryPayload: Codable {
         followUp: String? = nil,
         biopsychosocialContext: String? = nil
     ) {
+        self.chiefComplaint = chiefComplaint
         self.symptoms = symptoms
         self.diagnoses = diagnoses
         self.medications = medications
@@ -478,14 +497,15 @@ struct GlobalSummaryPayload: Codable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        symptoms               = c.decodeFlexible(.symptoms)
-        diagnoses              = c.decodeFlexible(.diagnoses)
-        medications            = c.decodeFlexible(.medications)
-        carePlans              = c.decodeFlexible(.carePlans)
-        vaccinations           = c.decodeFlexible(.vaccinations)
-        allergies              = c.decodeFlexible(.allergies)
-        testsAndLabs           = c.decodeFlexible(.testsAndLabs)
-        followUp               = c.decodeFlexible(.followUp)
+        chiefComplaint = c.decodeFlexible(.chiefComplaint)
+        symptoms = c.decodeFlexible(.symptoms)
+        diagnoses = c.decodeFlexible(.diagnoses)
+        medications = c.decodeFlexible(.medications)
+        carePlans = c.decodeFlexible(.carePlans)
+        vaccinations = c.decodeFlexible(.vaccinations)
+        allergies = c.decodeFlexible(.allergies)
+        testsAndLabs = c.decodeFlexible(.testsAndLabs)
+        followUp = c.decodeFlexible(.followUp)
         biopsychosocialContext = c.decodeFlexible(.biopsychosocialContext)
     }
 }
