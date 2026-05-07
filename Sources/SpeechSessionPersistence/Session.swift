@@ -3,7 +3,12 @@ import Foundation
 /// How the session transcript was captured.
 public enum SessionInputType: String, Codable, Sendable {
     case audio
+    /// Legacy OCR/scan/photo uploads before PDF/text was distinguished (`documentImage` / `documentFile`).
     case document
+    /// VisionKit scanner, photo library, or shared image handoff → OCR text.
+    case documentImage
+    /// Imported `.pdf` / plain-text file content.
+    case documentFile
 }
 
 /// A persisted recording session: metadata, full transcript, and optional AI-generated fields.

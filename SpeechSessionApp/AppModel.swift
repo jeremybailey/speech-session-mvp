@@ -4,11 +4,11 @@ import SpeechSessionFeatures
 import SpeechSessionPersistence
 
 extension Notification.Name {
-    /// Posted when a queued App Group URL (audio or photo handoff, or opener URL) is ready to consume.
+    /// Posted when a queued App Group URL (audio, photo, document share handoffs, or opener URL) is ready to consume.
     static let sharedImportURLReceived = Notification.Name("SpeechSessionSharedImportURLReceived")
 }
 
-/// Drains queued files from `SharedAudioImports` and `SharedPhotoImports` in the App Group (newest first across both queues).
+/// Drains queued files from `SharedAudioImports`, `SharedPhotoImports`, and `SharedDocumentImports` in the App Group (newest first).
 @MainActor
 final class SharedImportURLInbox {
     static let shared = SharedImportURLInbox()
@@ -16,6 +16,7 @@ final class SharedImportURLInbox {
     private let appGroupID = "group.com.CollectiveCare.pilot"
     private let audioImportsDirectoryName = "SharedAudioImports"
     private let photoImportsDirectoryName = "SharedPhotoImports"
+    private let documentImportsDirectoryName = "SharedDocumentImports"
 
     /// Legacy opener URLs referenced only the audio folder; keep resolving there.
     private var legacySchemeImportsDirectoryName: String { audioImportsDirectoryName }
@@ -70,10 +71,12 @@ final class SharedImportURLInbox {
 
         let audioDir = containerURL.appendingPathComponent(audioImportsDirectoryName, isDirectory: true)
         let photoDir = containerURL.appendingPathComponent(photoImportsDirectoryName, isDirectory: true)
+        let documentDir = containerURL.appendingPathComponent(documentImportsDirectoryName, isDirectory: true)
 
         var candidates: [(url: URL, date: Date)] = []
         candidates.append(contentsOf: collectQueuedFiles(directory: audioDir, extensions: SharedImportURLInbox.audioExtensions))
         candidates.append(contentsOf: collectQueuedFiles(directory: photoDir, extensions: SharedImportURLInbox.photoExtensions))
+        candidates.append(contentsOf: collectQueuedFiles(directory: documentDir, extensions: SharedImportURLInbox.documentExtensions))
 
         return candidates.max(by: { $0.date < $1.date })?.url
     }
@@ -105,6 +108,9 @@ final class SharedImportURLInbox {
 
     /// Extensions we write / accept for share-handoff images.
     private static let photoExtensions: Set<String> = ["jpg", "jpeg", "png", "heic", "heif", "gif"]
+
+    /// Extensions accepted for PDF / plain-text share handoff files.
+    private static let documentExtensions: Set<String> = ["pdf", "txt", "text", "md"]
 }
 
 @MainActor

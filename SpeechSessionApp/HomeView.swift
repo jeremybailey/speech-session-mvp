@@ -22,6 +22,7 @@ struct HomeView: View {
     @State private var pulseAnimation = false
     @State private var showDocumentScanner = false
     @State private var showAudioFileImporter = false
+    @State private var showDocumentFileImporter = false
     @State private var showPhotosPicker = false
     @State private var photoPickerItems: [PhotosPickerItem] = []
     @State private var isScanningDocument = false
@@ -103,6 +104,14 @@ struct HomeView: View {
                     } label: {
                         Label("Import Photos", systemImage: "photo.on.rectangle.angled")
                     }
+                    Button {
+                        scanErrorMessage = nil
+                        DispatchQueue.main.async {
+                            showDocumentFileImporter = true
+                        }
+                    } label: {
+                        Label("Import PDF or Text", systemImage: "doc.text")
+                    }
                 } label: {
                     Image(systemName: "square.and.pencil")
                 }
@@ -146,6 +155,19 @@ struct HomeView: View {
                 Task { await processAudioFile(url) }
             case .failure(let error):
                 fileErrorMessage = error.localizedDescription
+            }
+        }
+        .fileImporter(
+            isPresented: $showDocumentFileImporter,
+            allowedContentTypes: [.pdf, .plainText, .utf8PlainText],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                Task { await processImportedDocumentFile(url) }
+            case .failure(let error):
+                scanErrorMessage = error.localizedDescription
             }
         }
         // safeAreaInset is only used for the active-state pills now.
@@ -332,13 +354,26 @@ struct HomeView: View {
         .listRowSeparator(.hidden)
     }
 
+    /// List-row badge: audio vs photo/OCR-derived vs uploaded PDF/text files.
+    private func entryBadge(for inputType: SessionInputType) -> (symbol: String, color: Color) {
+        switch inputType {
+        case .audio:
+            return ("waveform", .blue)
+        case .document, .documentImage:
+            return ("photo.fill", .green)
+        case .documentFile:
+            return ("doc.fill", .red)
+        }
+    }
+
     @ViewBuilder
     private func sessionRow(_ session: Session) -> some View {
         HStack(alignment: .top, spacing: 10) {
             // Input type badge
-            Image(systemName: session.inputType == .document ? "camera.fill" : "waveform")
+            let badge = entryBadge(for: session.inputType)
+            Image(systemName: badge.symbol)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(session.inputType == .document ? Color.green : Color.blue)
+                .foregroundStyle(badge.color)
                 .padding(.top, 3)
 
             if let title = session.title {
@@ -374,7 +409,7 @@ struct HomeView: View {
         defer { isScanningDocument = false }
         do {
             let transcript = try await DocumentScanService().transcribe(scan: scan)
-            try await persistDocumentTranscript(transcript)
+            try await persistDocumentTranscript(transcript, inputType: .documentImage)
         } catch {
             scanErrorMessage = error.localizedDescription
         }
@@ -403,16 +438,37 @@ struct HomeView: View {
 
         do {
             let transcript = try await DocumentScanService().transcribe(images: images)
-            try await persistDocumentTranscript(transcript)
+            try await persistDocumentTranscript(transcript, inputType: .documentImage)
         } catch {
             scanErrorMessage = error.localizedDescription
         }
     }
 
-    private func persistDocumentTranscript(_ transcript: String) async throws {
-        let session = Session(transcript: transcript, inputType: .document)
+    private func persistDocumentTranscript(_ transcript: String, inputType: SessionInputType) async throws {
+        let session = Session(transcript: transcript, inputType: inputType)
         try await store.upsert(session)
         await home.loadSessions()
+    }
+
+    /// Plain-text files and PDFs from the Files sheet (same document entry path as OCR).
+    private func processImportedDocumentFile(_ url: URL) async {
+        isScanningDocument = true
+        scanErrorMessage = nil
+        defer { isScanningDocument = false }
+
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        do {
+            let text = try await DocumentFileExtractService().extractText(from: url)
+            try await persistDocumentTranscript(text, inputType: .documentFile)
+        } catch {
+            scanErrorMessage = error.localizedDescription
+        }
     }
 
     // MARK: - Shared handoff (App Group audio + photo share extensions)
@@ -439,6 +495,9 @@ struct HomeView: View {
         if isSharedPhotoHandoffQueuedFile(sourceURL) {
             scanErrorMessage = nil
             await consumeSharedPhotoHandoff(sourceURL)
+        } else if isSharedDocumentHandoffQueuedFile(sourceURL) {
+            scanErrorMessage = nil
+            await consumeSharedDocumentHandoff(sourceURL)
         } else {
             guard isSupportedAudioURL(sourceURL) else {
                 fileErrorMessage = "Shared item is not a supported audio file."
@@ -454,6 +513,13 @@ struct HomeView: View {
         guard path.contains("/SharedPhotoImports/") else { return false }
         return !path.contains("/SharedPhotoImports/InProgress/")
             && !path.contains("/SharedPhotoImports/Failed/")
+    }
+
+    private func isSharedDocumentHandoffQueuedFile(_ url: URL) -> Bool {
+        let path = url.path
+        guard path.contains("/SharedDocumentImports/") else { return false }
+        return !path.contains("/SharedDocumentImports/InProgress/")
+            && !path.contains("/SharedDocumentImports/Failed/")
     }
 
     private func consumeSharedPhotoHandoff(_ url: URL) async {
@@ -476,7 +542,30 @@ struct HomeView: View {
                 return
             }
             let transcript = try await DocumentScanService().transcribe(images: [uiImage])
-            try await persistDocumentTranscript(transcript)
+            try await persistDocumentTranscript(transcript, inputType: .documentImage)
+            removeSharedImportIfNeeded(claimedURL)
+        } catch {
+            scanErrorMessage = error.localizedDescription
+            revertSharedImportClaimIfNeeded(claimedURL)
+        }
+    }
+
+    private func consumeSharedDocumentHandoff(_ url: URL) async {
+        isScanningDocument = true
+        scanErrorMessage = nil
+        defer { isScanningDocument = false }
+
+        let claimedURL: URL
+        do {
+            claimedURL = try claimAppGroupSharedImportIfNeeded(url)
+        } catch {
+            scanErrorMessage = error.localizedDescription
+            return
+        }
+
+        do {
+            let text = try await DocumentFileExtractService().extractText(from: claimedURL)
+            try await persistDocumentTranscript(text, inputType: .documentFile)
             removeSharedImportIfNeeded(claimedURL)
         } catch {
             scanErrorMessage = error.localizedDescription
@@ -546,8 +635,11 @@ struct HomeView: View {
         let isQueuedPhotoShare = path.contains("/SharedPhotoImports/")
             && !path.contains("/SharedPhotoImports/InProgress/")
             && !path.contains("/SharedPhotoImports/Failed/")
+        let isQueuedDocumentShare = path.contains("/SharedDocumentImports/")
+            && !path.contains("/SharedDocumentImports/InProgress/")
+            && !path.contains("/SharedDocumentImports/Failed/")
 
-        guard isQueuedAudioShare || isQueuedPhotoShare else {
+        guard isQueuedAudioShare || isQueuedPhotoShare || isQueuedDocumentShare else {
             return url
         }
 
@@ -567,7 +659,8 @@ struct HomeView: View {
         guard claimedURL.path.contains("/InProgress/") else { return }
         let path = claimedURL.path
         guard path.contains("/SharedAudioImports/")
-            || path.contains("/SharedPhotoImports/") else { return }
+            || path.contains("/SharedPhotoImports/")
+            || path.contains("/SharedDocumentImports/") else { return }
 
         let fm = FileManager.default
         let importsRoot = claimedURL.deletingLastPathComponent().deletingLastPathComponent()
@@ -601,7 +694,8 @@ struct HomeView: View {
 
     private func removeSharedImportIfNeeded(_ sourceURL: URL) {
         guard sourceURL.path.contains("/SharedAudioImports/")
-            || sourceURL.path.contains("/SharedPhotoImports/") else { return }
+            || sourceURL.path.contains("/SharedPhotoImports/")
+            || sourceURL.path.contains("/SharedDocumentImports/") else { return }
         try? FileManager.default.removeItem(at: sourceURL)
     }
 

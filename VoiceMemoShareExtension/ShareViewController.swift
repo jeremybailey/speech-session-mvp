@@ -1,9 +1,10 @@
 import AVFoundation
 import CoreMedia
+import PDFKit
 import UniformTypeIdentifiers
 import UIKit
 
-/// Share extension → App Group handoff for audio (Voice Memos) or images (Photos). CollectiveCare consumes on foreground.
+/// Share extension → App Group handoff for audio (Voice Memos), images (Photos), or PDF/text files.
 final class ShareViewController: UIViewController {
     private let appGroupID = "group.com.CollectiveCare.pilot"
 
@@ -32,6 +33,13 @@ final class ShareViewController: UIViewController {
         UTType.gif.identifier,
         UTType.livePhoto.identifier,
         UTType.image.identifier,
+    ]
+
+    private static let preferredDocumentTypeIdentifiers: [String] = [
+        UTType.pdf.identifier,
+        "com.adobe.pdf",
+        UTType.plainText.identifier,
+        UTType.utf8PlainText.identifier,
     ]
 
     private var didStartImport = false
@@ -127,6 +135,16 @@ final class ShareViewController: UIViewController {
         return true
     }
 
+    private func documentFallbackExtension(for typeIdentifier: String) -> String {
+        if UTType(typeIdentifier)?.conforms(to: .pdf) == true { return "pdf" }
+        if UTType(typeIdentifier)?.conforms(to: .plainText) == true
+            || UTType(typeIdentifier)?.conforms(to: .utf8PlainText) == true
+        {
+            return "txt"
+        }
+        return "txt"
+    }
+
     private func fallbackExtension(for typeIdentifier: String) -> String {
         if UTType(typeIdentifier)?.conforms(to: .jpeg) == true { return "jpg" }
         if UTType(typeIdentifier)?.conforms(to: .png) == true { return "png" }
@@ -165,6 +183,19 @@ final class ShareViewController: UIViewController {
         }
     }
 
+    private func copyToSharedDocumentContainer(_ sourceURL: URL, typeIdentifier: String) throws -> URL {
+        let isPDF = UTType(typeIdentifier)?.conforms(to: .pdf) == true
+        let allowedTextSuffixes: Set<String> = ["txt", "text", "md"]
+        return try copyToRelativeSharedContainer(sourceURL: sourceURL, subfolder: "SharedDocumentImports") { ext in
+            let lowered = ext.lowercased()
+            if isPDF || lowered == "pdf" {
+                return "pdf"
+            }
+            if lowered.isEmpty { return "txt" }
+            return allowedTextSuffixes.contains(lowered) ? lowered : "txt"
+        }
+    }
+
     /// Copies imported bytes into Apps Group `{subfolder}/<uuid>.<ext>`.
     private func copyToRelativeSharedContainer(
         sourceURL: URL,
@@ -196,10 +227,14 @@ final class ShareViewController: UIViewController {
         let providers = (extensionContext?.inputItems as? [NSExtensionItem] ?? [])
             .flatMap { $0.attachments ?? [] }
 
-        // Prefer images first (Photos shares); fall back to audio (Voice Memos).
+        // Prefer images (Photos), then PDF/text files, then audio (Voice Memos).
         let imageOrdered = preferredImageIdentifiersForScanning(providers)
 
         if await tryExportImage(from: providers, orderedTypes: imageOrdered) {
+            return
+        }
+
+        if await tryExportDocument(from: providers) {
             return
         }
 
@@ -248,7 +283,7 @@ final class ShareViewController: UIViewController {
             self.statusLabel.text = "Couldn’t save this shared item."
             let alert = UIAlertController(
                 title: "Import failed",
-                message: "Photos and Voice Memos are supported via Share.\nAlternatively use CollectiveCare directly (Import Photos or Upload).",
+                message: "Share supports photos, PDFs/text, and Voice Memos audio.\nOr import from CollectiveCare.",
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
@@ -256,6 +291,85 @@ final class ShareViewController: UIViewController {
             })
             self.present(alert, animated: true)
         }
+    }
+
+    private func preferredDocumentIdentifiersForScanning(_ providers: [NSItemProvider]) -> [String] {
+        let seenMatches = Self.preferredDocumentTypeIdentifiers.filter { typeId in
+            providers.contains { $0.hasItemConformingToTypeIdentifier(typeId) }
+        }
+        guard !seenMatches.isEmpty else { return [] }
+
+        var appended: [String] = []
+        for provider in providers {
+            let dynamic = provider.registeredTypeIdentifiers.filter { id in
+                guard !seenMatches.contains(id) else { return false }
+                let t = UTType(id)
+                guard t?.conforms(to: .pdf) == true
+                    || t?.conforms(to: .plainText) == true
+                    || t?.conforms(to: .utf8PlainText) == true else { return false }
+                return true
+            }
+            appended.append(contentsOf: dynamic)
+        }
+        return Array(OrderedUniqueStrings(seenMatches + appended).values)
+    }
+
+    private static let maxDocumentHandoffBytes: Int64 = 52_428_800
+
+    private func isPlausibleDocumentHandoff(at url: URL, typeIdentifier: String) -> Bool {
+        let bytes = fileByteSize(at: url)
+        guard bytes >= 1, bytes <= Self.maxDocumentHandoffBytes else { return false }
+
+        if UTType(typeIdentifier)?.conforms(to: .pdf) == true {
+            guard let doc = PDFDocument(url: url), doc.pageCount > 0 else { return false }
+            return true
+        }
+
+        guard let data = try? Data(contentsOf: url, options: [.mappedIfSafe]), !data.isEmpty else {
+            return false
+        }
+        let sample = data.prefix(min(data.count, 65_536))
+        let decoded = String(decoding: sample, as: UTF8.self)
+        return !decoded.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func tryExportDocument(from providers: [NSItemProvider]) async -> Bool {
+        let orderedTypes = preferredDocumentIdentifiersForScanning(providers)
+        guard !orderedTypes.isEmpty else { return false }
+
+        for provider in providers {
+            let typesForProvider = orderedTypes.filter { provider.hasItemConformingToTypeIdentifier($0) }
+            for typeIdentifier in typesForProvider {
+                do {
+                    let fallbackExt = documentFallbackExtension(for: typeIdentifier)
+                    let owned = try await loadOwnedCopy(
+                        of: provider,
+                        typeIdentifier: typeIdentifier,
+                        fallbackExtension: fallbackExt
+                    )
+                    defer { try? FileManager.default.removeItem(at: owned) }
+
+                    guard isPlausibleDocumentHandoff(at: owned, typeIdentifier: typeIdentifier) else {
+                        continue
+                    }
+
+                    _ = try copyToSharedDocumentContainer(owned, typeIdentifier: typeIdentifier)
+
+                    await MainActor.run {
+                        self.spinner.stopAnimating()
+                        self.statusLabel.textAlignment = .center
+                        self.statusLabel.text = "Saved.\nOpen CollectiveCare to extract text."
+                    }
+                    try? await Task.sleep(for: .milliseconds(550))
+                    await MainActor.run {
+                        self.extensionContext?.completeRequest(returningItems: nil)
+                    }
+                    return true
+                } catch {}
+            }
+        }
+
+        return false
     }
 
     /// De-duplicates image type identifiers in a stable order suitable for iterating every provider once per type bucket.
