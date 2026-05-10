@@ -63,6 +63,35 @@ public struct DeviceCapabilityProfile: Sendable {
         allowedWhisperKitModelNames.contains(modelName)
     }
 
+    /// Tiny + Base only — used when the user opts in to WhisperKit on **legacy** hardware (Settings).
+    public static let experimentalLegacyWhisperKitModels: [String] = [
+        Self.tinyWhisperKitModel,
+        Self.baseWhisperKitModel,
+    ]
+
+    /// `true` when WhisperKit recording or Settings are allowed for this profile (or experimental unlock on legacy).
+    public func permitsWhisperKit(experimentalUnlocked: Bool) -> Bool {
+        supportsWhisperKit || experimentalUnlocked
+    }
+
+    /// Model IDs allowed for download and transcription, accounting for optional experimental unlock on legacy-tier devices.
+    public func allowedWhisperKitModels(experimentalUnlocked: Bool) -> [String] {
+        if experimentalUnlocked, tier == .legacy {
+            return Self.experimentalLegacyWhisperKitModels
+        }
+        return allowedWhisperKitModelNames
+    }
+
+    public func permitsWhisperKitModel(_ modelName: String, experimentalUnlocked: Bool) -> Bool {
+        allowedWhisperKitModels(experimentalUnlocked: experimentalUnlocked).contains(modelName)
+    }
+
+    /// When WhisperKit cannot be used at all for this profile; `nil` if permitted (including via experimental unlock).
+    public func whisperKitHardBlockReason(experimentalUnlocked: Bool) -> String? {
+        if permitsWhisperKit(experimentalUnlocked: experimentalUnlocked) { return nil }
+        return whisperKitUnavailableReason
+    }
+
     public func fallbackTranscriptionBackend(openAIAPIKey: String) -> TranscriptionBackend {
         openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .onDeviceApple : .openAIWhisper
     }

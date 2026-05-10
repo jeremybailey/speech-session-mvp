@@ -7,6 +7,7 @@ struct RecordingView: View {
     let transcriptionBackend: TranscriptionBackend
     let openAIAPIKey: String
     let whisperKitModel: String
+    var experimentalWhisperKitUnlocked: Bool = false
     let store: SessionStore
     let onStopped: (Session?) -> Void
 
@@ -36,7 +37,8 @@ struct RecordingView: View {
             vm.prepareForRecording(
                 backend: transcriptionBackend,
                 openAIAPIKey: openAIAPIKey,
-                whisperKitModel: whisperKitModel
+                whisperKitModel: whisperKitModel,
+                experimentalWhisperKitUnlocked: experimentalWhisperKitUnlocked
             )
             await vm.start()
         }

@@ -23,6 +23,7 @@ struct HomeView: View {
     @AppStorage("speechSession.transcriptionBackend") private var backendRaw = TranscriptionBackend.onDeviceApple.rawValue
     @AppStorage("speechSession.openaiAPIKey") private var openAIAPIKey = ""
     @AppStorage("speechSession.whisperKitModel") private var whisperKitModel = "openai_whisper-base.en"
+    @AppStorage("speechSession.whisperKitExperimentalUnlock") private var whisperKitExperimentalUnlock = false
 
     @State private var showSettings = false
     @State private var pulseAnimation = false
@@ -94,7 +95,8 @@ struct HomeView: View {
                             recording.prepareForRecording(
                                 backend: selectedBackend,
                                 openAIAPIKey: openAIAPIKey,
-                                whisperKitModel: whisperKitModel
+                                whisperKitModel: whisperKitModel,
+                                experimentalWhisperKitUnlocked: whisperKitExperimentalUnlock
                             )
                             await recording.start()
                         }
@@ -618,7 +620,8 @@ struct HomeView: View {
                 tempURL,
                 backend: selectedBackend,
                 openAIAPIKey: openAIAPIKey,
-                whisperKitModel: whisperKitModel
+                whisperKitModel: whisperKitModel,
+                experimentalWhisperKitUnlocked: whisperKitExperimentalUnlock
             )
 
             if session == nil,
@@ -627,13 +630,15 @@ struct HomeView: View {
             {
                 let profile = DeviceCapabilityProfile.current
                 let modelName = whisperKitModel
-                let canWK = profile.supportsWhisperKit && profile.supportsWhisperKitModel(modelName)
+                let canWK = profile.permitsWhisperKit(experimentalUnlocked: whisperKitExperimentalUnlock)
+                    && profile.permitsWhisperKitModel(modelName, experimentalUnlocked: whisperKitExperimentalUnlock)
                 if canWK {
                     session = await recording.transcribeAudioFile(
                         tempURL,
                         backend: .onDeviceWhisperKit,
                         openAIAPIKey: openAIAPIKey,
-                        whisperKitModel: modelName
+                        whisperKitModel: modelName,
+                        experimentalWhisperKitUnlocked: whisperKitExperimentalUnlock
                     )
                 }
             }

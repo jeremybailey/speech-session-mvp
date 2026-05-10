@@ -12,6 +12,7 @@ public final class RecordingViewModel: ObservableObject {
     private var pendingBackend: TranscriptionBackend = .onDeviceApple
     private var pendingOpenAIKey: String = ""
     private var pendingWhisperKitModel: String = "openai_whisper-base.en"
+    private var experimentalWhisperKitUnlocked = false
 
     private var committedText = ""
     private var partialTail = ""
@@ -48,11 +49,13 @@ public final class RecordingViewModel: ObservableObject {
     public func prepareForRecording(
         backend: TranscriptionBackend,
         openAIAPIKey: String,
-        whisperKitModel: String = "openai_whisper-base.en"
+        whisperKitModel: String = "openai_whisper-base.en",
+        experimentalWhisperKitUnlocked: Bool = false
     ) {
         pendingBackend = backend
         pendingOpenAIKey = openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         pendingWhisperKitModel = whisperKitModel
+        self.experimentalWhisperKitUnlocked = experimentalWhisperKitUnlocked
     }
 
     deinit {
@@ -201,7 +204,8 @@ public final class RecordingViewModel: ObservableObject {
         backend: TranscriptionBackend,
         openAIAPIKey: String,
         whisperKitModel: String = "openai_whisper-base.en",
-        locale: Locale = .current
+        locale: Locale = .current,
+        experimentalWhisperKitUnlocked: Bool = false
     ) async -> Session? {
         guard !isRecording, !isFinishingWhisper, !isTranscribingFile else {
             errorMessage = "Finish the current transcription before importing a file."
@@ -239,10 +243,11 @@ public final class RecordingViewModel: ObservableObject {
 
             case .onDeviceWhisperKit:
                 let capability = DeviceCapabilityProfile.current
-                guard capability.supportsWhisperKit,
-                      capability.supportsWhisperKitModel(whisperKitModel)
+                guard capability.permitsWhisperKit(experimentalUnlocked: experimentalWhisperKitUnlocked),
+                      capability.permitsWhisperKitModel(whisperKitModel, experimentalUnlocked: experimentalWhisperKitUnlocked)
                 else {
-                    errorMessage = capability.whisperKitUnavailableReason ?? "This WhisperKit model is not available on this iPhone."
+                    errorMessage = capability.whisperKitHardBlockReason(experimentalUnlocked: experimentalWhisperKitUnlocked)
+                        ?? "This WhisperKit model is not available on this iPhone."
                     return nil
                 }
                 transcript = try await AudioFileTranscriptionService.transcribeWithWhisperKit(
@@ -277,11 +282,12 @@ public final class RecordingViewModel: ObservableObject {
             return LiveRecordingSession(transcription: WhisperTranscriptionService(apiKey: pendingOpenAIKey))
         case .onDeviceWhisperKit:
             let capability = DeviceCapabilityProfile.current
-            guard capability.supportsWhisperKit,
-                  capability.supportsWhisperKitModel(pendingWhisperKitModel)
+            guard capability.permitsWhisperKit(experimentalUnlocked: experimentalWhisperKitUnlocked),
+                  capability.permitsWhisperKitModel(pendingWhisperKitModel, experimentalUnlocked: experimentalWhisperKitUnlocked)
             else {
                 throw RecordingStartError.unsupportedWhisperKit(
-                    capability.whisperKitUnavailableReason ?? "This WhisperKit model is not available on this iPhone."
+                    capability.whisperKitHardBlockReason(experimentalUnlocked: experimentalWhisperKitUnlocked)
+                        ?? "This WhisperKit model is not available on this iPhone."
                 )
             }
             return LiveRecordingSession(transcription: WhisperKitTranscriptionService(modelName: pendingWhisperKitModel))

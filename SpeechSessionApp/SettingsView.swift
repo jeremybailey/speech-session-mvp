@@ -6,6 +6,8 @@ struct SettingsView: View {
     @AppStorage("speechSession.openaiAPIKey") private var openAIAPIKey = ""
     @AppStorage("speechSession.whisperKitModel") private var whisperKitModel = "openai_whisper-base.en"
     @AppStorage("speechSession.summaryBackend") private var summaryBackendRaw = "openai"
+    /// When true, WhisperKit appears on legacy-tier devices (Tiny/Base only); for testing.
+    @AppStorage("speechSession.whisperKitExperimentalUnlock") private var whisperKitExperimentalUnlock = false
     @Environment(\.dismiss) private var dismiss
 
     private var selectedBackend: TranscriptionBackend {
@@ -18,7 +20,8 @@ struct SettingsView: View {
 
     private var availableTranscriptionBackends: [TranscriptionBackend] {
         TranscriptionBackend.allCases.filter { backend in
-            backend != .onDeviceWhisperKit || capabilityProfile.supportsWhisperKit
+            backend != .onDeviceWhisperKit
+                || capabilityProfile.permitsWhisperKit(experimentalUnlocked: whisperKitExperimentalUnlock)
         }
     }
 
@@ -30,7 +33,7 @@ struct SettingsView: View {
     ]
 
     private var availableWhisperKitModels: [(name: String, label: String)] {
-        let allowed = capabilityProfile.allowedWhisperKitModelNames
+        let allowed = capabilityProfile.allowedWhisperKitModels(experimentalUnlocked: whisperKitExperimentalUnlock)
         return whisperKitModels.filter { allowed.contains($0.name) }
     }
 
@@ -72,7 +75,17 @@ struct SettingsView: View {
                     Text(transcriptionPrivacyNote)
                 }
 
-                if let reason = capabilityProfile.whisperKitUnavailableReason {
+                if !capabilityProfile.supportsWhisperKit {
+                    Section {
+                        Toggle("WhisperKit on this device (experimental)", isOn: $whisperKitExperimentalUnlock)
+                    } footer: {
+                        Text(
+                            "Allows Tiny and Base on-device models on older hardware. May be slow or run out of memory. For personal testing only."
+                        )
+                    }
+                }
+
+                if let reason = capabilityProfile.whisperKitHardBlockReason(experimentalUnlocked: whisperKitExperimentalUnlock) {
                     Section {
                         Label(reason, systemImage: "exclamationmark.triangle")
                             .font(.footnote)
@@ -162,6 +175,9 @@ struct SettingsView: View {
         .onChange(of: whisperKitModel) { _, _ in
             normalizeSettingsForDevice()
         }
+        .onChange(of: whisperKitExperimentalUnlock) { _, _ in
+            normalizeSettingsForDevice()
+        }
     }
 
     // MARK: - Model status row
@@ -217,11 +233,12 @@ struct SettingsView: View {
     // MARK: - Download logic
 
     private func checkModelStatus() async {
-        guard capabilityProfile.supportsWhisperKit,
-              capabilityProfile.supportsWhisperKitModel(whisperKitModel)
+        guard capabilityProfile.permitsWhisperKit(experimentalUnlocked: whisperKitExperimentalUnlock),
+              capabilityProfile.permitsWhisperKitModel(whisperKitModel, experimentalUnlocked: whisperKitExperimentalUnlock)
         else {
             modelDownloadState = .failed(
-                capabilityProfile.whisperKitUnavailableReason ?? "This WhisperKit model is not available on this iPhone."
+                capabilityProfile.whisperKitHardBlockReason(experimentalUnlocked: whisperKitExperimentalUnlock)
+                    ?? "This WhisperKit model is not available on this iPhone."
             )
             return
         }
@@ -231,11 +248,12 @@ struct SettingsView: View {
     }
 
     private func startDownload() async {
-        guard capabilityProfile.supportsWhisperKit,
-              capabilityProfile.supportsWhisperKitModel(whisperKitModel)
+        guard capabilityProfile.permitsWhisperKit(experimentalUnlocked: whisperKitExperimentalUnlock),
+              capabilityProfile.permitsWhisperKitModel(whisperKitModel, experimentalUnlocked: whisperKitExperimentalUnlock)
         else {
             modelDownloadState = .failed(
-                capabilityProfile.whisperKitUnavailableReason ?? "This WhisperKit model is not available on this iPhone."
+                capabilityProfile.whisperKitHardBlockReason(experimentalUnlocked: whisperKitExperimentalUnlock)
+                    ?? "This WhisperKit model is not available on this iPhone."
             )
             return
         }
@@ -250,14 +268,14 @@ struct SettingsView: View {
 
     private func normalizeSettingsForDevice() {
         if selectedBackend == .onDeviceWhisperKit,
-           !capabilityProfile.supportsWhisperKit {
+           !capabilityProfile.permitsWhisperKit(experimentalUnlocked: whisperKitExperimentalUnlock) {
             backendRaw = capabilityProfile
                 .fallbackTranscriptionBackend(openAIAPIKey: openAIAPIKey)
                 .rawValue
         }
 
         if selectedBackend == .onDeviceWhisperKit,
-           !capabilityProfile.supportsWhisperKitModel(whisperKitModel),
+           !capabilityProfile.permitsWhisperKitModel(whisperKitModel, experimentalUnlocked: whisperKitExperimentalUnlock),
            let fallbackModel = availableWhisperKitModels.first?.name {
             whisperKitModel = fallbackModel
         }
@@ -285,8 +303,11 @@ struct SettingsView: View {
         case .openAIWhisper:
             return "Audio is uploaded to OpenAI Whisper after recording stops."
         case .onDeviceWhisperKit:
-            if let reason = capabilityProfile.whisperKitUnavailableReason {
+            if let reason = capabilityProfile.whisperKitHardBlockReason(experimentalUnlocked: whisperKitExperimentalUnlock) {
                 return reason
+            }
+            if !capabilityProfile.supportsWhisperKit && whisperKitExperimentalUnlock {
+                return "Experimental: on-device WhisperKit (Tiny/Base only on this hardware). Download the model before recording."
             }
             return "Audio is transcribed on this device with a downloaded WhisperKit model."
         }

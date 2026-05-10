@@ -16,26 +16,28 @@ struct ContentView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            // MARK: Entries tab
-            Tab("Entries", systemImage: "waveform.circle.fill", value: .events) {
-                NavigationStack(path: $navPath) {
-                    HomeView(
-                        home: appModel.home,
-                        recording: appModel.recording,
-                        store: appModel.store,
-                        pendingSharedImportURL: $appModel.pendingSharedImportURL,
-                        advanceSharedImportQueue: appModel.enqueuePendingSharedImportIfAvailable
-                    )
-                    .navigationDestination(for: Session.self) { session in
-                        SessionDetailView(session: session, store: appModel.store)
-                    }
+            NavigationStack(path: $navPath) {
+                HomeView(
+                    home: appModel.home,
+                    recording: appModel.recording,
+                    store: appModel.store,
+                    pendingSharedImportURL: $appModel.pendingSharedImportURL,
+                    advanceSharedImportQueue: appModel.enqueuePendingSharedImportIfAvailable
+                )
+                .navigationDestination(for: Session.self) { session in
+                    SessionDetailView(session: session, store: appModel.store)
                 }
             }
-
-            // MARK: Health Summary tab
-            Tab("Summary", systemImage: "heart.text.square.fill", value: .summary) {
-                GlobalHealthSummaryView(home: appModel.home, store: appModel.store)
+            .tabItem {
+                Label("Entries", systemImage: "waveform.circle.fill")
             }
+            .tag(AppTab.events)
+
+            GlobalHealthSummaryView(home: appModel.home, store: appModel.store)
+                .tabItem {
+                    Label("Summary", systemImage: "heart.text.square.fill")
+                }
+                .tag(AppTab.summary)
         }
         .onChange(of: appModel.pendingSharedImportURL) { _, newValue in
             guard newValue != nil else { return }
