@@ -31,3 +31,7 @@ DerivedData/
 
 # Dependency
 Pods/
+
+# Node (Vercel proxy and other JS)
+node_modules/
+.vercel/
