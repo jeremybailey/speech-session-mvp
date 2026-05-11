@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/v1/chat/completions.ts": {
+      "maxDuration": 60
+    },
+    "api/v1/audio/transcriptions.ts": {
+      "maxDuration": 120
+    }
+  }
+}

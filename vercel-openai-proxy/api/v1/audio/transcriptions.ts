@@ -33,26 +33,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) {
-    return res.status(500).json({ error: { message: "Server misconfigured" } });
+    return res.status(500).json({
+      error: { message: "OPENAI_API_KEY is missing in Vercel environment variables (Production)." },
+    });
   }
 
-  const buf = await readRawBody(req);
-  const ct = req.headers["content-type"];
-  const contentType = Array.isArray(ct) ? ct[0] : ct ?? "application/octet-stream";
+  try {
+    const buf = await readRawBody(req);
+    const ct = req.headers["content-type"];
+    const contentType = Array.isArray(ct) ? ct[0] : ct ?? "application/octet-stream";
 
-  const r = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": contentType,
-    },
-    body: new Uint8Array(buf),
-  });
+    const r = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": contentType,
+      },
+      body: new Uint8Array(buf),
+    });
 
-  const text = await r.text();
-  const outCt = r.headers.get("content-type");
-  if (outCt) {
-    res.setHeader("content-type", outCt);
+    const text = await r.text();
+    const outCt = r.headers.get("content-type");
+    if (outCt) {
+      res.setHeader("content-type", outCt);
+    }
+    return res.status(r.status).send(text);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Unknown error";
+    console.error("[audio/transcriptions] proxy error", msg);
+    return res.status(502).json({ error: { message: `Proxy could not complete the OpenAI request: ${msg}` } });
   }
-  return res.status(r.status).send(text);
 }
