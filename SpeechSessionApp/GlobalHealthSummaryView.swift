@@ -8,6 +8,7 @@ struct GlobalHealthSummaryView: View {
     @ObservedObject var home: HomeViewModel
     let store: SessionStore
 
+    @EnvironmentObject private var kindeAuth: KindeAuthManager
     @AppStorage("speechSession.openaiAPIKey") private var openAIAPIKey = ""
     @AppStorage("speechSession.summaryBackend") private var summaryBackendRaw = "openai"
     /// Cached JSON string of the last successful GlobalSummaryPayload.
@@ -292,10 +293,17 @@ struct GlobalHealthSummaryView: View {
         }.joined(separator: "\n\n")
     }
 
+    private var cloudOpenAINotConfiguredMessage: String {
+        var s = "Sign in under Settings → Account to use cloud summaries. Your organization must configure the proxy API URL."
+        #if DEBUG
+        s += " In debug builds you can paste an OpenAI API key in Settings."
+        #endif
+        return s
+    }
+
     private func generateSummaryOpenAI() async {
-        let key = openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else {
-            summaryState = .failed("Add an OpenAI API key in Settings to generate your health summary.")
+        guard let transport = await kindeAuth.openAIChatTransport(byokFallback: openAIAPIKey) else {
+            summaryState = .failed(cloudOpenAINotConfiguredMessage)
             return
         }
 
@@ -345,10 +353,14 @@ struct GlobalHealthSummaryView: View {
         struct ChatResponse: Decodable { let choices: [Choice] }
         struct APIErr: Decodable { struct Err: Decodable { let message: String? }; let error: Err? }
 
-        guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else { return }
-        var req = URLRequest(url: url)
+        var req = URLRequest(url: transport.chatCompletionsURL)
         req.httpMethod = "POST"
-        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        do {
+            req.setValue(try await transport.makeAuthorizationHeader(), forHTTPHeaderField: "Authorization")
+        } catch {
+            summaryState = .failed(error.localizedDescription)
+            return
+        }
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = 90
 
@@ -373,7 +385,7 @@ struct GlobalHealthSummaryView: View {
             }
             guard (200...299).contains(http.statusCode) else {
                 let msg = (try? JSONDecoder().decode(APIErr.self, from: data))?.error?.message
-                summaryState = .failed(msg ?? "Server error (\(http.statusCode)). Check your API key in Settings.")
+                summaryState = .failed(msg ?? "Server error (\(http.statusCode)). Try signing in again under Settings.")
                 return
             }
             guard

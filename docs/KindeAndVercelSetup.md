@@ -61,6 +61,7 @@ Proxy verifies the JWT (JWKS from `${KINDE_ISSUER_URL}/.well-known/jwks`) and fo
 2. **Runtime logs:** Vercel → Project → **Logs** (or the deployment’s **Functions** tab) while reproducing from the device. Look for crashes, timeouts, or upstream errors.
 3. **Function duration:** Large multi-entry summaries can exceed the default timeout on some plans. `vercel.json` in `vercel-openai-proxy` requests up to **60s** / **120s** for chat / audio; on **Hobby**, Vercel may still cap execution time — upgrade or reduce payload if you see timeouts.
 4. **App error text:** If the proxy returns JSON `{ "error": { "message": "…" } }`, the app should show that message. A generic “Server error (500)” often means the response body was not parseable (check logs).
+5. **`ERR_MODULE_NOT_FOUND` in Vercel logs:** The proxy targets **CommonJS** and **`jose` v4** so `@vercel/node` can bundle `node_modules` reliably. Pull latest `vercel-openai-proxy`, run `npm install` there if you deploy manually, and **redeploy**; stale builds that mixed ESM-only `jose` v5 with `"type": "module"` often throw this at runtime.
 
 ## 3. iOS app configuration
 

@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		0ADAB0232F81BFD100E95396 /* SpeechSessionFeatures in Frameworks */ = {isa = PBXBuildFile; productRef = SPD01 /* SpeechSessionFeatures */; };
+		0ADAB0242F81BFD100E95396 /* SpeechSessionTranscription in Frameworks */ = {isa = PBXBuildFile; productRef = SPD02 /* SpeechSessionTranscription */; };
+		0ADAB0252F81BFD100E95396 /* KindeSDK in Frameworks */ = {isa = PBXBuildFile; productRef = SPD03 /* KindeSDK */; };
 		BF01 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR01 /* AppModel.swift */; };
 		BF02 /* SpeechSessionAppApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR02 /* SpeechSessionAppApp.swift */; };
 		BF03 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR03 /* ContentView.swift */; };
@@ -27,6 +29,11 @@
 		BF17 /* DocumentFileExtractService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR20 /* DocumentFileExtractService.swift */; };
 		BF18 /* VisitSummaryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR21 /* VisitSummaryModels.swift */; };
 		BF19 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = FR22 /* LaunchScreen.storyboard */; };
+		BF20 /* SummaryContentRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR23 /* SummaryContentRouting.swift */; };
+		BF21 /* KindeAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR24 /* KindeAuthManager.swift */; };
+		BF22 /* CloudOpenAIConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR25 /* CloudOpenAIConfiguration.swift */; };
+		BF23 /* OpenAIRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR26 /* OpenAIRouting.swift */; };
+		BF24 /* kinde-auth.json in Resources */ = {isa = PBXBuildFile; fileRef = FR27 /* kinde-auth.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -76,6 +83,11 @@
 		FR20 /* DocumentFileExtractService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentFileExtractService.swift; sourceTree = "<group>"; };
 		FR21 /* VisitSummaryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitSummaryModels.swift; sourceTree = "<group>"; };
 		FR22 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		FR23 /* SummaryContentRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryContentRouting.swift; sourceTree = "<group>"; };
+		FR24 /* KindeAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KindeAuthManager.swift; sourceTree = "<group>"; };
+		FR25 /* CloudOpenAIConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudOpenAIConfiguration.swift; sourceTree = "<group>"; };
+		FR26 /* OpenAIRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIRouting.swift; sourceTree = "<group>"; };
+		FR27 /* kinde-auth.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = kinde-auth.json; sourceTree = "<group>"; };
 		PR01 /* SpeechSessionApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpeechSessionApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		PR02 /* VoiceMemoShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VoiceMemoShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -86,6 +98,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				0ADAB0232F81BFD100E95396 /* SpeechSessionFeatures in Frameworks */,
+				0ADAB0242F81BFD100E95396 /* SpeechSessionTranscription in Frameworks */,
+				0ADAB0252F81BFD100E95396 /* KindeSDK in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -126,6 +140,11 @@
 				FR13 /* DocumentScanService.swift */,
 				FR20 /* DocumentFileExtractService.swift */,
 				FR21 /* VisitSummaryModels.swift */,
+				FR23 /* SummaryContentRouting.swift */,
+				FR24 /* KindeAuthManager.swift */,
+				FR25 /* CloudOpenAIConfiguration.swift */,
+				FR26 /* OpenAIRouting.swift */,
+				FR27 /* kinde-auth.json */,
 				FR22 /* LaunchScreen.storyboard */,
 				FR14 /* Info.plist */,
 				FR18 /* SpeechSessionApp.entitlements */,
@@ -173,6 +192,8 @@
 			name = SpeechSessionApp;
 			packageProductDependencies = (
 				SPD01 /* SpeechSessionFeatures */,
+				SPD02 /* SpeechSessionTranscription */,
+				SPD03 /* KindeSDK */,
 			);
 			productName = SpeechSessionApp;
 			productReference = PR01 /* SpeechSessionApp.app */;
@@ -226,6 +247,7 @@
 			mainGroup = GR00;
 			packageReferences = (
 				PKG01 /* XCLocalSwiftPackageReference "." */,
+				PKG02 /* XCRemoteSwiftPackageReference "kinde-sdk-ios" */,
 			);
 			productRefGroup = GR02 /* Products */;
 			projectDirPath = "";
@@ -244,6 +266,7 @@
 			files = (
 				BF07 /* Assets.xcassets in Resources */,
 				BF19 /* LaunchScreen.storyboard in Resources */,
+				BF24 /* kinde-auth.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -276,6 +299,10 @@
 				BF13 /* DocumentScanService.swift in Sources */,
 				BF17 /* DocumentFileExtractService.swift in Sources */,
 				BF18 /* VisitSummaryModels.swift in Sources */,
+				BF20 /* SummaryContentRouting.swift in Sources */,
+				BF21 /* KindeAuthManager.swift in Sources */,
+				BF22 /* CloudOpenAIConfiguration.swift in Sources */,
+				BF23 /* OpenAIRouting.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -360,7 +387,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.04;
+				MARKETING_VERSION = 1.05;
 				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -388,7 +415,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.04;
+				MARKETING_VERSION = 1.05;
 				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -487,6 +514,17 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		PKG02 /* XCRemoteSwiftPackageReference "kinde-sdk-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/kinde-oss/kinde-sdk-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.6.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCLocalSwiftPackageReference section */
 		PKG01 /* XCLocalSwiftPackageReference "." */ = {
 			isa = XCLocalSwiftPackageReference;
@@ -499,6 +537,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = PKG01 /* XCLocalSwiftPackageReference "." */;
 			productName = SpeechSessionFeatures;
+		};
+		SPD02 /* SpeechSessionTranscription */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = PKG01 /* XCLocalSwiftPackageReference "." */;
+			productName = SpeechSessionTranscription;
+		};
+		SPD03 /* KindeSDK */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = PKG02 /* XCRemoteSwiftPackageReference "kinde-sdk-ios" */;
+			productName = KindeSDK;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

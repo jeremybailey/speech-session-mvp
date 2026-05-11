@@ -13,6 +13,16 @@ struct HomeView: View {
         case pdfOrPlainText
     }
 
+    /// Shown after choosing Transcribe Audio or Import Audio so the user picks clinical vs journal intent.
+    private struct PendingAudioIntentFlow: Identifiable {
+        let id = UUID()
+        enum FlowKind {
+            case liveTranscription
+            case importAudio
+        }
+        let kind: FlowKind
+    }
+
     @ObservedObject var home: HomeViewModel
     @ObservedObject var recording: RecordingViewModel
     let store: SessionStore
@@ -20,9 +30,11 @@ struct HomeView: View {
     /// Called after consuming (or rejecting) one App Group handoff so queued files + folder scan can drain.
     var advanceSharedImportQueue: () -> Void = {}
 
-    @AppStorage("speechSession.transcriptionBackend") private var backendRaw = TranscriptionBackend.onDeviceApple.rawValue
+    @EnvironmentObject private var kindeAuth: KindeAuthManager
+
+    @AppStorage("speechSession.transcriptionBackend") private var backendRaw = TranscriptionBackend.onDeviceWhisperKit.rawValue
     @AppStorage("speechSession.openaiAPIKey") private var openAIAPIKey = ""
-    @AppStorage("speechSession.whisperKitModel") private var whisperKitModel = "openai_whisper-base.en"
+    @AppStorage("speechSession.whisperKitModel") private var whisperKitModel = DeviceCapabilityProfile.tinyWhisperKitModel
     @AppStorage("speechSession.whisperKitExperimentalUnlock") private var whisperKitExperimentalUnlock = false
 
     @State private var showSettings = false
@@ -31,6 +43,9 @@ struct HomeView: View {
     /// Populated immediately before presenting the unified file importer (`showFileImporter`).
     @State private var pendingFileImportKind: FileImportKind?
     @State private var showFileImporter = false
+    @State private var pendingAudioIntentFlow: PendingAudioIntentFlow?
+    /// Intent captured before presenting the audio file importer (from menu only).
+    @State private var pendingImportAudioEntryIntent: SessionEntryIntent?
     @State private var showPhotosPicker = false
     @State private var photoPickerItems: [PhotosPickerItem] = []
     @State private var isScanningDocument = false
@@ -41,7 +56,7 @@ struct HomeView: View {
     @State private var isConsumingPendingSharedImport = false
 
     private var selectedBackend: TranscriptionBackend {
-        TranscriptionBackend(rawValue: backendRaw) ?? .onDeviceApple
+        TranscriptionBackend(rawValue: backendRaw) ?? .onDeviceWhisperKit
     }
 
     private var fileImporterAllowedTypes: [UTType] {
@@ -91,14 +106,8 @@ struct HomeView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button {
-                        Task {
-                            recording.prepareForRecording(
-                                backend: selectedBackend,
-                                openAIAPIKey: openAIAPIKey,
-                                whisperKitModel: whisperKitModel,
-                                experimentalWhisperKitUnlocked: whisperKitExperimentalUnlock
-                            )
-                            await recording.start()
+                        DispatchQueue.main.async {
+                            pendingAudioIntentFlow = PendingAudioIntentFlow(kind: .liveTranscription)
                         }
                     } label: {
                         Label("Transcribe Audio", systemImage: "mic.fill")
@@ -106,17 +115,16 @@ struct HomeView: View {
                     Button {
                         fileErrorMessage = nil
                         DispatchQueue.main.async {
-                            pendingFileImportKind = .audio
-                            showFileImporter = true
+                            pendingAudioIntentFlow = PendingAudioIntentFlow(kind: .importAudio)
                         }
                     } label: {
-                        Label("Upload Audio File", systemImage: "folder.fill")
+                        Label("Import Audio", systemImage: "folder.fill")
                     }
                     Button {
                         scanErrorMessage = nil
                         showDocumentScanner = true
                     } label: {
-                        Label("Scan Documents", systemImage: "camera.fill")
+                        Label("Camera Capture", systemImage: "camera.fill")
                     }
                     Button {
                         scanErrorMessage = nil
@@ -134,7 +142,7 @@ struct HomeView: View {
                             showFileImporter = true
                         }
                     } label: {
-                        Label("Import PDF or Text", systemImage: "doc.text")
+                        Label("Import Docs", systemImage: "doc.text")
                     }
                 } label: {
                     Image(systemName: "square.and.pencil")
@@ -148,6 +156,27 @@ struct HomeView: View {
                 }
                 .disabled(phase != .idle)
             }
+        }
+        .sheet(item: $pendingAudioIntentFlow) { flow in
+            AudioEntryIntentChoiceSheet(
+                onClinical: {
+                    let captured = flow
+                    pendingAudioIntentFlow = nil
+                    DispatchQueue.main.async {
+                        applyPendingAudioIntent(captured, intent: .clinicalVisit)
+                    }
+                },
+                onJournal: {
+                    let captured = flow
+                    pendingAudioIntentFlow = nil
+                    DispatchQueue.main.async {
+                        applyPendingAudioIntent(captured, intent: .personalJournal)
+                    }
+                },
+                onCancel: {
+                    pendingAudioIntentFlow = nil
+                }
+            )
         }
         .photosPicker(isPresented: $showPhotosPicker, selection: $photoPickerItems, maxSelectionCount: 24, matching: .images, photoLibrary: .shared())
         .onChange(of: photoPickerItems) { _, newItems in
@@ -175,14 +204,16 @@ struct HomeView: View {
         ) { result in
             Task { @MainActor in
                 let kind = pendingFileImportKind
+                let audioEntryIntent = pendingImportAudioEntryIntent
                 pendingFileImportKind = nil
+                pendingImportAudioEntryIntent = nil
                 guard let kind else { return }
                 switch result {
                 case .success(let urls):
                     guard let url = urls.first else { return }
                     switch kind {
                     case .audio:
-                        await processAudioFile(url)
+                        await processAudioFile(url, entryIntent: audioEntryIntent ?? .clinicalVisit)
                     case .pdfOrPlainText:
                         await processImportedDocumentFile(url)
                     }
@@ -206,6 +237,10 @@ struct HomeView: View {
         .task {
             await home.loadSessions()
             await consumePendingSharedImportIfNeeded()
+        }
+        .task(id: "\(backendRaw)|\(whisperKitModel)|\(whisperKitExperimentalUnlock)") {
+            normalizeTranscriptionStorageForDevice()
+            await prefetchWhisperKitModelIfNeeded()
         }
         .onChange(of: pendingSharedImportURL) { _, _ in
             Task { await consumePendingSharedImportIfNeeded() }
@@ -429,6 +464,51 @@ struct HomeView: View {
         let s = Int(t); return String(format: "%d:%02d", s / 60, s % 60)
     }
 
+    /// Continues Transcribe Audio / Import Audio after the user picks clinical visit vs personal journal.
+    private func applyPendingAudioIntent(_ flow: PendingAudioIntentFlow, intent: SessionEntryIntent) {
+        switch flow.kind {
+        case .liveTranscription:
+            Task {
+                let creds = await kindeAuth.openAIWhisperCredentials(byokKey: openAIAPIKey)
+                recording.prepareForRecording(
+                    backend: selectedBackend,
+                    openAIAPIKey: openAIAPIKey,
+                    openAIWhisperCredentials: creds,
+                    whisperKitModel: whisperKitModel,
+                    experimentalWhisperKitUnlocked: whisperKitExperimentalUnlock,
+                    entryIntent: intent
+                )
+                await recording.start()
+            }
+        case .importAudio:
+            pendingImportAudioEntryIntent = intent
+            fileErrorMessage = nil
+            DispatchQueue.main.async {
+                pendingFileImportKind = .audio
+                showFileImporter = true
+            }
+        }
+    }
+
+    // MARK: - WhisperKit defaults / prefetch
+
+    private func normalizeTranscriptionStorageForDevice() {
+        guard selectedBackend == .onDeviceWhisperKit else { return }
+        let profile = DeviceCapabilityProfile.current
+        if !profile.permitsWhisperKitModel(whisperKitModel, experimentalUnlocked: whisperKitExperimentalUnlock),
+           let fallback = profile.allowedWhisperKitModels(experimentalUnlocked: whisperKitExperimentalUnlock).first {
+            whisperKitModel = fallback
+        }
+    }
+
+    private func prefetchWhisperKitModelIfNeeded() async {
+        guard selectedBackend == .onDeviceWhisperKit else { return }
+        let profile = DeviceCapabilityProfile.current
+        guard profile.permitsWhisperKitModel(whisperKitModel, experimentalUnlocked: whisperKitExperimentalUnlock) else { return }
+        guard await !WhisperKitModelSetup.isModelCached(whisperKitModel) else { return }
+        try? await WhisperKitModelSetup.downloadModel(whisperKitModel)
+    }
+
     // MARK: - Document / photo OCR
 
     private func processDocumentScan(_ scan: VNDocumentCameraScan) async {
@@ -530,7 +610,7 @@ struct HomeView: View {
                 return
             }
             fileErrorMessage = nil
-            await processAudioFile(sourceURL)
+            await processAudioFile(sourceURL, entryIntent: .clinicalVisit)
         }
     }
 
@@ -601,7 +681,7 @@ struct HomeView: View {
 
     // MARK: - Audio file processing
 
-    private func processAudioFile(_ sourceURL: URL) async {
+    private func processAudioFile(_ sourceURL: URL, entryIntent: SessionEntryIntent = .clinicalVisit) async {
         let claimedURL: URL
         do {
             claimedURL = try claimAppGroupSharedImportIfNeeded(sourceURL)
@@ -616,12 +696,16 @@ struct HomeView: View {
 
             let isShareHandoffImport = claimedURL.path.contains("/SharedAudioImports/")
 
+            let whisperCreds = await kindeAuth.openAIWhisperCredentials(byokKey: openAIAPIKey)
+
             var session = await recording.transcribeAudioFile(
                 tempURL,
                 backend: selectedBackend,
                 openAIAPIKey: openAIAPIKey,
+                openAIWhisperCredentials: whisperCreds,
                 whisperKitModel: whisperKitModel,
-                experimentalWhisperKitUnlocked: whisperKitExperimentalUnlock
+                experimentalWhisperKitUnlocked: whisperKitExperimentalUnlock,
+                entryIntent: entryIntent
             )
 
             if session == nil,
@@ -637,12 +721,14 @@ struct HomeView: View {
                         tempURL,
                         backend: .onDeviceWhisperKit,
                         openAIAPIKey: openAIAPIKey,
+                        openAIWhisperCredentials: whisperCreds,
                         whisperKitModel: modelName,
-                        experimentalWhisperKitUnlocked: whisperKitExperimentalUnlock
+                        experimentalWhisperKitUnlocked: whisperKitExperimentalUnlock,
+                        entryIntent: entryIntent
                     )
                 }
             }
-            if let session {
+            if session != nil {
                 removeSharedImportIfNeeded(claimedURL)
                 await home.loadSessions()
             } else {
@@ -735,6 +821,44 @@ struct HomeView: View {
             return true
         }
         return UTType(filenameExtension: fileExtension)?.conforms(to: .audio) == true
+    }
+}
+
+// MARK: - Audio entry intent (sheet — reliable on iPad vs toolbar confirmationDialog popover)
+
+private struct AudioEntryIntentChoiceSheet: View {
+    var onClinical: () -> Void
+    var onJournal: () -> Void
+    var onCancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Button(action: onClinical) {
+                    Label("Medical Visit", systemImage: "stethoscope")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button(action: onJournal) {
+                    Label("Personal journal", systemImage: "book.closed")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+
+                Spacer(minLength: 0)
+            }
+            .padding()
+            .navigationTitle("What kind of entry?")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: onCancel)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }
 

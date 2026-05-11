@@ -1,5 +1,13 @@
 import Foundation
 
+/// Whether the user framed the entry as a clinical visit note or personal journaling (drives summarization).
+public enum SessionEntryIntent: String, Codable, Sendable, Hashable {
+    /// Appointment, clinical encounter, or note intended as a medical visit summary.
+    case clinicalVisit
+    /// Personal reflection or journal the user recorded for themselves.
+    case personalJournal
+}
+
 /// How the session transcript was captured.
 public enum SessionInputType: String, Codable, Sendable {
     case audio
@@ -24,6 +32,8 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var summary: String?
     /// How the transcript was captured. Defaults to `.audio` for legacy sessions.
     public var inputType: SessionInputType
+    /// User-selected intent for audio (and audio file) entries; defaults to clinical visit for legacy data.
+    public var entryIntent: SessionEntryIntent
 
     public init(
         id: UUID = UUID(),
@@ -31,7 +41,8 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
         transcript: String,
         title: String? = nil,
         summary: String? = nil,
-        inputType: SessionInputType = .audio
+        inputType: SessionInputType = .audio,
+        entryIntent: SessionEntryIntent = .clinicalVisit
     ) {
         self.id = id
         self.date = date
@@ -39,6 +50,7 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
         self.title = title
         self.summary = summary
         self.inputType = inputType
+        self.entryIntent = entryIntent
     }
 
     // Custom decoder so existing persisted sessions (without inputType) default to .audio.
@@ -50,5 +62,6 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
         title     = try c.decodeIfPresent(String.self, forKey: .title)
         summary   = try c.decodeIfPresent(String.self, forKey: .summary)
         inputType = try c.decodeIfPresent(SessionInputType.self, forKey: .inputType) ?? .audio
+        entryIntent = try c.decodeIfPresent(SessionEntryIntent.self, forKey: .entryIntent) ?? .clinicalVisit
     }
 }

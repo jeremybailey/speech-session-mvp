@@ -71,6 +71,17 @@ struct OnDeviceSummaryService {
     }
 
     @Generable
+    struct TranscriptClassification {
+        @Guide(description: """
+        Exactly one label: visit_encounter, care_plan_education, medication_reference, personal_journal, or mixed_other. \
+        visit_encounter = dialogue or visit note. care_plan_education = handouts, care plans, education. \
+        medication_reference = mostly medication lists. personal_journal = diary-style first-person journaling. \
+        mixed_other = unclear or blended.
+        """)
+        var contentKind: String
+    }
+
+    @Generable
     struct GlobalSummaryOutput {
         @Guide(description: """
         Concise longitudinal overview of the main problems, reasons for care, and presenting concerns across visits—the \
@@ -114,20 +125,39 @@ struct OnDeviceSummaryService {
         var biopsychosocialContext: String?
     }
 
-    // MARK: - Generation
+    // MARK: - Classification (on-device)
 
-    func generate(transcript: String) async throws -> (title: String, summary: String) {
+    func classifyTranscript(_ transcript: String) async throws -> SummaryContentKind {
+        let snippet = transcript.count > 14_000
+            ? String(transcript.prefix(14_000)) + "\n\n[… truncated …]"
+            : transcript
+
         let session = LanguageModelSession(instructions: """
-        You are a medical scribe reviewing an appointment transcript. Extract only clinically relevant information \
-        explicitly stated—ignore greetings, small talk, and scheduling-only chatter unless it belongs under followUp. \
-        Do not infer, assume, or invent clinical details.
-
-        Populate ONLY the structured fields provided; leave a field absent/empty instead of hallucinating filler.
-
-        \(VisitSummaryPromptGuidance.categoryRoutingRules)
+        You classify health-related source text before summarization. \
+        Reply using ONLY the structured field provided with one of these exact contentKind strings: \
+        visit_encounter, care_plan_education, medication_reference, personal_journal, mixed_other. \
+        visit_encounter: dialogue, clinical conversation, or visit note. \
+        care_plan_education: care plans, discharge/education handouts, disease information. \
+        medication_reference: primarily medication or prescription lists. \
+        personal_journal: first-person health journaling or diary—not a clinical note. \
+        mixed_other: blended or uncertain. Pick exactly one best label.
         """)
 
-        let prompt = "Summarize this medical appointment transcript:\n\n\(transcript)"
+        let response = try await session.respond(
+            to: "Classify this health-related text:\n\n\(snippet)",
+            generating: TranscriptClassification.self
+        )
+        return SummaryContentKind(rawUnstable: response.content.contentKind)
+    }
+
+    // MARK: - Generation (single entry)
+
+    func generate(transcript: String, contentKind: SummaryContentKind) async throws -> (title: String, summary: String) {
+        let instructions = SummaryPromptAssembly.onDeviceSessionInstructions(contentKind: contentKind)
+        let session = LanguageModelSession(instructions: instructions)
+
+        let lead = SummaryPromptAssembly.onDeviceUserPromptLead(contentKind: contentKind)
+        let prompt = lead + transcript
         let response = try await session.respond(to: prompt, generating: StructuredVisitSummary.self)
         let output = response.content
 
@@ -145,12 +175,26 @@ struct OnDeviceSummaryService {
             followUp: output.followUp
         )
 
-        let defaultTitle = "Visit"
+        let defaultTitle: String
+        switch contentKind {
+        case .visitEncounter:
+            defaultTitle = "Visit"
+        case .personalJournal:
+            defaultTitle = "Journal"
+        case .carePlanEducation, .medicationReference, .mixedOther:
+            defaultTitle = "Health document"
+        }
+
         guard let (titleText, markdown) = fields.resolved(defaultTitle: defaultTitle), !markdown.isEmpty else {
             throw OnDeviceVisitSummaryEmptyError.noStructuredContent
         }
 
         return (title: titleText, summary: markdown)
+    }
+
+    /// Convenience — assumes a visit-style encounter.
+    func generate(transcript: String) async throws -> (title: String, summary: String) {
+        try await generate(transcript: transcript, contentKind: .visitEncounter)
     }
 
     func generateGlobalSummary(prompt: String) async throws -> GlobalSummaryPayload {

@@ -2,16 +2,18 @@ import SwiftUI
 import SpeechSessionFeatures
 
 struct SettingsView: View {
-    @AppStorage("speechSession.transcriptionBackend") private var backendRaw = TranscriptionBackend.onDeviceApple.rawValue
+    @AppStorage("speechSession.transcriptionBackend") private var backendRaw = TranscriptionBackend.onDeviceWhisperKit.rawValue
     @AppStorage("speechSession.openaiAPIKey") private var openAIAPIKey = ""
-    @AppStorage("speechSession.whisperKitModel") private var whisperKitModel = "openai_whisper-base.en"
+    @AppStorage("speechSession.whisperKitModel") private var whisperKitModel = DeviceCapabilityProfile.tinyWhisperKitModel
     @AppStorage("speechSession.summaryBackend") private var summaryBackendRaw = "openai"
-    /// When true, WhisperKit appears on legacy-tier devices (Tiny/Base only); for testing.
+    /// On legacy tier, enables the Base WhisperKit model in addition to Tiny (always allowed).
     @AppStorage("speechSession.whisperKitExperimentalUnlock") private var whisperKitExperimentalUnlock = false
+    @EnvironmentObject private var kindeAuth: KindeAuthManager
     @Environment(\.dismiss) private var dismiss
+    @State private var accountActionError: String?
 
     private var selectedBackend: TranscriptionBackend {
-        TranscriptionBackend(rawValue: backendRaw) ?? .onDeviceApple
+        TranscriptionBackend(rawValue: backendRaw) ?? .onDeviceWhisperKit
     }
 
     private var capabilityProfile: DeviceCapabilityProfile {
@@ -64,6 +66,34 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    if kindeAuth.isSignedIn {
+                        if let email = kindeAuth.userPreview, !email.isEmpty {
+                            LabeledContent("Signed in", value: email)
+                        } else {
+                            Text("Signed in")
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("Sign Out", role: .destructive) {
+                            Task { await kindeAuth.logout() }
+                        }
+                    } else {
+                        Button("Sign In") {
+                            Task {
+                                do {
+                                    try await kindeAuth.login()
+                                } catch {
+                                    accountActionError = error.localizedDescription
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Account")
+                } footer: {
+                    Text(accountFooterText)
+                }
+
+                Section {
                     Picker("Engine", selection: $backendRaw) {
                         ForEach(availableTranscriptionBackends, id: \.rawValue) { backend in
                             Text(backend.displayTitle).tag(backend.rawValue)
@@ -80,7 +110,7 @@ struct SettingsView: View {
                         Toggle("WhisperKit on this device (experimental)", isOn: $whisperKitExperimentalUnlock)
                     } footer: {
                         Text(
-                            "Allows Tiny and Base on-device models on older hardware. May be slow or run out of memory. For personal testing only."
+                            "Tiny is always available on this hardware. Turn on to also allow the Base model (more accurate, heavier). May be slow or run out of memory."
                         )
                     }
                 }
@@ -111,7 +141,7 @@ struct SettingsView: View {
                     } header: {
                         Text("Model Status")
                     } footer: {
-                        Text("The model is downloaded once and cached on-device. You must download before recording.")
+                        Text("The model is downloaded once and cached on-device. The app prefetches your selected model in the background when possible; you can also download here.")
                     }
                     // Re-check whenever the selected model changes.
                     .task(id: whisperKitModel) {
@@ -120,15 +150,17 @@ struct SettingsView: View {
                 }
 
                 if usesOpenAI {
+                    #if DEBUG
                     Section {
-                        SecureField("sk-…", text: $openAIAPIKey)
+                        SecureField("sk-… (debug only)", text: $openAIAPIKey)
                             .textContentType(.password)
                             .autocorrectionDisabled()
                     } header: {
-                        Text("OpenAI API Key")
+                        Text("OpenAI API Key (Debug)")
                     } footer: {
-                        Text("Stored only on this device. When OpenAI features are selected, audio, transcripts, or summaries are sent to OpenAI for processing.")
+                        Text("Optional developer override. Release builds use your CollectiveCare account and organization proxy only.")
                     }
+                    #endif
                 }
 
                 Section {
@@ -165,6 +197,14 @@ struct SettingsView: View {
                         .fontWeight(.semibold)
                 }
             }
+            .alert("Account", isPresented: Binding(
+                get: { accountActionError != nil },
+                set: { if !$0 { accountActionError = nil } }
+            )) {
+                Button("OK", role: .cancel) { accountActionError = nil }
+            } message: {
+                Text(accountActionError ?? "")
+            }
         }
         .task {
             normalizeSettingsForDevice()
@@ -176,6 +216,9 @@ struct SettingsView: View {
             normalizeSettingsForDevice()
         }
         .onChange(of: whisperKitExperimentalUnlock) { _, _ in
+            normalizeSettingsForDevice()
+        }
+        .onChange(of: kindeAuth.isSignedIn) { _, _ in
             normalizeSettingsForDevice()
         }
     }
@@ -267,17 +310,21 @@ struct SettingsView: View {
     }
 
     private func normalizeSettingsForDevice() {
-        if selectedBackend == .onDeviceWhisperKit,
-           !capabilityProfile.permitsWhisperKit(experimentalUnlocked: whisperKitExperimentalUnlock) {
-            backendRaw = capabilityProfile
-                .fallbackTranscriptionBackend(openAIAPIKey: openAIAPIKey)
-                .rawValue
+        if selectedBackend == .openAIWhisper, !cloudInferenceReady {
+            backendRaw = DeviceCapabilityProfile.current.fallbackTranscriptionBackend(
+                openAIAPIKey: openAIAPIKey,
+                kindeSignedInWithProxy: kindeAuth.isSignedIn && CloudOpenAIConfiguration.hasProxy
+            ).rawValue
         }
 
         if selectedBackend == .onDeviceWhisperKit,
            !capabilityProfile.permitsWhisperKitModel(whisperKitModel, experimentalUnlocked: whisperKitExperimentalUnlock),
            let fallbackModel = availableWhisperKitModels.first?.name {
             whisperKitModel = fallbackModel
+        }
+
+        if summaryBackendRaw == "openai", !cloudInferenceReady, isOnDeviceSummaryAvailable {
+            summaryBackendRaw = "onDevice"
         }
 
         if summaryBackendRaw == "onDevice", !isOnDeviceSummaryAvailable {
@@ -292,6 +339,31 @@ struct SettingsView: View {
         return false
     }
 
+    private var accountFooterText: String {
+        if kindeAuth.isSignedIn, CloudOpenAIConfiguration.hasProxy {
+            return "Cloud transcription and summaries use your CollectiveCare account. Visit content stays on this device; only what each feature needs is sent to your organization’s API."
+        }
+        if kindeAuth.isSignedIn, !cloudOpenAIBaseURLConfigured {
+            return "This app build is missing the proxy API URL (CloudOpenAIBaseURL). Cloud OpenAI features need that endpoint—see your organization’s setup guide."
+        }
+        return "Sign in to use OpenAI Whisper or cloud summaries. Your OpenAI API key is not used in release builds."
+    }
+
+    /// Non-empty `CloudOpenAIBaseURL` entry in Info.plist (see docs).
+    private var cloudOpenAIBaseURLConfigured: Bool {
+        CloudOpenAIConfiguration.hasProxy
+    }
+
+    private var cloudInferenceReady: Bool {
+        let signedInWithProxy = kindeAuth.isSignedIn && CloudOpenAIConfiguration.hasProxy
+        #if DEBUG
+        let byok = !openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return signedInWithProxy || byok
+        #else
+        return signedInWithProxy
+        #endif
+    }
+
     private var usesOpenAI: Bool {
         selectedBackend == .openAIWhisper || summaryBackendRaw == "openai"
     }
@@ -301,13 +373,13 @@ struct SettingsView: View {
         case .onDeviceApple:
             return "Audio is transcribed with Apple's on-device speech recognition when available."
         case .openAIWhisper:
-            return "Audio is uploaded to OpenAI Whisper after recording stops."
+            return "After recording stops, audio is sent for transcription through your organization’s cloud endpoint when you are signed in."
         case .onDeviceWhisperKit:
             if let reason = capabilityProfile.whisperKitHardBlockReason(experimentalUnlocked: whisperKitExperimentalUnlock) {
                 return reason
             }
             if !capabilityProfile.supportsWhisperKit && whisperKitExperimentalUnlock {
-                return "Experimental: on-device WhisperKit (Tiny/Base only on this hardware). Download the model before recording."
+                return "Experimental: Base model on older hardware. Tiny is always available; the app prefetches models in the background when possible."
             }
             return "Audio is transcribed on this device with a downloaded WhisperKit model."
         }
@@ -321,6 +393,6 @@ struct SettingsView: View {
             return "Summaries are generated on this device when Apple Intelligence is available. "
                 + "For stricter grouping of treatment plans and clinical details, testers often prefer OpenAI (cloud)."
         }
-        return "Transcripts and saved entry summaries are sent to OpenAI to generate medical summaries."
+        return "Cloud summaries send transcript text through your organization’s API to OpenAI. Entries remain stored on this device."
     }
 }

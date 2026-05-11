@@ -10,10 +10,9 @@ public enum DeviceCapabilityTier: Sendable {
     case advanced
 }
 
-/// Conservative device capability checks for local model features.
+/// Device capability checks for local WhisperKit model sizes.
 ///
-/// Unknown devices are treated as `standard`, not `advanced`, so new model sizes
-/// are only enabled where we are reasonably confident they can run.
+/// **Legacy** tier always allows Tiny; Base (and experimental Tiny+Base on very old hardware) requires the Settings toggle. Unknown devices are treated as `standard`, not `advanced`.
 public struct DeviceCapabilityProfile: Sendable {
     public static let tinyWhisperKitModel = "openai_whisper-tiny.en"
     public static let baseWhisperKitModel = "openai_whisper-base.en"
@@ -31,19 +30,19 @@ public struct DeviceCapabilityProfile: Sendable {
         )
     }
 
+    /// True when this tier runs WhisperKit without the legacy “extra models” toggle (Tiny is always allowed on legacy; see `allowedWhisperKitModels`).
     public var supportsWhisperKit: Bool {
         tier != .legacy
     }
 
     public var whisperKitUnavailableReason: String? {
-        guard !supportsWhisperKit else { return nil }
-        return "On-device Whisper models are not available on this iPhone. Use Apple Speech or OpenAI Whisper."
+        nil
     }
 
     public var allowedWhisperKitModelNames: [String] {
         switch tier {
         case .legacy:
-            return []
+            return [Self.tinyWhisperKitModel]
         case .standard:
             return [
                 Self.tinyWhisperKitModel,
@@ -63,21 +62,24 @@ public struct DeviceCapabilityProfile: Sendable {
         allowedWhisperKitModelNames.contains(modelName)
     }
 
-    /// Tiny + Base only — used when the user opts in to WhisperKit on **legacy** hardware (Settings).
+    /// Tiny + Base on **legacy** tier when the user enables experimental (Tiny alone is always allowed on legacy).
     public static let experimentalLegacyWhisperKitModels: [String] = [
         Self.tinyWhisperKitModel,
         Self.baseWhisperKitModel,
     ]
 
-    /// `true` when WhisperKit recording or Settings are allowed for this profile (or experimental unlock on legacy).
+    /// WhisperKit (at least Tiny) is always permitted on supported platforms.
     public func permitsWhisperKit(experimentalUnlocked: Bool) -> Bool {
-        supportsWhisperKit || experimentalUnlocked
+        _ = experimentalUnlocked
+        return true
     }
 
-    /// Model IDs allowed for download and transcription, accounting for optional experimental unlock on legacy-tier devices.
+    /// Model IDs allowed for download and transcription, accounting for optional experimental unlock on legacy-tier devices (adds Base).
     public func allowedWhisperKitModels(experimentalUnlocked: Bool) -> [String] {
-        if experimentalUnlocked, tier == .legacy {
-            return Self.experimentalLegacyWhisperKitModels
+        if tier == .legacy {
+            return experimentalUnlocked
+                ? Self.experimentalLegacyWhisperKitModels
+                : [Self.tinyWhisperKitModel]
         }
         return allowedWhisperKitModelNames
     }
@@ -92,8 +94,16 @@ public struct DeviceCapabilityProfile: Sendable {
         return whisperKitUnavailableReason
     }
 
-    public func fallbackTranscriptionBackend(openAIAPIKey: String) -> TranscriptionBackend {
-        openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .onDeviceApple : .openAIWhisper
+    /// When OpenAI Whisper is unavailable, prefer Apple on-device speech. Cloud Whisper is available when the user is signed in
+    /// with a configured proxy (`kindeSignedInWithProxy`) and/or, in **Debug** builds only, a non-empty BYOK string.
+    public func fallbackTranscriptionBackend(openAIAPIKey: String, kindeSignedInWithProxy: Bool) -> TranscriptionBackend {
+        #if DEBUG
+        let byok = !openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        #else
+        let byok = false
+        #endif
+        if kindeSignedInWithProxy || byok { return .openAIWhisper }
+        return .onDeviceApple
     }
 
     private static func tier(for identifier: String) -> DeviceCapabilityTier {

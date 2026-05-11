@@ -7,7 +7,7 @@ import Foundation
 /// On-device `SFSpeechRecognizer` is still better for **live** text; Whisper here is for a **whole-session** comparison transcript.
 public final class WhisperTranscriptionService: @unchecked Sendable, TranscriptionStreaming {
     private let queue = DispatchQueue(label: "SpeechSessionTranscription.whisper")
-    private let apiKey: String
+    private let credentials: OpenAIWhisperHTTPCredentials
     private let continuation: AsyncStream<TranscriptionEvent>.Continuation
     public let events: AsyncStream<TranscriptionEvent>
 
@@ -26,7 +26,19 @@ public final class WhisperTranscriptionService: @unchecked Sendable, Transcripti
     private let maxPCMBytes = 24 * 1024 * 1024
 
     public init(apiKey: String) {
-        self.apiKey = apiKey
+        self.credentials = .openAI(apiKey: apiKey)
+        let (stream, cont) = AsyncStream<TranscriptionEvent>.makeStream()
+        self.events = stream
+        self.continuation = cont
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 90
+        config.timeoutIntervalForResource = 120
+        config.httpMaximumConnectionsPerHost = 1
+        self.session = URLSession(configuration: config)
+    }
+
+    public init(credentials: OpenAIWhisperHTTPCredentials) {
+        self.credentials = credentials
         let (stream, cont) = AsyncStream<TranscriptionEvent>.makeStream()
         self.events = stream
         self.continuation = cont
@@ -234,13 +246,18 @@ public final class WhisperTranscriptionService: @unchecked Sendable, Transcripti
         // Omit `language` so Whisper auto-detects; a wrong forced code often yields gibberish.
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
 
-        guard let url = URL(string: "https://api.openai.com/v1/audio/transcriptions") else {
-            yieldToMain(.error("Whisper: invalid API URL."))
+        let authHeader: String
+        do {
+            authHeader = try await credentials.makeAuthorizationHeader()
+        } catch {
+            yieldToMain(.error(error.localizedDescription))
             return
         }
+
+        let url = credentials.endpointURL
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue(authHeader, forHTTPHeaderField: "Authorization")
         request.setValue(
             "multipart/form-data; boundary=\(boundary)",
             forHTTPHeaderField: "Content-Type"

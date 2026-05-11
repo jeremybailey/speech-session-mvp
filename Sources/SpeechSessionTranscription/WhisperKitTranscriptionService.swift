@@ -25,7 +25,7 @@ public final class WhisperKitTranscriptionService: @unchecked Sendable, Transcri
 
     private let lock = NSLock()
 
-    public init(modelName: String = "openai_whisper-base.en") {
+    public init(modelName: String = "openai_whisper-tiny.en") {
         self.modelName = modelName
         var cont: AsyncStream<TranscriptionEvent>.Continuation!
         events = AsyncStream { cont = $0 }

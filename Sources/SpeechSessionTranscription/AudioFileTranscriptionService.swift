@@ -111,6 +111,13 @@ public enum AudioFileTranscriptionService {
         fileURL: URL,
         apiKey: String
     ) async throws -> String {
+        try await transcribeWithOpenAIWhisper(fileURL: fileURL, credentials: .openAI(apiKey: apiKey))
+    }
+
+    public static func transcribeWithOpenAIWhisper(
+        fileURL: URL,
+        credentials: OpenAIWhisperHTTPCredentials
+    ) async throws -> String {
         let fileSize = try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard fileSize < 25 * 1024 * 1024 else {
             throw AudioFileTranscriptionError.fileTooLarge
@@ -135,12 +142,10 @@ public enum AudioFileTranscriptionService {
         body.append("json\r\n".data(using: .utf8)!)
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
 
-        guard let url = URL(string: "https://api.openai.com/v1/audio/transcriptions") else {
-            throw AudioFileTranscriptionError.invalidOpenAIURL
-        }
-        var request = URLRequest(url: url)
+        let auth = try await credentials.makeAuthorizationHeader()
+        var request = URLRequest(url: credentials.endpointURL)
         request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue(auth, forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
         request.timeoutInterval = 120

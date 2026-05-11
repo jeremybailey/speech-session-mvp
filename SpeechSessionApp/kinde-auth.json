@@ -1,0 +1,8 @@
+{
+  "issuer": "https://collectivecare.kinde.com",
+  "clientId": "20017a073ab74f1daa0035da49c9da88",
+  "redirectUri": "comcollectivecarepilotkinde://kinde_callback",
+  "postLogoutRedirectUri": "comcollectivecarepilotkinde://kinde_logoutcallback",
+  "scope": "openid profile email offline",
+  "audience": "https://collectivecare.pilot/openai-proxy"
+}

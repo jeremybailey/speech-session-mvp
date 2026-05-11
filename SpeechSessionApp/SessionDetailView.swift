@@ -7,6 +7,7 @@ struct SessionDetailView: View {
     /// Mutable local copy so we can persist the generated title and summary back to the store.
     @State private var localSession: Session
 
+    @EnvironmentObject private var kindeAuth: KindeAuthManager
     @AppStorage("speechSession.openaiAPIKey") private var openAIAPIKey = ""
     @AppStorage("speechSession.summaryBackend") private var summaryBackendRaw = "openai"
 
@@ -160,9 +161,12 @@ struct SessionDetailView: View {
             return
         }
         guard wordCount >= Self.minimumWordCount else {
+            let tail = localSession.entryIntent == .personalJournal
+                ? "Speak or type more detail and try again."
+                : "Record a full appointment and try again."
             summaryState = .failed(
-                "The recording is too short to summarize reliably (\(wordCount) word\(wordCount == 1 ? "" : "s") captured). " +
-                "Record a full appointment and try again."
+                "The recording is too short to summarize reliably (\(wordCount) word\(wordCount == 1 ? "" : "s") captured). "
+                    + tail
             )
             return
         }
@@ -195,7 +199,22 @@ struct SessionDetailView: View {
         }
         do {
             let service = OnDeviceSummaryService()
-            let (title, summary) = try await service.generate(transcript: localSession.transcript)
+        let contentKind: SummaryContentKind
+        if localSession.entryIntent == .personalJournal {
+            contentKind = .personalJournal
+        } else if localSession.inputType == .audio {
+            contentKind = .visitEncounter
+        } else {
+            do {
+                contentKind = try await service.classifyTranscript(localSession.transcript)
+            } catch {
+                contentKind = .mixedOther
+            }
+        }
+            let (title, summary) = try await service.generate(
+                transcript: localSession.transcript,
+                contentKind: contentKind
+            )
             guard !summary.isEmpty else {
                 summaryState = .failed("The model returned an empty summary. Try again.")
                 return
@@ -219,27 +238,41 @@ struct SessionDetailView: View {
 
     // MARK: OpenAI summary
 
+    private static var cloudOpenAINotConfiguredMessage: String {
+        var s = """
+        Sign in under Settings → Account to use cloud summaries. Your organization must configure the API endpoint. \
+        Session data stays on this device; only the transcript is sent for summarization.
+        """
+        #if DEBUG
+        s += " In debug builds you can paste an OpenAI API key in Settings."
+        #endif
+        return s
+    }
+
     private func loadSummaryOpenAI() async {
-        let key = openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else {
-            summaryState = .failed("Add an OpenAI API key in Settings (tap the gear icon) to generate summaries.")
+        guard let transport = await kindeAuth.openAIChatTransport(byokFallback: openAIAPIKey) else {
+            summaryState = .failed(Self.cloudOpenAINotConfiguredMessage)
             return
         }
 
-        // Ask the model for structured JSON sections + title; we assemble fixed ## headers in VisitSummaryFields.
-        let systemPrompt = """
-        You are a medical scribe reviewing an appointment transcript. \
-        Extract only clinically relevant information. \
-        Ignore all greetings, small talk, and scheduling chatter. \
-        Only include details explicitly stated — do not infer, assume, or invent clinical facts. \
-        Omit any JSON keys where there is no relevant transcript content.
+        let contentKind: SummaryContentKind
+        if localSession.entryIntent == .personalJournal {
+            contentKind = .personalJournal
+        } else if localSession.inputType == .audio {
+            contentKind = .visitEncounter
+        } else {
+            do {
+                contentKind = try await OpenAISummaryContentClassifier.classify(
+                    transcript: localSession.transcript,
+                    transport: transport
+                )
+            } catch {
+                contentKind = .mixedOther
+            }
+        }
 
-        \(VisitSummaryPromptGuidance.structuredOutputConstraint)
-
-        \(VisitSummaryPromptGuidance.categoryRoutingRules)
-        """
-
-        let userPrompt = "Summarize this medical appointment transcript:\n\n\(localSession.transcript)"
+        let (systemPrompt, userPrefix) = SummaryPromptAssembly.openAISummaryPrompts(contentKind: contentKind)
+        let userPrompt = userPrefix + localSession.transcript
 
         struct Msg: Encodable { let role: String; let content: String }
         struct ResponseFormat: Encodable { let type: String }
@@ -255,10 +288,14 @@ struct SessionDetailView: View {
         struct ChatResponse: Decodable { let choices: [Choice] }
         struct APIErr: Decodable { struct Err: Decodable { let message: String? }; let error: Err? }
 
-        guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else { return }
-        var req = URLRequest(url: url)
+        var req = URLRequest(url: transport.chatCompletionsURL)
         req.httpMethod = "POST"
-        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        do {
+            req.setValue(try await transport.makeAuthorizationHeader(), forHTTPHeaderField: "Authorization")
+        } catch {
+            summaryState = .failed(error.localizedDescription)
+            return
+        }
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = 60
 
@@ -283,7 +320,7 @@ struct SessionDetailView: View {
             }
             guard (200...299).contains(http.statusCode) else {
                 let msg = (try? JSONDecoder().decode(APIErr.self, from: data))?.error?.message
-                summaryState = .failed(msg ?? "Server error (\(http.statusCode)). Check your API key in Settings.")
+                summaryState = .failed(msg ?? "Server error (\(http.statusCode)). Try signing in again under Settings.")
                 return
             }
 

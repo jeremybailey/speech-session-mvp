@@ -11,6 +11,8 @@ struct RecordingView: View {
     let store: SessionStore
     let onStopped: (Session?) -> Void
 
+    @EnvironmentObject private var kindeAuth: KindeAuthManager
+
     private enum Phase: Equatable {
         case recording
         case transcribing   // batch backends: waiting for result
@@ -34,9 +36,11 @@ struct RecordingView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .task {
+            let creds = await kindeAuth.openAIWhisperCredentials(byokKey: openAIAPIKey)
             vm.prepareForRecording(
                 backend: transcriptionBackend,
                 openAIAPIKey: openAIAPIKey,
+                openAIWhisperCredentials: creds,
                 whisperKitModel: whisperKitModel,
                 experimentalWhisperKitUnlocked: experimentalWhisperKitUnlocked
             )

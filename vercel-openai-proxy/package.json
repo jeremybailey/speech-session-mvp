@@ -1,10 +1,12 @@
 {
   "name": "collectivecare-openai-proxy",
   "private": true,
-  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "@vercel/node": "^3.2.0",
-    "jose": "^5.9.4"
+    "jose": "^4.15.9"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

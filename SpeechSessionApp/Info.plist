@@ -14,6 +14,14 @@
 				<string>collectivecare</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.CollectiveCare.pilot.kinde</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>comcollectivecarepilotkinde</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
@@ -29,6 +37,8 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>CloudOpenAIBaseURL</key>
+	<string>https://speech-session-mvp.vercel.app/api</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.medical</string>
 	<key>LSRequiresIPhoneOS</key>
@@ -38,7 +48,7 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Record appointment audio so CollectiveCare can create a transcript for your visit notes.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Transcribe appointment audio into visit notes using Apple's speech recognition when selected.</string>
+	<string>Transcribe appointment audio into visit notes using Apple&apos;s speech recognition when selected.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -46,9 +56,16 @@
 	</dict>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
-	<key>UISupportedInterfaceOrientations</key>
+	<key>UISupportedInterfaceOrientations~iphone</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 </dict>
 </plist>

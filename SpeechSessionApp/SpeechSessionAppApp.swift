@@ -6,6 +6,7 @@ import SpeechSessionPersistence
 struct SpeechSessionAppApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var appModel: AppModel
+    @StateObject private var kindeAuth = KindeAuthManager()
 
     init() {
         do {
@@ -19,7 +20,9 @@ struct SpeechSessionAppApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(appModel: appModel)
+                .environmentObject(kindeAuth)
                 .onOpenURL { url in
+                    guard !KindeAuthManager.isKindeOAuthCallbackURL(url) else { return }
                     SharedImportURLInbox.shared.enqueue(url)
                 }
         }
@@ -34,7 +37,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     ) -> UISceneConfiguration {
         Task { @MainActor in
             for context in options.urlContexts {
-                SharedImportURLInbox.shared.enqueue(context.url)
+                let url = context.url
+                guard !KindeAuthManager.isKindeOAuthCallbackURL(url) else { continue }
+                SharedImportURLInbox.shared.enqueue(url)
             }
         }
         return UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
@@ -45,6 +50,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
+        guard !KindeAuthManager.isKindeOAuthCallbackURL(url) else { return true }
         Task { @MainActor in
             SharedImportURLInbox.shared.enqueue(url)
         }

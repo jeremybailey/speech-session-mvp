@@ -9,10 +9,12 @@ public final class RecordingViewModel: ObservableObject {
     private let store: SessionStore
     private var pipeline: LiveRecordingSession?
 
-    private var pendingBackend: TranscriptionBackend = .onDeviceApple
+    private var pendingBackend: TranscriptionBackend = .onDeviceWhisperKit
     private var pendingOpenAIKey: String = ""
-    private var pendingWhisperKitModel: String = "openai_whisper-base.en"
+    private var pendingOpenAIWhisperCredentials: OpenAIWhisperHTTPCredentials?
+    private var pendingWhisperKitModel: String = DeviceCapabilityProfile.tinyWhisperKitModel
     private var experimentalWhisperKitUnlocked = false
+    private var pendingEntryIntent: SessionEntryIntent = .clinicalVisit
 
     private var committedText = ""
     private var partialTail = ""
@@ -45,17 +47,21 @@ public final class RecordingViewModel: ObservableObject {
         self.store = store
     }
 
-    /// Call from the UI before presenting the recording screen so the chosen backend and API key apply.
+    /// Call from the UI before starting a recording so the chosen backend (and optional OpenAI proxy credentials / BYOK) apply.
     public func prepareForRecording(
         backend: TranscriptionBackend,
         openAIAPIKey: String,
-        whisperKitModel: String = "openai_whisper-base.en",
-        experimentalWhisperKitUnlocked: Bool = false
+        openAIWhisperCredentials: OpenAIWhisperHTTPCredentials? = nil,
+        whisperKitModel: String = DeviceCapabilityProfile.tinyWhisperKitModel,
+        experimentalWhisperKitUnlocked: Bool = false,
+        entryIntent: SessionEntryIntent = .clinicalVisit
     ) {
         pendingBackend = backend
         pendingOpenAIKey = openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        pendingOpenAIWhisperCredentials = openAIWhisperCredentials
         pendingWhisperKitModel = whisperKitModel
         self.experimentalWhisperKitUnlocked = experimentalWhisperKitUnlocked
+        self.pendingEntryIntent = entryIntent
     }
 
     deinit {
@@ -84,8 +90,8 @@ public final class RecordingViewModel: ObservableObject {
         let sessionPipeline: LiveRecordingSession
         do {
             sessionPipeline = try makePipeline()
-        } catch RecordingStartError.missingOpenAIAPIKey {
-            errorMessage = "Add an OpenAI API key in Transcription (testing) to use Whisper."
+        } catch RecordingStartError.missingOpenAIWhisperAccess {
+            errorMessage = Self.openAIWhisperUnavailableMessage
             return
         } catch RecordingStartError.unsupportedWhisperKit(let message) {
             errorMessage = message
@@ -169,7 +175,8 @@ public final class RecordingViewModel: ObservableObject {
         let transcript = fullTranscriptForSave()
         let session = Session(
             date: recordingStartedAt ?? Date(),
-            transcript: transcript
+            transcript: transcript,
+            entryIntent: pendingEntryIntent
         )
         recordingStartedAt = nil
 
@@ -203,9 +210,11 @@ public final class RecordingViewModel: ObservableObject {
         _ fileURL: URL,
         backend: TranscriptionBackend,
         openAIAPIKey: String,
-        whisperKitModel: String = "openai_whisper-base.en",
+        openAIWhisperCredentials: OpenAIWhisperHTTPCredentials? = nil,
+        whisperKitModel: String = DeviceCapabilityProfile.tinyWhisperKitModel,
         locale: Locale = .current,
-        experimentalWhisperKitUnlocked: Bool = false
+        experimentalWhisperKitUnlocked: Bool = false,
+        entryIntent: SessionEntryIntent = .clinicalVisit
     ) async -> Session? {
         guard !isRecording, !isFinishingWhisper, !isTranscribingFile else {
             errorMessage = "Finish the current transcription before importing a file."
@@ -231,15 +240,22 @@ public final class RecordingViewModel: ObservableObject {
                 )
 
             case .openAIWhisper:
-                let key = openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !key.isEmpty else {
-                    errorMessage = "Add an OpenAI API key in Settings to upload audio files to Whisper."
-                    return nil
+                if let creds = openAIWhisperCredentials {
+                    transcript = try await AudioFileTranscriptionService.transcribeWithOpenAIWhisper(
+                        fileURL: fileURL,
+                        credentials: creds
+                    )
+                } else {
+                    let key = openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !key.isEmpty else {
+                        errorMessage = Self.openAIWhisperUnavailableMessage
+                        return nil
+                    }
+                    transcript = try await AudioFileTranscriptionService.transcribeWithOpenAIWhisper(
+                        fileURL: fileURL,
+                        apiKey: key
+                    )
                 }
-                transcript = try await AudioFileTranscriptionService.transcribeWithOpenAIWhisper(
-                    fileURL: fileURL,
-                    apiKey: key
-                )
 
             case .onDeviceWhisperKit:
                 let capability = DeviceCapabilityProfile.current
@@ -262,7 +278,7 @@ public final class RecordingViewModel: ObservableObject {
                 return nil
             }
 
-            let session = Session(transcript: trimmed, inputType: .audio)
+            let session = Session(transcript: trimmed, inputType: .audio, entryIntent: entryIntent)
             try await store.upsert(session)
             return session
         } catch {
@@ -276,8 +292,11 @@ public final class RecordingViewModel: ObservableObject {
         case .onDeviceApple:
             return LiveRecordingSession(transcription: TranscriptionService())
         case .openAIWhisper:
+            if let creds = pendingOpenAIWhisperCredentials {
+                return LiveRecordingSession(transcription: WhisperTranscriptionService(credentials: creds))
+            }
             guard !pendingOpenAIKey.isEmpty else {
-                throw RecordingStartError.missingOpenAIAPIKey
+                throw RecordingStartError.missingOpenAIWhisperAccess
             }
             return LiveRecordingSession(transcription: WhisperTranscriptionService(apiKey: pendingOpenAIKey))
         case .onDeviceWhisperKit:
@@ -530,12 +549,20 @@ public final class RecordingViewModel: ObservableObject {
             }
         }
     }
+
+    private static var openAIWhisperUnavailableMessage: String {
+        var s = "Cloud transcription requires signing in under Settings → Account, with your organization’s API URL configured."
+        #if DEBUG
+        s += " Debug builds can also paste an OpenAI API key in Settings."
+        #endif
+        return s
+    }
 }
 
 // MARK: - Errors
 
 private enum RecordingStartError: Error {
-    case missingOpenAIAPIKey
+    case missingOpenAIWhisperAccess
     case unsupportedWhisperKit(String)
 }
 
