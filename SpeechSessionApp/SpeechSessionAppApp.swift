@@ -19,12 +19,7 @@ struct SpeechSessionAppApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(appModel: appModel)
-                .environmentObject(kindeAuth)
-                .onOpenURL { url in
-                    guard !KindeAuthManager.isKindeOAuthCallbackURL(url) else { return }
-                    SharedImportURLInbox.shared.enqueue(url)
-                }
+            AppShellView(appModel: appModel, kindeAuth: kindeAuth)
         }
     }
 }

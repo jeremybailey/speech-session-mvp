@@ -8,6 +8,7 @@ struct SettingsView: View {
     @AppStorage("speechSession.summaryBackend") private var summaryBackendRaw = "openai"
     /// On legacy tier, enables the Base WhisperKit model in addition to Tiny (always allowed).
     @AppStorage("speechSession.whisperKitExperimentalUnlock") private var whisperKitExperimentalUnlock = false
+    @AppStorage("speechSession.skippedSignInGate") private var skippedSignInGate = false
     @EnvironmentObject private var kindeAuth: KindeAuthManager
     @Environment(\.dismiss) private var dismiss
     @State private var accountActionError: String?
@@ -74,7 +75,10 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Button("Sign Out", role: .destructive) {
-                            Task { await kindeAuth.logout() }
+                            Task {
+                                skippedSignInGate = false
+                                await kindeAuth.logout()
+                            }
                         }
                     } else {
                         Button("Sign In") {

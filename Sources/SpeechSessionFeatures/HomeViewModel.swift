@@ -7,6 +7,7 @@ public final class HomeViewModel: ObservableObject {
     private let store: SessionStore
 
     @Published public private(set) var sessions: [Session] = []
+    @Published public private(set) var folders: [SessionFolder] = []
 
     public init(store: SessionStore) {
         self.store = store
@@ -16,8 +17,12 @@ public final class HomeViewModel: ObservableObject {
         do {
             let all = try await store.loadAll()
             sessions = all.sorted { $0.date > $1.date }
+            folders = try await store.loadFolders().sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
         } catch {
             sessions = []
+            folders = []
         }
     }
 

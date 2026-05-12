@@ -7,7 +7,7 @@ public enum SessionStoreError: Error, Equatable {
     case ioFailed(String)
 }
 
-/// File-backed persistence for sessions using a single JSON file and atomic replace writes.
+/// File-backed persistence for sessions + folders using one JSON file and atomic replace writes.
 public actor SessionStore {
     public static let sessionsFileName = "sessions.json"
 
@@ -54,15 +54,13 @@ public actor SessionStore {
         return try SessionStore(fileManager: fileManager, storageDirectory: dir)
     }
 
-    /// Loads all sessions. Missing file yields an empty array.
-    public func loadAll() throws -> [Session] {
+    private func loadEnvelope() throws -> SessionsEnvelope {
         guard fileManager.fileExists(atPath: fileURL.path) else {
-            return []
+            return SessionsEnvelope(sessions: [], folders: [])
         }
         do {
             let data = try Data(contentsOf: fileURL)
-            let envelope = try decoder.decode(SessionsEnvelope.self, from: data)
-            return envelope.sessions
+            return try decoder.decode(SessionsEnvelope.self, from: data)
         } catch is DecodingError {
             throw SessionStoreError.decodingFailed
         } catch {
@@ -70,35 +68,90 @@ public actor SessionStore {
         }
     }
 
-    /// Replaces the on-disk session list with `sessions` using an atomic write.
-    public func save(_ sessions: [Session]) throws {
-        let envelope = SessionsEnvelope(sessions: sessions)
+    private func saveEnvelope(_ envelope: SessionsEnvelope) throws {
+        var env = envelope
+        env.version = SessionsEnvelope.currentVersion
         let data: Data
         do {
-            data = try encoder.encode(envelope)
+            data = try encoder.encode(env)
         } catch {
             throw SessionStoreError.encodingFailed
         }
         try atomicWrite(data)
     }
 
+    private func invalidateFolderSummary(_ envelope: inout SessionsEnvelope, folderID: UUID?) {
+        guard let fid = folderID,
+              let i = envelope.folders.firstIndex(where: { $0.id == fid })
+        else { return }
+        envelope.folders[i].cachedSummaryJSON = nil
+        envelope.folders[i].cachedSummaryBackend = nil
+    }
+
+    /// Loads all sessions (every folder). Missing file yields an empty array.
+    public func loadAll() throws -> [Session] {
+        try loadEnvelope().sessions
+    }
+
+    public func loadFolders() throws -> [SessionFolder] {
+        try loadEnvelope().folders
+    }
+
+    /// Replaces the on-disk session list with `sessions`, preserving folders.
+    public func save(_ sessions: [Session]) throws {
+        var env = try loadEnvelope()
+        env.sessions = sessions
+        try saveEnvelope(env)
+    }
+
     /// Removes the session with the given `id` and saves.
     public func delete(id: UUID) throws {
-        var all = try loadAll()
-        all.removeAll { $0.id == id }
-        try save(all)
+        var env = try loadEnvelope()
+        if let removed = env.sessions.first(where: { $0.id == id }) {
+            invalidateFolderSummary(&env, folderID: removed.folderID)
+        }
+        env.sessions.removeAll { $0.id == id }
+        try saveEnvelope(env)
     }
 
     /// Merges `session` by `id` (insert or replace), sorts by `date` descending, then saves.
     public func upsert(_ session: Session) throws {
-        var all = try loadAll()
-        if let index = all.firstIndex(where: { $0.id == session.id }) {
-            all[index] = session
-        } else {
-            all.append(session)
+        var env = try loadEnvelope()
+        let previous = env.sessions.first { $0.id == session.id }
+        invalidateFolderSummary(&env, folderID: previous?.folderID)
+        if previous?.folderID != session.folderID {
+            invalidateFolderSummary(&env, folderID: session.folderID)
         }
-        all.sort { $0.date > $1.date }
-        try save(all)
+        if let index = env.sessions.firstIndex(where: { $0.id == session.id }) {
+            env.sessions[index] = session
+        } else {
+            env.sessions.append(session)
+        }
+        env.sessions.sort { $0.date > $1.date }
+        try saveEnvelope(env)
+    }
+
+    public func upsertFolder(_ folder: SessionFolder) throws {
+        var env = try loadEnvelope()
+        if let index = env.folders.firstIndex(where: { $0.id == folder.id }) {
+            env.folders[index] = folder
+        } else {
+            env.folders.append(folder)
+        }
+        env.folders.sort {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+        try saveEnvelope(env)
+    }
+
+    public func deleteFolder(id: UUID) throws {
+        var env = try loadEnvelope()
+        env.folders.removeAll { $0.id == id }
+        invalidateFolderSummary(&env, folderID: id)
+        for idx in env.sessions.indices where env.sessions[idx].folderID == id {
+            env.sessions[idx].folderID = nil
+        }
+        try saveEnvelope(env)
     }
 
     private func atomicWrite(_ data: Data) throws {

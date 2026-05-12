@@ -15,6 +15,7 @@ public final class RecordingViewModel: ObservableObject {
     private var pendingWhisperKitModel: String = DeviceCapabilityProfile.tinyWhisperKitModel
     private var experimentalWhisperKitUnlocked = false
     private var pendingEntryIntent: SessionEntryIntent = .clinicalVisit
+    private var pendingFolderID: UUID?
 
     private var committedText = ""
     private var partialTail = ""
@@ -54,7 +55,8 @@ public final class RecordingViewModel: ObservableObject {
         openAIWhisperCredentials: OpenAIWhisperHTTPCredentials? = nil,
         whisperKitModel: String = DeviceCapabilityProfile.tinyWhisperKitModel,
         experimentalWhisperKitUnlocked: Bool = false,
-        entryIntent: SessionEntryIntent = .clinicalVisit
+        entryIntent: SessionEntryIntent = .clinicalVisit,
+        defaultFolderID: UUID? = nil
     ) {
         pendingBackend = backend
         pendingOpenAIKey = openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -62,6 +64,7 @@ public final class RecordingViewModel: ObservableObject {
         pendingWhisperKitModel = whisperKitModel
         self.experimentalWhisperKitUnlocked = experimentalWhisperKitUnlocked
         self.pendingEntryIntent = entryIntent
+        pendingFolderID = defaultFolderID
     }
 
     deinit {
@@ -176,7 +179,8 @@ public final class RecordingViewModel: ObservableObject {
         let session = Session(
             date: recordingStartedAt ?? Date(),
             transcript: transcript,
-            entryIntent: pendingEntryIntent
+            entryIntent: pendingEntryIntent,
+            folderID: pendingFolderID
         )
         recordingStartedAt = nil
 
@@ -214,7 +218,8 @@ public final class RecordingViewModel: ObservableObject {
         whisperKitModel: String = DeviceCapabilityProfile.tinyWhisperKitModel,
         locale: Locale = .current,
         experimentalWhisperKitUnlocked: Bool = false,
-        entryIntent: SessionEntryIntent = .clinicalVisit
+        entryIntent: SessionEntryIntent = .clinicalVisit,
+        defaultFolderID: UUID? = nil
     ) async -> Session? {
         guard !isRecording, !isFinishingWhisper, !isTranscribingFile else {
             errorMessage = "Finish the current transcription before importing a file."
@@ -278,7 +283,7 @@ public final class RecordingViewModel: ObservableObject {
                 return nil
             }
 
-            let session = Session(transcript: trimmed, inputType: .audio, entryIntent: entryIntent)
+            let session = Session(transcript: trimmed, inputType: .audio, entryIntent: entryIntent, folderID: defaultFolderID)
             try await store.upsert(session)
             return session
         } catch {

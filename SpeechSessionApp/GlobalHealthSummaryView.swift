@@ -2,68 +2,81 @@ import SwiftUI
 import SpeechSessionFeatures
 import SpeechSessionPersistence
 
-// MARK: - GlobalHealthSummaryView
+// MARK: - ScopedHealthSummaryView
 
-struct GlobalHealthSummaryView: View {
+/// Health summary for **All entries** (App Group cache) or a **single folder** (`SessionFolder` cache).
+/// Pushed from the pinned “Summary” row on `HomeView` — no separate tab.
+struct ScopedHealthSummaryView: View {
+    let scope: EntryListScope
     @ObservedObject var home: HomeViewModel
     let store: SessionStore
 
     @EnvironmentObject private var kindeAuth: KindeAuthManager
     @AppStorage("speechSession.openaiAPIKey") private var openAIAPIKey = ""
     @AppStorage("speechSession.summaryBackend") private var summaryBackendRaw = "openai"
-    /// Cached JSON string of the last successful GlobalSummaryPayload.
-    @AppStorage("speechSession.globalSummaryJSON") private var cachedJSON = ""
-    /// Backend that produced the cached global summary.
-    @AppStorage("speechSession.globalSummaryBackend") private var cachedBackendRaw = ""
+    @AppStorage("speechSession.globalSummaryJSON") private var cachedGlobalJSON = ""
+    @AppStorage("speechSession.globalSummaryBackend") private var cachedGlobalBackendRaw = ""
 
-    @State private var summaryState: GlobalSummaryState = .idle
+    @State private var summaryState: ScopedSummaryState = .idle
+
+    private var scopedSessions: [Session] {
+        switch scope {
+        case .all:
+            return home.sessions
+        case .folder(let id):
+            return home.sessions.filter { $0.folderID == id }
+        }
+    }
+
+    private var folderRecord: SessionFolder? {
+        guard case .folder(let id) = scope else { return nil }
+        return home.folders.first { $0.id == id }
+    }
+
+    /// Drives `.task` when on-disk / AppStorage cache metadata changes.
+    private var cacheIdentityToken: String {
+        switch scope {
+        case .all:
+            return "all|\(cachedGlobalBackendRaw)|\(cachedGlobalJSON.count)"
+        case .folder(let id):
+            let f = home.folders.first { $0.id == id }
+            return "folder|\(id.uuidString)|\(f?.cachedSummaryBackend ?? "")|\(f?.cachedSummaryJSON?.count ?? 0)"
+        }
+    }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if home.sessions.isEmpty {
-                    emptyState
-                } else {
-                    content
-                }
-            }
-            .navigationTitle("Health Summary")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    if let payload = sharePayload {
-                        ShareLink(item: payload.text, subject: Text(payload.subject)) {
-                            Image(systemName: "square.and.arrow.up")
-                        }
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        clearCachedSummary()
-                        summaryState = .idle
-                        Task { await generateSummary() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(isLoading || home.sessions.isEmpty)
-                }
+        Group {
+            if scopedSessions.isEmpty {
+                emptyState
+            } else {
+                content
             }
         }
-        .task {
-            await home.loadSessions()
-            // Restore from cache, or kick off generation.
-            if cachedBackendRaw == selectedSummaryBackendRaw,
-               !cachedJSON.isEmpty,
-               let data = cachedJSON.data(using: .utf8),
-               let cached = try? JSONDecoder().decode(GlobalSummaryPayload.self, from: data) {
-                summaryState = .loaded(cached)
-            } else {
-                await generateSummary()
+        .navigationTitle("Summary")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if let payload = sharePayload {
+                    ShareLink(item: payload.text, subject: Text(payload.subject)) {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
             }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    Task { await clearScopeCacheAndRegenerate() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .disabled(isLoading || scopedSessions.isEmpty)
+            }
+        }
+        .task(id: cacheIdentityToken) {
+            await home.loadSessions()
+            await restoreOrGenerate()
         }
         .onChange(of: selectedSummaryBackendRaw) { _, _ in
-            clearCachedSummary()
-            summaryState = .idle
-            Task { await generateSummary() }
+            Task { await clearScopeCacheAndRegenerate() }
         }
     }
 
@@ -72,7 +85,6 @@ struct GlobalHealthSummaryView: View {
     private var content: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // AI-generated cards first — chief complaint and clinical sections.
                 switch summaryState {
                 case .idle:
                     EmptyView()
@@ -84,8 +96,7 @@ struct GlobalHealthSummaryView: View {
                     errorCard(message: message)
                 }
 
-                // Care timeline anchored at bottom for chronological context last.
-                CareTimelineCard(sessions: home.sessions)
+                CareTimelineCard(sessions: scopedSessions)
             }
             .padding(.vertical)
             .padding(.horizontal)
@@ -93,17 +104,17 @@ struct GlobalHealthSummaryView: View {
         .background(Color(.systemGroupedBackground))
     }
 
-    // MARK: State views
-
     private var emptyState: some View {
         VStack(spacing: 14) {
             Spacer()
-            Image(systemName: "waveform.circle")
+            Image(systemName: "heart.text.square")
                 .font(.system(size: 52))
                 .foregroundStyle(.secondary)
-            Text("No entries yet")
+            Text(scope == .all ? "No entries yet" : "No entries in this folder")
                 .font(.headline)
-            Text("Record your first appointment to start building your health summary.")
+            Text(scope == .all
+                ? "Record an appointment to build a health summary."
+                : "Move or create entries here, then open Summary again.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -116,7 +127,7 @@ struct GlobalHealthSummaryView: View {
     private var loadingCard: some View {
         HStack(spacing: 12) {
             ProgressView().scaleEffect(0.9)
-            Text("Building health summary across \(home.sessions.count) entr\(home.sessions.count == 1 ? "y" : "ies")…")
+            Text("Building health summary across \(scopedSessions.count) entr\(scopedSessions.count == 1 ? "y" : "ies")…")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -161,23 +172,22 @@ struct GlobalHealthSummaryView: View {
 
     @ViewBuilder
     private func summaryCards(for payload: GlobalSummaryPayload) -> some View {
-        ForEach(Self.nonemptyPayloadSections(for: payload), id: \.title) { row in
+        ForEach(payload.nonemptyDisplaySections, id: \.title) { row in
             SummaryCategoryCard(title: row.title, content: row.content)
         }
     }
 
     // MARK: - Share
 
-    /// Plain text for the share sheet when the cross-entry summary has finished loading.
     private var sharePayload: (text: String, subject: String)? {
         guard case .loaded(let payload) = summaryState else { return nil }
-        guard !home.sessions.isEmpty else { return nil }
+        guard !scopedSessions.isEmpty else { return nil }
 
         var parts: [String] = []
 
-        let sections = Self.nonemptyPayloadSections(for: payload)
+        let sections = payload.nonemptyDisplaySections
         if !sections.isEmpty {
-            parts.append("Medical summary")
+            parts.append("Medical summary — \(scopeShareLabel)")
             for section in sections {
                 parts.append("")
                 parts.append(section.title.uppercased())
@@ -187,7 +197,7 @@ struct GlobalHealthSummaryView: View {
 
         parts.append("")
         parts.append("Care timeline")
-        for session in home.sessions {
+        for session in scopedSessions {
             let dateLabel = session.date.formatted(date: .abbreviated, time: .shortened)
             let line: String
             if let title = session.title {
@@ -207,32 +217,21 @@ struct GlobalHealthSummaryView: View {
         let text = parts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
 
-        let count = home.sessions.count
-        let subject = "Health Summary (\(count) entr\(count == 1 ? "y" : "ies"))"
+        let count = scopedSessions.count
+        let subject = "Health Summary — \(scopeShareLabel) (\(count) entr\(count == 1 ? "y" : "ies"))"
         return (text, subject)
     }
 
-    /// Category rows that have content, in display order — shared by cards and share text.
-    private static func nonemptyPayloadSections(for payload: GlobalSummaryPayload) -> [(title: String, content: String)] {
-        let entries: [(title: String, content: String?)] = [
-            ("Chief Complaint",           payload.chiefComplaint),
-            ("Symptoms",                  payload.symptoms),
-            ("Findings",                  payload.diagnoses),
-            ("Medications",               payload.medications),
-            ("Care Plans",                payload.carePlans),
-            ("Vaccinations",              payload.vaccinations),
-            ("Allergies",                 payload.allergies),
-            ("Tests & Labs",              payload.testsAndLabs),
-            ("Follow-up",                 payload.followUp),
-            ("Biopsychosocial Context",   payload.biopsychosocialContext),
-        ]
-        return entries.compactMap { title, content in
-            guard let content, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-            return (title, content)
+    private var scopeShareLabel: String {
+        switch scope {
+        case .all:
+            return "All entries"
+        case .folder(let id):
+            return home.folders.first { $0.id == id }?.name ?? "Folder"
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - Cache + generation
 
     private var isLoading: Bool {
         if case .loading = summaryState { return true }
@@ -250,22 +249,74 @@ struct GlobalHealthSummaryView: View {
         return false
     }
 
-    private func clearCachedSummary() {
-        cachedJSON = ""
-        cachedBackendRaw = ""
+    private func clearGlobalAppStorageCache() {
+        cachedGlobalJSON = ""
+        cachedGlobalBackendRaw = ""
     }
 
-    // MARK: - Summary Generation
+    private func restoreOrGenerate() async {
+        guard !scopedSessions.isEmpty else {
+            summaryState = .idle
+            return
+        }
+
+        switch scope {
+        case .all:
+            if cachedGlobalBackendRaw == selectedSummaryBackendRaw,
+               !cachedGlobalJSON.isEmpty,
+               let data = cachedGlobalJSON.data(using: .utf8),
+               let cached = try? JSONDecoder().decode(GlobalSummaryPayload.self, from: data) {
+                summaryState = .loaded(cached)
+            } else {
+                await generateSummary()
+            }
+        case .folder(let id):
+            guard let folder = home.folders.first(where: { $0.id == id }),
+                  let json = folder.cachedSummaryJSON, !json.isEmpty,
+                  folder.cachedSummaryBackend == selectedSummaryBackendRaw,
+                  let data = json.data(using: .utf8),
+                  let cached = try? JSONDecoder().decode(GlobalSummaryPayload.self, from: data)
+            else {
+                await generateSummary()
+                return
+            }
+            summaryState = .loaded(cached)
+        }
+    }
+
+    private func clearScopeCacheAndRegenerate() async {
+        switch scope {
+        case .all:
+            clearGlobalAppStorageCache()
+        case .folder(let id):
+            guard var folder = home.folders.first(where: { $0.id == id }) else { break }
+            folder.cachedSummaryJSON = nil
+            folder.cachedSummaryBackend = nil
+            try? await store.upsertFolder(folder)
+            await home.loadSessions()
+        }
+        summaryState = .idle
+        await generateSummary()
+    }
 
     private static let minimumTotalWords = 30
 
+    private func tooShortMessage() -> String {
+        switch scope {
+        case .all:
+            return "Entries are too short to summarize. Record more appointment content and try again."
+        case .folder:
+            return "Entries in this folder are too short to summarize yet."
+        }
+    }
+
     private func generateSummary() async {
         guard case .idle = summaryState else { return }
-        guard !home.sessions.isEmpty else { return }
+        guard !scopedSessions.isEmpty else { return }
 
-        let totalWords = home.sessions.reduce(0) { $0 + $1.transcript.split(separator: " ").count }
+        let totalWords = scopedSessions.reduce(0) { $0 + $1.transcript.split(separator: " ").count }
         guard totalWords >= Self.minimumTotalWords else {
-            summaryState = .failed("Entries are too short to summarize. Record more appointment content and try again.")
+            summaryState = .failed(tooShortMessage())
             return
         }
 
@@ -284,32 +335,35 @@ struct GlobalHealthSummaryView: View {
     }
 
     private func entryBlocks() -> String {
-        // Build entry context — prefer the generated summary, fall back to raw transcript.
-        home.sessions.enumerated().map { i, session -> String in
+        scopedSessions.enumerated().map { i, session -> String in
             let dateLabel = session.date.formatted(date: .abbreviated, time: .shortened)
             let heading = session.title.map { "\($0) — \(dateLabel)" } ?? dateLabel
-            let body = session.summary ?? session.transcript
+            let transcript = session.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Prefer raw transcript so rollup summaries are not starved after a compressed per-entry summary omits details.
+            let body = transcript.isEmpty ? (session.summary ?? "") : transcript
             return "=== Entry \(i + 1): \(heading) ===\n\(body)"
         }.joined(separator: "\n\n")
     }
 
-    private var cloudOpenAINotConfiguredMessage: String {
-        var s = "Sign in under Settings → Account to use cloud summaries. Your organization must configure the proxy API URL."
-        #if DEBUG
-        s += " In debug builds you can paste an OpenAI API key in Settings."
-        #endif
-        return s
-    }
-
-    private func generateSummaryOpenAI() async {
-        guard let transport = await kindeAuth.openAIChatTransport(byokFallback: openAIAPIKey) else {
-            summaryState = .failed(cloudOpenAINotConfiguredMessage)
-            return
+    private func systemPromptForOpenAI() -> String {
+        let count = scopedSessions.count
+        let intro: String
+        switch scope {
+        case .all:
+            intro = """
+            You are a medical scribe synthesizing a longitudinal health profile across \
+            \(count) appointment\(count == 1 ? "" : "s").
+            """
+        case .folder:
+            let name = folderRecord?.name ?? "this folder"
+            intro = """
+            You are a medical scribe synthesizing a longitudinal health profile for the folder "\(name)" across \
+            \(count) appointment\(count == 1 ? "" : "s").
+            """
         }
 
-        let systemPrompt = """
-        You are a medical scribe synthesizing a longitudinal health profile across \
-        \(home.sessions.count) appointment\(home.sessions.count == 1 ? "" : "s").
+        return """
+        \(intro)
         Review all provided entry data and create a comprehensive cross-visit health overview.
         Only include information explicitly stated — do not infer or invent clinical details.
         Omit any JSON field where there is no relevant information across the entries.
@@ -335,11 +389,29 @@ struct GlobalHealthSummaryView: View {
         - "testsAndLabs": ordered, pending, or completed tests and labs
         - "followUp": scheduling/return actions (see rules above)
         - "biopsychosocialContext": ONLY psychosocial life context (see rules above)
+        - "otherNotes": important details that never fit the categories above (omit if empty; do not duplicate other fields)
 
         Format each field as a markdown bulleted list (- item) when multiple items exist, \
         or a single sentence when there is only one item.
+        For "medications", prefer a JSON array of objects with keys name (required), strength, frequency, route, duration, instructions, classOrCategory—use classOrCategory only when explicitly stated for that drug in the entries.
         """
+    }
 
+    private var cloudOpenAINotConfiguredMessage: String {
+        var s = "Sign in under Settings → Account to use cloud summaries. Your organization must configure the proxy API URL."
+        #if DEBUG
+        s += " In debug builds you can paste an OpenAI API key in Settings."
+        #endif
+        return s
+    }
+
+    private func generateSummaryOpenAI() async {
+        guard let transport = await kindeAuth.openAIChatTransport(byokFallback: openAIAPIKey) else {
+            summaryState = .failed(cloudOpenAINotConfiguredMessage)
+            return
+        }
+
+        let systemPrompt = systemPromptForOpenAI()
         let userPrompt = "Synthesise a health summary from these appointments:\n\n\(entryBlocks())"
 
         struct Msg: Encodable { let role: String; let content: String }
@@ -372,7 +444,7 @@ struct GlobalHealthSummaryView: View {
             ],
             response_format: ResponseFormat(type: "json_object"),
             max_tokens: 2000,
-            temperature: 0.15
+            temperature: 0
         )
 
         do {
@@ -397,7 +469,6 @@ struct GlobalHealthSummaryView: View {
                 return
             }
 
-            // Accept both camelCase and snake_case keys from the model.
             let payloadDecoder = JSONDecoder()
             payloadDecoder.keyDecodingStrategy = .convertFromSnakeCase
 
@@ -406,10 +477,11 @@ struct GlobalHealthSummaryView: View {
                 summaryState = .failed("Could not parse the summary JSON. Raw response:\n\n\(preview)")
                 return
             }
+            var hydrated = payload
+            hydrated.hydrateMedicationsIfNeeded(from: contentData)
 
-            // Persist to cache.
-            cache(payload)
-            summaryState = .loaded(payload)
+            await persistCache(hydrated)
+            summaryState = .loaded(hydrated)
 
         } catch {
             summaryState = error is CancellationError ? .idle : .failed(error.localizedDescription)
@@ -426,15 +498,26 @@ struct GlobalHealthSummaryView: View {
             return
         }
 
+        let count = scopedSessions.count
+        let scopeLine: String
+        switch scope {
+        case .all:
+            scopeLine = "Create a longitudinal health summary across \(count) appointment\(count == 1 ? "" : "s")."
+        case .folder:
+            let name = folderRecord?.name ?? "this folder"
+            scopeLine = "Create a longitudinal health summary for folder \"\(name)\" across \(count) appointment\(count == 1 ? "" : "s")."
+        }
+
         let prompt = """
-        Create a longitudinal health summary across \(home.sessions.count) appointment\(home.sessions.count == 1 ? "" : "s").
+        \(scopeLine)
         Only include information explicitly stated in the provided entry data.
 
         LONGITUDINAL CATEGORY RULES: Put actionable clinical plans in carePlans, not biopsychosocialContext. \
         followUp is for scheduling only. biopsychosocialContext is for non-clinical life/psychosocial context only.
 
         Return a JSON object using only these keys when relevant:
-        chiefComplaint, symptoms, diagnoses, medications, carePlans, vaccinations, allergies, testsAndLabs, followUp, biopsychosocialContext.
+        chiefComplaint, symptoms, diagnoses, medications, carePlans, vaccinations, allergies, testsAndLabs, followUp, biopsychosocialContext, otherNotes.
+        Prefer a JSON array of medication objects (name required; optional strength, frequency, route, duration, instructions, classOrCategory) when multiple drugs appear—never infer classOrCategory from drug names alone.
         Use markdown bullet lists for fields with multiple items.
 
         Entry data:
@@ -444,198 +527,36 @@ struct GlobalHealthSummaryView: View {
 
         do {
             let payload = try await OnDeviceSummaryService().generateGlobalSummary(prompt: prompt)
-            cache(payload)
+            await persistCache(payload)
             summaryState = .loaded(payload)
         } catch {
             summaryState = error is CancellationError ? .idle : .failed(error.localizedDescription)
         }
     }
 
-    private func cache(_ payload: GlobalSummaryPayload) {
-        if let encoded = try? JSONEncoder().encode(payload),
-           let json = String(data: encoded, encoding: .utf8) {
-            cachedJSON = json
-            cachedBackendRaw = selectedSummaryBackendRaw
+    private func persistCache(_ payload: GlobalSummaryPayload) async {
+        guard let encoded = try? JSONEncoder().encode(payload),
+              let json = String(data: encoded, encoding: .utf8) else { return }
+
+        switch scope {
+        case .all:
+            cachedGlobalJSON = json
+            cachedGlobalBackendRaw = selectedSummaryBackendRaw
+        case .folder(let id):
+            guard var folder = home.folders.first(where: { $0.id == id }) else { return }
+            folder.cachedSummaryJSON = json
+            folder.cachedSummaryBackend = selectedSummaryBackendRaw
+            try? await store.upsertFolder(folder)
+            await home.loadSessions()
         }
     }
 }
 
-// MARK: - GlobalSummaryPayload
+// MARK: - ScopedSummaryState
 
-/// The model sometimes returns a plain string, sometimes a JSON array of strings.
-/// This struct handles both by normalising arrays into "- item" bullet strings.
-struct GlobalSummaryPayload: Codable {
-    /// Cross-visit narrative: primary problems and reasons for care (high-level context).
-    var chiefComplaint: String?
-    var symptoms: String?
-    var diagnoses: String?
-    var medications: String?
-    var carePlans: String?
-    var vaccinations: String?
-    var allergies: String?
-    var testsAndLabs: String?
-    var followUp: String?
-    var biopsychosocialContext: String?
-
-    enum CodingKeys: String, CodingKey {
-        case chiefComplaint
-        case symptoms, diagnoses, medications, carePlans, vaccinations
-        case allergies, testsAndLabs, followUp, biopsychosocialContext
-    }
-
-    init(
-        chiefComplaint: String? = nil,
-        symptoms: String? = nil,
-        diagnoses: String? = nil,
-        medications: String? = nil,
-        carePlans: String? = nil,
-        vaccinations: String? = nil,
-        allergies: String? = nil,
-        testsAndLabs: String? = nil,
-        followUp: String? = nil,
-        biopsychosocialContext: String? = nil
-    ) {
-        self.chiefComplaint = chiefComplaint
-        self.symptoms = symptoms
-        self.diagnoses = diagnoses
-        self.medications = medications
-        self.carePlans = carePlans
-        self.vaccinations = vaccinations
-        self.allergies = allergies
-        self.testsAndLabs = testsAndLabs
-        self.followUp = followUp
-        self.biopsychosocialContext = biopsychosocialContext
-    }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        chiefComplaint = c.decodeFlexible(.chiefComplaint)
-        symptoms = c.decodeFlexible(.symptoms)
-        diagnoses = c.decodeFlexible(.diagnoses)
-        medications = c.decodeFlexible(.medications)
-        carePlans = c.decodeFlexible(.carePlans)
-        vaccinations = c.decodeFlexible(.vaccinations)
-        allergies = c.decodeFlexible(.allergies)
-        testsAndLabs = c.decodeFlexible(.testsAndLabs)
-        followUp = c.decodeFlexible(.followUp)
-        biopsychosocialContext = c.decodeFlexible(.biopsychosocialContext)
-    }
-}
-
-private extension KeyedDecodingContainer {
-    /// Decodes a key that may arrive as a `String` or `[String]`.
-    /// Arrays are joined as "- item\n- item" bullet lines.
-    func decodeFlexible(_ key: Key) -> String? {
-        if let str = try? decode(String.self, forKey: key), !str.isEmpty { return str }
-        if let arr = try? decode([String].self, forKey: key), !arr.isEmpty {
-            return arr.map { "- \($0)" }.joined(separator: "\n")
-        }
-        return nil
-    }
-}
-
-// MARK: - GlobalSummaryState
-
-private enum GlobalSummaryState {
+private enum ScopedSummaryState {
     case idle
     case loading
     case loaded(GlobalSummaryPayload)
     case failed(String)
-}
-
-// MARK: - CareTimelineCard
-
-private struct CareTimelineCard: View {
-    let sessions: [Session]
-
-    @State private var isExpanded = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Tappable header
-            Button {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    isExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 10) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.blue.opacity(0.15))
-                            .frame(width: 34, height: 34)
-                        Image(systemName: "clock.arrow.circlepath")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.blue)
-                    }
-                    Text("CARE TIMELINE")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
-                        .kerning(0.5)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                }
-                .padding(16)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            // Collapsible timeline entries
-            if isExpanded {
-                Divider()
-                    .padding(.horizontal, 16)
-
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
-                        HStack(alignment: .top, spacing: 14) {
-                            // Dot + connecting line
-                            VStack(spacing: 0) {
-                                Circle()
-                                    .fill(Color.blue)
-                                    .frame(width: 9, height: 9)
-                                    .padding(.top, 4)
-                                if index < sessions.count - 1 {
-                                    Rectangle()
-                                        .fill(Color.blue.opacity(0.2))
-                                        .frame(width: 2)
-                                        .frame(minHeight: 28)
-                                }
-                            }
-                            .frame(width: 9)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(session.date.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                if let title = session.title {
-                                    Text(title)
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                } else if !session.transcript.isEmpty {
-                                    Text(session.transcript)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                } else {
-                                    Text("Untitled entry")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                        .italic()
-                                }
-                            }
-                            .padding(.bottom, index < sessions.count - 1 ? 14 : 0)
-                        }
-                    }
-                }
-                .padding(16)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-    }
 }

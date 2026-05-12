@@ -1,7 +1,8 @@
 import SwiftUI
+import SpeechSessionPersistence
 
 // MARK: - Shared summary card components
-// Used by both SessionDetailView (per-entry) and GlobalHealthSummaryView (cross-entry).
+// Used by SessionDetailView (per-entry) and ScopedHealthSummaryView (cross-entry).
 
 // MARK: SummaryCardsView
 
@@ -157,6 +158,7 @@ struct SummaryCategoryCard: View {
         if l.contains("allerg")                                  { return "exclamationmark.shield.fill" }
         if l.contains("test") || l.contains("lab")              { return "doc.text.magnifyingglass" }
         if l.contains("follow")                                  { return "calendar.badge.clock" }
+        if l.contains("other notes") || l.contains("misc")      { return "square.and.pencil" }
         if l.contains("biopsychosocial") || l.contains("psychosocial") || l.contains("context") {
             return "brain.head.profile"
         }
@@ -175,9 +177,105 @@ struct SummaryCategoryCard: View {
         if l.contains("allerg")                                  { return .yellow }
         if l.contains("test") || l.contains("lab")              { return .indigo }
         if l.contains("follow")                                  { return .cyan }
+        if l.contains("other notes") || l.contains("misc")      { return .gray }
         if l.contains("biopsychosocial") || l.contains("psychosocial") || l.contains("context") {
             return .pink
         }
         return .gray
+    }
+}
+
+// MARK: - CareTimelineCard
+
+/// Collapsible chronological list of entries (shared by global and folder summaries).
+struct CareTimelineCard: View {
+    let sessions: [Session]
+
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.blue.opacity(0.15))
+                            .frame(width: 34, height: 34)
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.blue)
+                    }
+                    Text("CARE TIMELINE")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                        .kerning(0.5)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .padding(16)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                Divider()
+                    .padding(.horizontal, 16)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
+                        HStack(alignment: .top, spacing: 14) {
+                            VStack(spacing: 0) {
+                                Circle()
+                                    .fill(Color.blue)
+                                    .frame(width: 9, height: 9)
+                                    .padding(.top, 4)
+                                if index < sessions.count - 1 {
+                                    Rectangle()
+                                        .fill(Color.blue.opacity(0.2))
+                                        .frame(width: 2)
+                                        .frame(minHeight: 28)
+                                }
+                            }
+                            .frame(width: 9)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(session.date.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if let title = session.title {
+                                    Text(title)
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                } else if !session.transcript.isEmpty {
+                                    Text(session.transcript)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                } else {
+                                    Text("Untitled entry")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .italic()
+                                }
+                            }
+                            .padding(.bottom, index < sessions.count - 1 ? 14 : 0)
+                        }
+                    }
+                }
+                .padding(16)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }

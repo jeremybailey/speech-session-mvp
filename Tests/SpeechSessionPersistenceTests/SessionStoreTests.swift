@@ -56,7 +56,7 @@ final class SessionStoreTests: XCTestCase {
         let fileURL = tempDir.appendingPathComponent(SessionStore.sessionsFileName)
         let data = try Data(contentsOf: fileURL)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        XCTAssertEqual(json?["version"] as? Int, 1)
+        XCTAssertEqual(json?["version"] as? Int, 2)
         let loaded = try await store.loadAll()
         XCTAssertEqual(loaded.count, 1)
         XCTAssertEqual(loaded[0].transcript, "hello")

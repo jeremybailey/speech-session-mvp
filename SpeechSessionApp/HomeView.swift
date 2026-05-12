@@ -13,19 +13,10 @@ struct HomeView: View {
         case pdfOrPlainText
     }
 
-    /// Shown after choosing Transcribe Audio or Import Audio so the user picks clinical vs journal intent.
-    private struct PendingAudioIntentFlow: Identifiable {
-        let id = UUID()
-        enum FlowKind {
-            case liveTranscription
-            case importAudio
-        }
-        let kind: FlowKind
-    }
-
     @ObservedObject var home: HomeViewModel
     @ObservedObject var recording: RecordingViewModel
     let store: SessionStore
+    var listScope: EntryListScope = .all
     @Binding var pendingSharedImportURL: URL?
     /// Called after consuming (or rejecting) one App Group handoff so queued files + folder scan can drain.
     var advanceSharedImportQueue: () -> Void = {}
@@ -43,9 +34,9 @@ struct HomeView: View {
     /// Populated immediately before presenting the unified file importer (`showFileImporter`).
     @State private var pendingFileImportKind: FileImportKind?
     @State private var showFileImporter = false
-    @State private var pendingAudioIntentFlow: PendingAudioIntentFlow?
-    /// Intent captured before presenting the audio file importer (from menu only).
+    /// Intent captured before presenting the audio file importer.
     @State private var pendingImportAudioEntryIntent: SessionEntryIntent?
+    @State private var showAddEntrySheet = false
     @State private var showPhotosPicker = false
     @State private var photoPickerItems: [PhotosPickerItem] = []
     @State private var isScanningDocument = false
@@ -72,6 +63,24 @@ struct HomeView: View {
 
     // Derive recording phase purely from the ViewModel — no duplicate state.
     private enum RecordingPhase { case idle, recording, transcribing, scanTranscribing, fileTranscribing }
+    private var displayedSessions: [Session] {
+        switch listScope {
+        case .all:
+            return home.sessions
+        case .folder(let id):
+            return home.sessions.filter { $0.folderID == id }
+        }
+    }
+
+    private var listTitle: String {
+        switch listScope {
+        case .all:
+            return "All entries"
+        case .folder(let id):
+            return home.folders.first { $0.id == id }?.name ?? "Folder"
+        }
+    }
+
     private var phase: RecordingPhase {
         if isScanningDocument { return .scanTranscribing }
         if recording.isTranscribingFile { return .fileTranscribing }
@@ -80,76 +89,109 @@ struct HomeView: View {
         return .idle
     }
 
-    var body: some View {
-        List {
-            if home.sessions.isEmpty && phase == .idle {
-                emptyStateRow
-            } else {
-                ForEach(home.sessions) { session in
-                    NavigationLink(value: session) {
-                        sessionRow(session)
-                    }
-                }
-                .onDelete { indexSet in
-                    for index in indexSet {
-                        let session = home.sessions[index]
-                        Task { await home.delete(session: session) }
-                    }
-                }
-            }
+    private var summaryPinnedSubtitle: String {
+        switch listScope {
+        case .all:
+            let n = home.sessions.count
+            return n == 0 ? "All entries" : "Across \(n) entr\(n == 1 ? "y" : "ies")"
+        case .folder(let id):
+            let name = home.folders.first { $0.id == id }?.name ?? "Folder"
+            let n = displayedSessions.count
+            return n == 0 ? name : "\(name) · \(n) entr\(n == 1 ? "y" : "ies")"
         }
-        .listStyle(.plain)
-        .animation(.default, value: home.sessions.map(\.id))
-        .navigationTitle("Entries")
-        .toolbar {
-            // + menu — far-right trailing (declared first = rightmost)
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Button {
-                        DispatchQueue.main.async {
-                            pendingAudioIntentFlow = PendingAudioIntentFlow(kind: .liveTranscription)
-                        }
-                    } label: {
-                        Label("Transcribe Audio", systemImage: "mic.fill")
+    }
+
+    /// Uppercase secondary header, aligned with `List` / inset content (system section-header pattern).
+    private var entriesSectionHeader: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("Entries")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.4)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            NavigationLink(value: SummaryNavigationMarker(scope: listScope)) {
+                HStack(alignment: .center, spacing: 14) {
+                    Image(systemName: "heart.text.square.fill")
+                        .font(.system(size: 26, weight: .medium))
+                        .foregroundStyle(.pink)
+                        .frame(width: 36, height: 36)
+                        .background(Color.pink.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Health summary")
+                            .font(.headline)
+                        Text(summaryPinnedSubtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    Button {
-                        fileErrorMessage = nil
-                        DispatchQueue.main.async {
-                            pendingAudioIntentFlow = PendingAudioIntentFlow(kind: .importAudio)
-                        }
-                    } label: {
-                        Label("Import Audio", systemImage: "folder.fill")
-                    }
-                    Button {
-                        scanErrorMessage = nil
-                        showDocumentScanner = true
-                    } label: {
-                        Label("Camera Capture", systemImage: "camera.fill")
-                    }
-                    Button {
-                        scanErrorMessage = nil
-                        // Defer so the toolbar menu can dismiss before the picker presents (avoids nested context menus).
-                        DispatchQueue.main.async {
-                            showPhotosPicker = true
-                        }
-                    } label: {
-                        Label("Import Photos", systemImage: "photo.on.rectangle.angled")
-                    }
-                    Button {
-                        scanErrorMessage = nil
-                        DispatchQueue.main.async {
-                            pendingFileImportKind = .pdfOrPlainText
-                            showFileImporter = true
-                        }
-                    } label: {
-                        Label("Import Docs", systemImage: "doc.text")
-                    }
-                } label: {
-                    Image(systemName: "square.and.pencil")
+
+                    Spacer(minLength: 8)
+
+                    Image(systemName: "chevron.right")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.tertiary)
                 }
-                .disabled(phase != .idle)
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color(.secondarySystemGroupedBackground))
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            // Settings gear — second from right
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 6)
+
+            // List section header — matches system grouped `Section` header styling (Health, Settings).
+            entriesSectionHeader
+
+            List {
+                if displayedSessions.isEmpty && phase == .idle {
+                    switch listScope {
+                    case .all:
+                        emptyStateRow
+                    case .folder:
+                        folderEmptyStateRow
+                    }
+                } else {
+                    ForEach(displayedSessions) { session in
+                        NavigationLink(value: session) {
+                            sessionRow(session)
+                        }
+                    }
+                    .onDelete { indexSet in
+                        for index in indexSet {
+                            let session = displayedSessions[index]
+                            Task { await home.delete(session: session) }
+                        }
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+        }
+        .background(Color(.systemGroupedBackground))
+        .animation(.default, value: displayedSessions.map(\.id))
+        .navigationTitle(listTitle)
+        .navigationBarTitleDisplayMode(.large)
+        .navigationDestination(for: SummaryNavigationMarker.self) { marker in
+            ScopedHealthSummaryView(scope: marker.scope, home: home, store: store)
+        }
+        .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showSettings = true } label: {
                     Image(systemName: "gearshape")
@@ -157,24 +199,31 @@ struct HomeView: View {
                 .disabled(phase != .idle)
             }
         }
-        .sheet(item: $pendingAudioIntentFlow) { flow in
-            AudioEntryIntentChoiceSheet(
-                onClinical: {
-                    let captured = flow
-                    pendingAudioIntentFlow = nil
-                    DispatchQueue.main.async {
-                        applyPendingAudioIntent(captured, intent: .clinicalVisit)
-                    }
+        .sheet(isPresented: $showAddEntrySheet) {
+            AddEntryFlowSheet(
+                isPresented: $showAddEntrySheet,
+                onAudioRecord: { intent in
+                    startLiveRecording(intent: intent)
                 },
-                onJournal: {
-                    let captured = flow
-                    pendingAudioIntentFlow = nil
-                    DispatchQueue.main.async {
-                        applyPendingAudioIntent(captured, intent: .personalJournal)
-                    }
+                onAudioImport: { intent in
+                    prepareAudioFileImport(intent: intent)
                 },
-                onCancel: {
-                    pendingAudioIntentFlow = nil
+                onPhotoCapture: {
+                    scanErrorMessage = nil
+                    showDocumentScanner = true
+                },
+                onPhotoLibrary: {
+                    scanErrorMessage = nil
+                    showPhotosPicker = true
+                },
+                onDocumentScan: {
+                    scanErrorMessage = nil
+                    showDocumentScanner = true
+                },
+                onDocumentImport: {
+                    scanErrorMessage = nil
+                    pendingFileImportKind = .pdfOrPlainText
+                    showFileImporter = true
                 }
             )
         }
@@ -227,10 +276,9 @@ struct HomeView: View {
                 }
             }
         }
-        // safeAreaInset is only used for the active-state pills now.
-        // contentShape blocks touches from falling through to list rows beneath.
+        // Bottom + button (idle) or recording / transcription pills; contentShape keeps list from stealing taps.
         .safeAreaInset(edge: .bottom) {
-            activePillControl
+            bottomAccessoryBar
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
         }
@@ -270,43 +318,84 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Active-state pill (shown in safeAreaInset while recording / transcribing / scanning)
+    // MARK: - Bottom + button & active-state pills
 
     @ViewBuilder
-    private var activePillControl: some View {
+    private var bottomAccessoryBar: some View {
+        VStack(spacing: 10) {
+            if phase == .idle {
+                idleErrorBanners
+                addEntryFloatingButton
+                    .padding(.top, 4)
+                    .padding(.bottom, 10)
+            } else {
+                activePhasePill
+                    .padding(.bottom, 16)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var idleErrorBanners: some View {
+        VStack(spacing: 6) {
+            if showRecordingError, let error = recording.errorMessage {
+                Text(error)
+                    .font(.subheadline)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
+            if let error = scanErrorMessage {
+                Text(error)
+                    .font(.subheadline)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
+            if let error = fileErrorMessage {
+                Text(error)
+                    .font(.subheadline)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
+        }
+    }
+
+    /// Voice Memos–style primary control; 70×70 pt exceeds the 44 pt minimum for older adults.
+    private var addEntryFloatingButton: some View {
+        Button {
+            scanErrorMessage = nil
+            fileErrorMessage = nil
+            showAddEntrySheet = true
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 34, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 70, height: 70)
+                .background {
+                    Circle()
+                        .fill(Color.accentColor)
+                        .shadow(color: .black.opacity(0.2), radius: 12, y: 5)
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Add new entry")
+    }
+
+    @ViewBuilder
+    private var activePhasePill: some View {
         switch phase {
         case .idle:
-            // Error banners shown here when idle so they don't interfere with the toolbar button.
-            VStack(spacing: 4) {
-                if showRecordingError, let error = recording.errorMessage {
-                    Text(error)
-                        .font(.caption).foregroundStyle(.red)
-                        .multilineTextAlignment(.center).padding(.horizontal, 24)
-                }
-                if let error = scanErrorMessage {
-                    Text(error)
-                        .font(.caption).foregroundStyle(.red)
-                        .multilineTextAlignment(.center).padding(.horizontal, 24)
-                }
-                if let error = fileErrorMessage {
-                    Text(error)
-                        .font(.caption).foregroundStyle(.red)
-                        .multilineTextAlignment(.center).padding(.horizontal, 24)
-                }
-            }
-            .padding(.bottom, 8)
-
+            EmptyView()
         case .recording:
-            recordingPill.padding(.bottom, 16)
-
+            recordingPill
         case .transcribing:
-            transcribingPill.padding(.bottom, 16)
-
+            transcribingPill
         case .scanTranscribing:
-            scanTranscribingPill.padding(.bottom, 16)
-
+            scanTranscribingPill
         case .fileTranscribing:
-            fileTranscribingPill.padding(.bottom, 16)
+            fileTranscribingPill
         }
     }
 
@@ -405,13 +494,30 @@ struct HomeView: View {
                 .foregroundStyle(.secondary)
             Text("No recordings yet")
                 .font(.headline)
-            Text("Tap the mic button to record your visit")
+            Text("Tap the plus button below to add an entry")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 60)
+        .listRowSeparator(.hidden)
+    }
+
+    private var folderEmptyStateRow: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "folder")
+                .font(.system(size: 44))
+                .foregroundStyle(.secondary)
+            Text("No entries in this folder")
+                .font(.headline)
+            Text("Tap the plus button below, or move entries here using the folder button on an entry.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 48)
         .listRowSeparator(.hidden)
     }
 
@@ -464,30 +570,27 @@ struct HomeView: View {
         let s = Int(t); return String(format: "%d:%02d", s / 60, s % 60)
     }
 
-    /// Continues Transcribe Audio / Import Audio after the user picks clinical visit vs personal journal.
-    private func applyPendingAudioIntent(_ flow: PendingAudioIntentFlow, intent: SessionEntryIntent) {
-        switch flow.kind {
-        case .liveTranscription:
-            Task {
-                let creds = await kindeAuth.openAIWhisperCredentials(byokKey: openAIAPIKey)
-                recording.prepareForRecording(
-                    backend: selectedBackend,
-                    openAIAPIKey: openAIAPIKey,
-                    openAIWhisperCredentials: creds,
-                    whisperKitModel: whisperKitModel,
-                    experimentalWhisperKitUnlocked: whisperKitExperimentalUnlock,
-                    entryIntent: intent
-                )
-                await recording.start()
-            }
-        case .importAudio:
-            pendingImportAudioEntryIntent = intent
-            fileErrorMessage = nil
-            DispatchQueue.main.async {
-                pendingFileImportKind = .audio
-                showFileImporter = true
-            }
+    private func startLiveRecording(intent: SessionEntryIntent) {
+        Task {
+            let creds = await kindeAuth.openAIWhisperCredentials(byokKey: openAIAPIKey)
+            recording.prepareForRecording(
+                backend: selectedBackend,
+                openAIAPIKey: openAIAPIKey,
+                openAIWhisperCredentials: creds,
+                whisperKitModel: whisperKitModel,
+                experimentalWhisperKitUnlocked: whisperKitExperimentalUnlock,
+                entryIntent: intent,
+                defaultFolderID: listScope.defaultFolderID
+            )
+            await recording.start()
         }
+    }
+
+    private func prepareAudioFileImport(intent: SessionEntryIntent) {
+        pendingImportAudioEntryIntent = intent
+        fileErrorMessage = nil
+        pendingFileImportKind = .audio
+        showFileImporter = true
     }
 
     // MARK: - WhisperKit defaults / prefetch
@@ -551,7 +654,7 @@ struct HomeView: View {
     }
 
     private func persistDocumentTranscript(_ transcript: String, inputType: SessionInputType) async throws {
-        let session = Session(transcript: transcript, inputType: inputType)
+        let session = Session(transcript: transcript, inputType: inputType, folderID: listScope.defaultFolderID)
         try await store.upsert(session)
         await home.loadSessions()
     }
@@ -705,7 +808,8 @@ struct HomeView: View {
                 openAIWhisperCredentials: whisperCreds,
                 whisperKitModel: whisperKitModel,
                 experimentalWhisperKitUnlocked: whisperKitExperimentalUnlock,
-                entryIntent: entryIntent
+                entryIntent: entryIntent,
+                defaultFolderID: listScope.defaultFolderID
             )
 
             if session == nil,
@@ -724,7 +828,8 @@ struct HomeView: View {
                         openAIWhisperCredentials: whisperCreds,
                         whisperKitModel: modelName,
                         experimentalWhisperKitUnlocked: whisperKitExperimentalUnlock,
-                        entryIntent: entryIntent
+                        entryIntent: entryIntent,
+                        defaultFolderID: listScope.defaultFolderID
                     )
                 }
             }
@@ -821,44 +926,6 @@ struct HomeView: View {
             return true
         }
         return UTType(filenameExtension: fileExtension)?.conforms(to: .audio) == true
-    }
-}
-
-// MARK: - Audio entry intent (sheet — reliable on iPad vs toolbar confirmationDialog popover)
-
-private struct AudioEntryIntentChoiceSheet: View {
-    var onClinical: () -> Void
-    var onJournal: () -> Void
-    var onCancel: () -> Void
-
-    var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                Button(action: onClinical) {
-                    Label("Medical Visit", systemImage: "stethoscope")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-
-                Button(action: onJournal) {
-                    Label("Personal journal", systemImage: "book.closed")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-
-                Spacer(minLength: 0)
-            }
-            .padding()
-            .navigationTitle("What kind of entry?")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", action: onCancel)
-                }
-            }
-        }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
     }
 }
 

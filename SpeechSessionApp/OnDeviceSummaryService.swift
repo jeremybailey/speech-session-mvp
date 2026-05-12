@@ -34,6 +34,72 @@ struct OnDeviceSummaryService {
     // MARK: - Structured Output
 
     @Generable
+    struct MedicationItemRow {
+        @Guide(description: "Drug name exactly as stated in the source.")
+        var name: String
+
+        @Guide(description: "Strength or dose (e.g. 50 mg). Verbatim; do not change numbers.")
+        var strength: String?
+
+        @Guide(description: "Dosing schedule or frequency if stated.")
+        var frequency: String?
+
+        @Guide(description: "Route (oral, topical, etc.) if stated.")
+        var route: String?
+
+        @Guide(description: "Duration or course length if stated.")
+        var duration: String?
+
+        @Guide(description: "Patient directions, changes, or pharmacy notes tied to this drug.")
+        var instructions: String?
+
+        @Guide(description: """
+        Pharmacologic class or category ONLY if the source explicitly ties it to THIS medication. \
+        Leave empty if absent or uncertain—never infer from the drug name alone.
+        """)
+        var classOrCategoryIfStated: String?
+    }
+
+    /// Structured summary for medication lists and prescription printouts (on-device).
+    @Generable
+    struct MedicationRefStructuredSummary {
+        @Guide(description: "Short title, 3–6 words (e.g. Home medication list, Discharge prescriptions).")
+        var title: String
+
+        @Guide(description: "One entry per drug or prescription line from the source.")
+        var medicationItems: [MedicationItemRow]
+
+        @Guide(description: "Allergies or adverse reactions if listed.")
+        var allergies: String?
+
+        @Guide(description: "Narrative prescriber/pharmacist directions, tapers, or monitoring beyond per-line sigs.")
+        var treatmentPlan: String?
+
+        @Guide(description: "Tests, labs, or monitoring explicitly tied to medications in the source.")
+        var testsAndLabs: String?
+
+        @Guide(description: "Vaccinations mentioned alongside the medication context.")
+        var vaccinations: String?
+
+        @Guide(description: "Refill, return visit, or callback logistics if explicitly stated.")
+        var followUp: String?
+
+        @Guide(description: "Indication, chief concern, or symptom context only when clearly stated in the source.")
+        var chiefComplaint: String?
+
+        @Guide(description: "Symptoms or side effects only when explicitly tied to the source text.")
+        var symptoms: String?
+
+        @Guide(description: "Diagnoses or indications only when explicitly stated.")
+        var findings: String?
+
+        @Guide(description: """
+        Important details that do not fit other fields. Do not repeat medication rows or duplicate structured content.
+        """)
+        var otherNotes: String?
+    }
+
+    @Generable
     struct StructuredVisitSummary {
         @Guide(description: "Short appointment title, 3–6 words (e.g. Back pain follow-up, Annual physical exam).")
         var title: String
@@ -68,6 +134,12 @@ struct OnDeviceSummaryService {
 
         @Guide(description: "ONLY scheduling logistics: when to return, call backs, booking next visit—not the full therapeutic plan.")
         var followUp: String?
+
+        @Guide(description: """
+        Important information that does not fit any other field. Leave empty if everything maps cleanly elsewhere; \
+        do not duplicate other sections.
+        """)
+        var otherNotes: String?
     }
 
     @Generable
@@ -123,6 +195,9 @@ struct OnDeviceSummaryService {
         clinician instructions here—those belong in carePlans, medications, or testsAndLabs.
         """)
         var biopsychosocialContext: String?
+
+        @Guide(description: "Important longitudinal details with no natural home in other fields; omit if empty. No duplication.")
+        var otherNotes: String?
     }
 
     // MARK: - Classification (on-device)
@@ -155,25 +230,8 @@ struct OnDeviceSummaryService {
     func generate(transcript: String, contentKind: SummaryContentKind) async throws -> (title: String, summary: String) {
         let instructions = SummaryPromptAssembly.onDeviceSessionInstructions(contentKind: contentKind)
         let session = LanguageModelSession(instructions: instructions)
-
         let lead = SummaryPromptAssembly.onDeviceUserPromptLead(contentKind: contentKind)
         let prompt = lead + transcript
-        let response = try await session.respond(to: prompt, generating: StructuredVisitSummary.self)
-        let output = response.content
-
-        let fields = VisitSummaryFields(
-            title: output.title,
-            legacyMarkdownSummary: nil,
-            chiefComplaint: output.chiefComplaint,
-            symptoms: output.symptoms,
-            findings: output.findings,
-            medications: output.medications,
-            treatmentPlan: output.treatmentPlan,
-            vaccinations: output.vaccinations,
-            allergies: output.allergies,
-            testsAndLabs: output.testsAndLabs,
-            followUp: output.followUp
-        )
 
         let defaultTitle: String
         switch contentKind {
@@ -183,6 +241,30 @@ struct OnDeviceSummaryService {
             defaultTitle = "Journal"
         case .carePlanEducation, .medicationReference, .mixedOther:
             defaultTitle = "Health document"
+        }
+
+        let fields: VisitSummaryFields
+        switch contentKind {
+        case .medicationReference:
+            let response = try await session.respond(to: prompt, generating: MedicationRefStructuredSummary.self)
+            fields = Self.visitSummaryFields(from: response.content)
+        default:
+            let response = try await session.respond(to: prompt, generating: StructuredVisitSummary.self)
+            let output = response.content
+            fields = VisitSummaryFields(
+                title: output.title,
+                legacyMarkdownSummary: nil,
+                chiefComplaint: output.chiefComplaint,
+                symptoms: output.symptoms,
+                findings: output.findings,
+                medications: output.medications,
+                treatmentPlan: output.treatmentPlan,
+                vaccinations: output.vaccinations,
+                allergies: output.allergies,
+                testsAndLabs: output.testsAndLabs,
+                followUp: output.followUp,
+                otherNotes: output.otherNotes
+            )
         }
 
         guard let (titleText, markdown) = fields.resolved(defaultTitle: defaultTitle), !markdown.isEmpty else {
@@ -223,7 +305,46 @@ struct OnDeviceSummaryService {
             allergies: output.allergies?.trimmedNilIfEmpty,
             testsAndLabs: output.testsAndLabs?.trimmedNilIfEmpty,
             followUp: output.followUp?.trimmedNilIfEmpty,
-            biopsychosocialContext: output.biopsychosocialContext?.trimmedNilIfEmpty
+            biopsychosocialContext: output.biopsychosocialContext?.trimmedNilIfEmpty,
+            otherNotes: output.otherNotes?.trimmedNilIfEmpty
+        )
+    }
+
+    private static func visitSummaryFields(from med: MedicationRefStructuredSummary) -> VisitSummaryFields {
+        let medBody: String
+        if med.medicationItems.isEmpty {
+            medBody = ""
+        } else {
+            medBody = med.medicationItems.map { row in
+                var parts: [String] = []
+                if let s = row.strength?.trimmedNilIfEmpty { parts.append(s) }
+                if let s = row.frequency?.trimmedNilIfEmpty { parts.append(s) }
+                if let s = row.route?.trimmedNilIfEmpty { parts.append(s) }
+                if let s = row.duration?.trimmedNilIfEmpty { parts.append(s) }
+                if let s = row.instructions?.trimmedNilIfEmpty { parts.append(s) }
+                if let s = row.classOrCategoryIfStated?.trimmedNilIfEmpty {
+                    parts.append("Class (per source): \(s)")
+                }
+                let tail = parts.joined(separator: "; ")
+                let name = row.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                if tail.isEmpty { return "- **\(name)**" }
+                return "- **\(name)** — \(tail)"
+            }.joined(separator: "\n")
+        }
+
+        return VisitSummaryFields(
+            title: med.title,
+            legacyMarkdownSummary: nil,
+            chiefComplaint: med.chiefComplaint,
+            symptoms: med.symptoms,
+            findings: med.findings,
+            medications: medBody.isEmpty ? nil : medBody,
+            treatmentPlan: med.treatmentPlan,
+            vaccinations: med.vaccinations,
+            allergies: med.allergies,
+            testsAndLabs: med.testsAndLabs,
+            followUp: med.followUp,
+            otherNotes: med.otherNotes
         )
     }
 }

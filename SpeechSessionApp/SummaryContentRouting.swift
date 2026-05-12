@@ -144,7 +144,7 @@ enum SummaryPromptAssembly {
     static func openAISummaryPrompts(contentKind: SummaryContentKind) -> (system: String, userPrefix: String) {
         let systemBody = baseSystemInstruction(contentKind: contentKind)
             + "\n\n"
-            + VisitSummaryPromptGuidance.structuredOutputConstraint
+            + VisitSummaryPromptGuidance.structuredJSONSpec(for: contentKind)
             + "\n"
             + categoryRules(for: contentKind)
 
@@ -159,7 +159,9 @@ enum SummaryPromptAssembly {
         return """
         \(base)
 
-        Populate ONLY the structured fields provided; leave a field absent/empty instead of hallucinating filler.
+        \(VisitSummaryPromptGuidance.structuredJSONSpec(for: contentKind))
+
+        Populate ONLY the structured fields your run mode provides; leave a field absent/empty instead of hallucinating filler.
 
         \(rules)
         """
@@ -262,13 +264,16 @@ enum SummaryPromptAssembly {
         case .medicationReference:
             return """
             CATEGORY RULES (medication-focused document):
-            - Medications: Highest priority—every drug, dose, route, frequency, duration, and change instructions explicitly listed.
+            - Medications: Highest priority—output one row per drug in structured form when using on-device generation; \
+            for cloud JSON, use a medications array of objects (name required; optional strength, frequency, route, duration, instructions, classOrCategory). \
+            Put classOrCategory ONLY when the source explicitly states it for that same drug—never infer from the drug name.
             - Allergies: Include if present.
             - Treatment Plan: Use for prescriber/pharmacist directions that are narrative (tapers, monitoring, indication) when written \
             beyond bullets; do not duplicate the entire med table.
             - Findings / Chief Complaint / Symptoms: Omit unless the source explicitly ties indications or diagnoses to the list.
             - Follow-up: Only when the document states refill, lab, or return-plan logistics.
             - Tests & Labs / Vaccinations: Only when explicitly tied to the medication context in the source.
+            - otherNotes: Only for details that do not fit the fields above; no duplication.
             """
         }
     }

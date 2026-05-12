@@ -1,8 +1,10 @@
 import SwiftUI
+import SpeechSessionFeatures
 import SpeechSessionPersistence
 
 struct SessionDetailView: View {
     let store: SessionStore
+    @ObservedObject var home: HomeViewModel
 
     /// Mutable local copy so we can persist the generated title and summary back to the store.
     @State private var localSession: Session
@@ -14,8 +16,9 @@ struct SessionDetailView: View {
     @State private var selectedTab: DetailTab = .transcription
     @State private var summaryState: SummaryState = .idle
 
-    init(session: Session, store: SessionStore) {
+    init(session: Session, store: SessionStore, home: HomeViewModel) {
         self.store = store
+        self.home = home
         _localSession = State(initialValue: session)
     }
 
@@ -41,6 +44,24 @@ struct SessionDetailView: View {
         .navigationTitle(localSession.title ?? localSession.date.formatted(date: .abbreviated, time: .shortened))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Section("Move to folder") {
+                        Button("Unfiled") {
+                            Task { await moveSession(to: nil) }
+                        }
+                        .disabled(localSession.folderID == nil)
+                        ForEach(home.folders) { folder in
+                            Button(folder.name) {
+                                Task { await moveSession(to: folder.id) }
+                            }
+                            .disabled(localSession.folderID == folder.id)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "folder")
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if let payload = sharePayload {
                     ShareLink(item: payload.text, subject: Text(payload.subject)) {
@@ -121,6 +142,12 @@ struct SessionDetailView: View {
             }
             .frame(maxWidth: .infinity)
         }
+    }
+
+    private func moveSession(to folderID: UUID?) async {
+        localSession.folderID = folderID
+        try? await store.upsert(localSession)
+        await home.loadSessions()
     }
 
     // MARK: - Share
@@ -223,6 +250,7 @@ struct SessionDetailView: View {
             if !title.isEmpty { localSession.title = title }
             let sessionToSave = localSession
             try? await store.upsert(sessionToSave)
+            await home.loadSessions()
             summaryState = .loaded(summary)
         } catch {
             summaryState = error is CancellationError ? .idle : .failed(error.localizedDescription)
@@ -307,7 +335,7 @@ struct SessionDetailView: View {
             ],
             response_format: ResponseFormat(type: "json_object"),
             max_tokens: 2200,
-            temperature: 0.15
+            temperature: 0
         )
 
         do {
@@ -347,6 +375,7 @@ struct SessionDetailView: View {
             if !titleText.isEmpty { localSession.title = titleText }
             let sessionToSave = localSession
             try? await store.upsert(sessionToSave)
+            await home.loadSessions()
 
             summaryState = .loaded(summaryText)
 

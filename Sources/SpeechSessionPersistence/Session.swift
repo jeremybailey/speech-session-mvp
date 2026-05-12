@@ -34,6 +34,12 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var inputType: SessionInputType
     /// User-selected intent for audio (and audio file) entries; defaults to clinical visit for legacy data.
     public var entryIntent: SessionEntryIntent
+    /// Optional folder assignment; `nil` means the entry is only listed under “All entries.”
+    public var folderID: UUID?
+
+    enum CodingKeys: String, CodingKey {
+        case id, date, transcript, title, summary, inputType, entryIntent, folderID
+    }
 
     public init(
         id: UUID = UUID(),
@@ -42,7 +48,8 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
         title: String? = nil,
         summary: String? = nil,
         inputType: SessionInputType = .audio,
-        entryIntent: SessionEntryIntent = .clinicalVisit
+        entryIntent: SessionEntryIntent = .clinicalVisit,
+        folderID: UUID? = nil
     ) {
         self.id = id
         self.date = date
@@ -51,6 +58,7 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
         self.summary = summary
         self.inputType = inputType
         self.entryIntent = entryIntent
+        self.folderID = folderID
     }
 
     // Custom decoder so existing persisted sessions (without inputType) default to .audio.
@@ -63,5 +71,6 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
         summary   = try c.decodeIfPresent(String.self, forKey: .summary)
         inputType = try c.decodeIfPresent(SessionInputType.self, forKey: .inputType) ?? .audio
         entryIntent = try c.decodeIfPresent(SessionEntryIntent.self, forKey: .entryIntent) ?? .clinicalVisit
+        folderID = try c.decodeIfPresent(UUID.self, forKey: .folderID)
     }
 }

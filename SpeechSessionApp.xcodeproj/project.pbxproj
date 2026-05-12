@@ -23,7 +23,7 @@
 		BF11 /* SummaryCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR11 /* SummaryCardView.swift */; };
 		BF12 /* DocumentScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR12 /* DocumentScannerView.swift */; };
 		BF13 /* DocumentScanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR13 /* DocumentScanService.swift */; };
-		BF14 /* VoiceMemoShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = PR02 /* VoiceMemoShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		BF14 /* VoiceMemoShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = PR02 /* VoiceMemoShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		BF15 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR15 /* ShareViewController.swift */; };
 		BF16 /* MainInterface.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = FR19 /* MainInterface.storyboard */; };
 		BF17 /* DocumentFileExtractService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR20 /* DocumentFileExtractService.swift */; };
@@ -34,6 +34,10 @@
 		BF22 /* CloudOpenAIConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR25 /* CloudOpenAIConfiguration.swift */; };
 		BF23 /* OpenAIRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR26 /* OpenAIRouting.swift */; };
 		BF24 /* kinde-auth.json in Resources */ = {isa = PBXBuildFile; fileRef = FR27 /* kinde-auth.json */; };
+		BF25 /* GlobalSummaryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR28 /* GlobalSummaryModels.swift */; };
+		BF26 /* EntriesShelfView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR29 /* EntriesShelfView.swift */; };
+		BF27 /* AppShellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR30 /* AppShellView.swift */; };
+		BF28 /* AddEntryFlowSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR31 /* AddEntryFlowSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -47,15 +51,15 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		CPY01 /* Embed App Extensions */ = {
+		CPY01 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				BF14 /* VoiceMemoShareExtension.appex in Embed App Extensions */,
+				BF14 /* VoiceMemoShareExtension.appex in Embed Foundation Extensions */,
 			);
-			name = "Embed App Extensions";
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -87,7 +91,11 @@
 		FR24 /* KindeAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KindeAuthManager.swift; sourceTree = "<group>"; };
 		FR25 /* CloudOpenAIConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudOpenAIConfiguration.swift; sourceTree = "<group>"; };
 		FR26 /* OpenAIRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIRouting.swift; sourceTree = "<group>"; };
-		FR27 /* kinde-auth.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = kinde-auth.json; sourceTree = "<group>"; };
+		FR27 /* kinde-auth.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "kinde-auth.json"; sourceTree = "<group>"; };
+		FR28 /* GlobalSummaryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSummaryModels.swift; sourceTree = "<group>"; };
+		FR29 /* EntriesShelfView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntriesShelfView.swift; sourceTree = "<group>"; };
+		FR30 /* AppShellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellView.swift; sourceTree = "<group>"; };
+		FR31 /* AddEntryFlowSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddEntryFlowSheet.swift; sourceTree = "<group>"; };
 		PR01 /* SpeechSessionApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpeechSessionApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		PR02 /* VoiceMemoShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VoiceMemoShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -126,9 +134,11 @@
 			isa = PBXGroup;
 			children = (
 				FR01 /* AppModel.swift */,
+				FR30 /* AppShellView.swift */,
 				FR02 /* SpeechSessionAppApp.swift */,
 				FR03 /* ContentView.swift */,
 				FR04 /* HomeView.swift */,
+				FR31 /* AddEntryFlowSheet.swift */,
 				FR05 /* RecordingView.swift */,
 				FR06 /* SessionDetailView.swift */,
 				FR07 /* Assets.xcassets */,
@@ -145,6 +155,8 @@
 				FR25 /* CloudOpenAIConfiguration.swift */,
 				FR26 /* OpenAIRouting.swift */,
 				FR27 /* kinde-auth.json */,
+				FR28 /* GlobalSummaryModels.swift */,
+				FR29 /* EntriesShelfView.swift */,
 				FR22 /* LaunchScreen.storyboard */,
 				FR14 /* Info.plist */,
 				FR18 /* SpeechSessionApp.entitlements */,
@@ -182,7 +194,7 @@
 				SRC01 /* Sources */,
 				FW01 /* Frameworks */,
 				RES01 /* Resources */,
-				CPY01 /* Embed App Extensions */,
+				CPY01 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
@@ -226,7 +238,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1500;
-				LastUpgradeCheck = 1500;
+				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					NT01 = {
 						CreatedOnToolsVersion = 15.0;
@@ -286,9 +298,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				BF01 /* AppModel.swift in Sources */,
+				BF27 /* AppShellView.swift in Sources */,
 				BF02 /* SpeechSessionAppApp.swift in Sources */,
 				BF03 /* ContentView.swift in Sources */,
 				BF04 /* HomeView.swift in Sources */,
+				BF28 /* AddEntryFlowSheet.swift in Sources */,
 				BF05 /* RecordingView.swift in Sources */,
 				BF06 /* SessionDetailView.swift in Sources */,
 				BF08 /* SettingsView.swift in Sources */,
@@ -303,6 +317,8 @@
 				BF21 /* KindeAuthManager.swift in Sources */,
 				BF22 /* CloudOpenAIConfiguration.swift in Sources */,
 				BF23 /* OpenAIRouting.swift in Sources */,
+				BF25 /* GlobalSummaryModels.swift in Sources */,
+				BF26 /* EntriesShelfView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -333,20 +349,48 @@
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = DGV2W6W2AK;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"DEBUG=1",
 					"$(inherited)",
 				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -360,13 +404,41 @@
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = DGV2W6W2AK;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 			};
 			name = Release;
@@ -377,8 +449,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = SpeechSessionApp/SpeechSessionApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
-				DEVELOPMENT_TEAM = DGV2W6W2AK;
+				CURRENT_PROJECT_VERSION = 6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SpeechSessionApp/Info.plist;
@@ -387,7 +458,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.05;
+				MARKETING_VERSION = 1.06;
 				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -406,8 +477,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = SpeechSessionApp/SpeechSessionApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
-				DEVELOPMENT_TEAM = DGV2W6W2AK;
+				CURRENT_PROJECT_VERSION = 6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SpeechSessionApp/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -415,7 +485,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.05;
+				MARKETING_VERSION = 1.06;
 				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -434,8 +504,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = VoiceMemoShareExtension/VoiceMemoShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = DGV2W6W2AK;
+				CURRENT_PROJECT_VERSION = 6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VoiceMemoShareExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -444,7 +513,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.01;
+				MARKETING_VERSION = 1.06;
 				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot.VoiceMemoShareExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -461,8 +530,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = VoiceMemoShareExtension/VoiceMemoShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = DGV2W6W2AK;
+				CURRENT_PROJECT_VERSION = 6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VoiceMemoShareExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -471,7 +539,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.01;
+				MARKETING_VERSION = 1.06;
 				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot.VoiceMemoShareExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -514,6 +582,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		PKG01 /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		PKG02 /* XCRemoteSwiftPackageReference "kinde-sdk-ios" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -524,13 +599,6 @@
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCLocalSwiftPackageReference section */
-		PKG01 /* XCLocalSwiftPackageReference "." */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = .;
-		};
-/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		SPD01 /* SpeechSessionFeatures */ = {

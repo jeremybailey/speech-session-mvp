@@ -17,6 +17,8 @@ struct VisitSummaryFields {
     var allergies: String?
     var testsAndLabs: String?
     var followUp: String?
+    /// Information that matters but does not fit any other section; do not duplicate structured fields.
+    var otherNotes: String?
 
     /// Ordered (heading, body) pairs — must match prompts and section headers in SummaryCategoryCard heuristics.
     private static let sectionSpecs: [(heading: String, keyPath: KeyPath<VisitSummaryFields, String?>)] = [
@@ -29,6 +31,7 @@ struct VisitSummaryFields {
         ("Allergies", \.allergies),
         ("Tests & Labs Ordered", \.testsAndLabs),
         ("Follow-up", \.followUp),
+        ("Other Notes", \.otherNotes),
     ]
 
     /// Markdown with only non-empty sections; no extra ## headers.
@@ -72,6 +75,7 @@ struct VisitSummaryOpenAIResponse: Codable {
     var allergies: String?
     var testsAndLabs: String?
     var followUp: String?
+    var otherNotes: String?
 
     var fields: VisitSummaryFields {
         VisitSummaryFields(
@@ -85,7 +89,8 @@ struct VisitSummaryOpenAIResponse: Codable {
             vaccinations: vaccinations,
             allergies: allergies,
             testsAndLabs: testsAndLabs,
-            followUp: followUp
+            followUp: followUp,
+            otherNotes: otherNotes
         )
     }
 }
@@ -105,9 +110,10 @@ enum VisitSummaryJSONParser {
         let dec = JSONDecoder()
         dec.keyDecodingStrategy = .convertFromSnakeCase
         if let typed = try? dec.decode(VisitSummaryOpenAIResponse.self, from: data) {
-            return typed.fields
+            return mergeAlternateMedicationKeys(into: typed.fields, rawObjectData: data)
         }
-        return flexibleFields(fromJSONObjectData: data)
+        guard let merged = flexibleFields(fromJSONObjectData: data) else { return nil }
+        return mergeAlternateMedicationKeys(into: merged, rawObjectData: data)
     }
 
     /// If the model prefixed JSON with commentary, isolate `{ ... }` for parsing.
@@ -132,6 +138,36 @@ enum VisitSummaryJSONParser {
             s = String(s[..<range.lowerBound])
         }
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func mergeAlternateMedicationKeys(into fields: VisitSummaryFields, rawObjectData data: Data) -> VisitSummaryFields {
+        var f = fields
+        let medsEmpty = f.medications?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+        guard medsEmpty, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return f
+        }
+        if let s = coercedMedicationsString(fromTopLevelJSONObject: obj) {
+            f.medications = s
+        }
+        return f
+    }
+
+    /// Walks common medication key spellings; coerces arrays/objects to markdown lines.
+    static func coercedMedicationsString(fromTopLevelJSONObject obj: [String: Any]) -> String? {
+        let orderedKeys = [
+            "medications", "medication", "medicationItems", "medication_items",
+            "medicationList", "med_list", "meds", "drugs", "prescription", "prescriptions",
+            "rx", "medicine", "medicines",
+        ]
+        for want in orderedKeys {
+            let nw = normalizeJSONKey(want)
+            for (dictKey, val) in obj where normalizeJSONKey(dictKey) == nw {
+                if let s = coerceOpenAIJSONValue(val), !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return s
+                }
+            }
+        }
+        return nil
     }
 
     private static func flexibleFields(fromJSONObjectData data: Data) -> VisitSummaryFields? {
@@ -161,6 +197,10 @@ enum VisitSummaryJSONParser {
         let medications = str([
             "medications",
             "medication",
+            "medicationitems",
+            "medication_items",
+            "medicationlist",
+            "med_list",
             "meds",
             "drugs",
             "prescription",
@@ -174,6 +214,7 @@ enum VisitSummaryJSONParser {
         let allergies = str(["allergies", "allergy"])
         let testsAndLabs = str(["testsandlabs", "tests_and_labs", "labs", "tests", "imaging"])
         let followUp = str(["followup", "follow_up", "follow-up"])
+        let otherNotes = str(["othernotes", "other_notes", "additionalnotes", "additional_notes", "misc"])
 
         return VisitSummaryFields(
             title: title,
@@ -186,12 +227,76 @@ enum VisitSummaryJSONParser {
             vaccinations: vaccinations,
             allergies: allergies,
             testsAndLabs: testsAndLabs,
-            followUp: followUp
+            followUp: followUp,
+            otherNotes: otherNotes
         )
     }
 
     private static func normalizeJSONKey(_ key: String) -> String {
         key.lowercased().replacingOccurrences(of: "_", with: "").replacingOccurrences(of: "-", with: "")
+    }
+
+    private static let medicationItemNameKeys: Set<String> = ["name", "drug", "medication", "med", "drugname"]
+
+    private static func looksLikeMedicationItem(_ dict: [String: Any]) -> Bool {
+        for key in dict.keys {
+            if medicationItemNameKeys.contains(normalizeJSONKey(key)) { return true }
+        }
+        return false
+    }
+
+    /// Prefer one bullet per drug with stable field order so classes are not visually merged across drugs.
+    private static func coerceMedicationItemDict(_ dict: [String: Any]) -> String? {
+        func norm(_ key: String) -> String { normalizeJSONKey(key) }
+
+        func stringForCanonical(_ canonicalKeys: [String]) -> String? {
+            for (rawKey, rawVal) in dict {
+                let nk = norm(rawKey)
+                guard canonicalKeys.contains(where: { norm($0) == nk }) else { continue }
+                guard let s = coerceOpenAIJSONValue(rawVal)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !s.isEmpty else { continue }
+                return s
+            }
+            return nil
+        }
+
+        let nameKeys = ["name", "drug", "medication", "med", "drug_name"]
+        guard let name = stringForCanonical(nameKeys) else { return nil }
+
+        let orderedPairs: [(label: String, keys: [String])] = [
+            ("", ["strength", "dose", "dosage", "sig", "sig_or_dose", "amount"]),
+            ("", ["frequency", "scheduling", "how_often"]),
+            ("", ["route"]),
+            ("", ["duration"]),
+            ("", ["instructions", "directions", "patient_instructions", "prescriber_instructions", "changes"]),
+            ("Class (source)", ["class_or_category", "class", "category", "drug_class", "pharmacologic_class"]),
+        ]
+
+        var fragments: [String] = []
+        for spec in orderedPairs {
+            if let v = stringForCanonical(spec.keys) {
+                if spec.label.isEmpty {
+                    fragments.append(v)
+                } else {
+                    fragments.append("\(spec.label): \(v)")
+                }
+            }
+        }
+
+        let consumedNorm = Set(
+            nameKeys.map { norm($0) }
+                + orderedPairs.flatMap { $0.keys }.map { norm($0) }
+        )
+        for rawKey in dict.keys.sorted() {
+            let nk = norm(rawKey)
+            guard !consumedNorm.contains(nk) else { continue }
+            guard let v = coerceOpenAIJSONValue(dict[rawKey]), !v.isEmpty else { continue }
+            fragments.append("\(rawKey): \(v)")
+        }
+
+        let tail = fragments.filter { !$0.isEmpty }.joined(separator: "; ")
+        if tail.isEmpty { return "- **\(name)**" }
+        return "- **\(name)** — \(tail)"
     }
 
     /// Turn arbitrary JSON fragment into scribe text (strings, arrays of strings/objects, single objects).
@@ -202,13 +307,19 @@ enum VisitSummaryJSONParser {
             return t.isEmpty ? nil : t
         }
         if let arr = value as? [Any] {
-            let lines = arr.compactMap { coerceOpenAIJSONValue($0) }.filter { !$0.isEmpty }
+            let lines = arr.compactMap { el -> String? in
+                if let dict = el as? [String: Any], looksLikeMedicationItem(dict) {
+                    return coerceMedicationItemDict(dict)
+                }
+                return coerceOpenAIJSONValue(el)
+            }.filter { !$0.isEmpty }
             guard !lines.isEmpty else { return nil }
             return lines.count == 1
                 ? lines[0]
                 : lines.map { $0.hasPrefix("- ") ? $0 : "- \($0)" }.joined(separator: "\n")
         }
         if let dict = value as? [String: Any] {
+            if looksLikeMedicationItem(dict) { return coerceMedicationItemDict(dict) }
             let parts = dict.keys.sorted().compactMap { key -> String? in
                 guard let v = coerceOpenAIJSONValue(dict[key]), !v.isEmpty else { return nil }
                 return "\(key): \(v)"
@@ -249,14 +360,83 @@ enum VisitSummaryPromptGuidance {
     of today’s plan, summarize it briefly in Medications AND keep the clinician’s prescribing intent under Treatment Plan.
     """
 
-    /// Forbid extra JSON keys / markdown headings on visit summaries.
-    static let structuredOutputConstraint = """
-    Output format: Respond with JSON ONLY. Include "title" (3–6 words). Include ONLY these optional keys \
-    when relevant (omit keys with no content): chiefComplaint, symptoms, findings, medications, treatmentPlan, \
-    vaccinations, allergies, testsAndLabs, followUp. Each value MUST be a JSON string OR a JSON array of strings \
-    (arrays of small JSON objects are allowed for multi-line items like prescription labels). Prefer "- item" bullets \
-    inside strings when possible. Use the section keys for clinical content rather than inventing new top-level keys \
-    for the same information. A legacy "summary" markdown field is acceptable only when every section key would be empty.
+    /// Exact JSON key contract per routed `contentKind` (OpenAI `json_object`). `otherNotes` catches important residue only.
+    static func structuredJSONSpec(for contentKind: SummaryContentKind) -> String {
+        let commonRules = """
+        Output format: Respond with JSON ONLY. Include "title" (3–6 words).
+        Always include the key "otherNotes" when there is substantive information that does not fit any other allowed field; \
+        otherwise omit "otherNotes" entirely. Never duplicate the same fact in otherNotes and another field. \
+        Do not invent clinical facts. Copy strengths and doses verbatim from the source when given.
+        Each value MUST be a JSON string OR a JSON array of strings unless this spec says otherwise for a specific key.
+        A legacy "summary" markdown field is acceptable ONLY when every other section key would be empty.
+        """
 
-    """
+        switch contentKind {
+        case .visitEncounter:
+            return """
+            \(commonRules)
+
+            Allowed optional keys for visit dialogue/encounters (omit when empty): \
+            chiefComplaint, symptoms, findings, medications, treatmentPlan, vaccinations, allergies, testsAndLabs, followUp, otherNotes.
+            For medications use a string or array of strings; each line must stay tied to the drug it describes (no shared trailing class for unrelated drugs).
+            """
+
+        case .carePlanEducation:
+            return """
+            \(commonRules)
+
+            Allowed optional keys for care plans & education documents (omit when empty): \
+            chiefComplaint, symptoms, findings, medications, treatmentPlan, vaccinations, allergies, testsAndLabs, followUp, otherNotes.
+            Prefer treatmentPlan for patient education, self-management, lifestyle, warning signs, and clinician-directed steps stated in the document.
+            For medications use a string or array of strings, or an array of medication objects (see medication_reference spec for object shape).
+            """
+
+        case .medicationReference:
+            return """
+            \(commonRules)
+
+            Required: "title" (3–6 words summarizing the list or document).
+            Required when any drug appears: "medications" as a JSON array of objects—one object per drug—with ONLY these properties on each object \
+            (omit a property rather than guessing): \
+            name (required), strength, frequency, route, duration, instructions, classOrCategory.
+            For classOrCategory: include ONLY if the source explicitly states a class, category, or indication for THAT same drug line. \
+            Never infer pharmacologic class from the drug name (e.g. do not label drugs by textbook classification unless written in the source).
+            Allowed optional top-level keys (omit when empty): allergies, treatmentPlan, testsAndLabs, vaccinations, followUp, chiefComplaint, symptoms, findings, otherNotes.
+            Do not stuff free-text medication lines into otherNotes when they belong in medications[].
+            Always use the exact top-level JSON key "medications" for the drug list (never medicationItems or medication_list).
+            """
+
+        case .personalJournal:
+            return """
+            \(commonRules)
+
+            Allowed optional keys for personal journaling (omit when empty): \
+            chiefComplaint, symptoms, findings, medications, treatmentPlan, vaccinations, allergies, testsAndLabs, followUp, otherNotes.
+            treatmentPlan captures self-care intentions the author stated, not a fictional clinic visit plan.
+            """
+
+        case .mixedOther:
+            return """
+            \(commonRules)
+
+            Allowed optional keys when the text blends formats (omit when empty): \
+            chiefComplaint, symptoms, findings, medications, treatmentPlan, vaccinations, allergies, testsAndLabs, followUp, otherNotes.
+            Use otherNotes for important details that have no natural home after applying category rules; keep otherNotes concise.
+            For medications, prefer an array of per-drug objects (see medication_reference) when listing multiple drugs.
+            """
+        }
+    }
+}
+
+// MARK: - Global summary medication hydration
+
+extension GlobalSummaryPayload {
+    /// `GlobalSummaryPayload` decodes `medications` only as `String` or `[String]`; recover object/array JSON and keys like `medicationItems`.
+    mutating func hydrateMedicationsIfNeeded(from rawResponseJSONData: Data) {
+        let empty = medications?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+        guard empty,
+              let obj = try? JSONSerialization.jsonObject(with: rawResponseJSONData) as? [String: Any],
+              let s = VisitSummaryJSONParser.coercedMedicationsString(fromTopLevelJSONObject: obj) else { return }
+        medications = s
+    }
 }
