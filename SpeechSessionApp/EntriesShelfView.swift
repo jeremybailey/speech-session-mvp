@@ -15,11 +15,6 @@ enum EntryListScope: Hashable {
     }
 }
 
-/// Pushes `ScopedHealthSummaryView` for the same scope as the entry list.
-struct SummaryNavigationMarker: Hashable {
-    let scope: EntryListScope
-}
-
 /// Root shelf: “All entries” + user folders (like iOS Voice Memos).
 struct EntriesShelfView: View {
     @ObservedObject var home: HomeViewModel

@@ -29,6 +29,8 @@ struct HomeView: View {
     @AppStorage("speechSession.whisperKitExperimentalUnlock") private var whisperKitExperimentalUnlock = false
 
     @State private var showSettings = false
+    /// Sheet (not navigation push) avoids nested-`NavigationStack` presentation bugs on iPad that swallow all touches.
+    @State private var showHealthSummarySheet = false
     @State private var pulseAnimation = false
     @State private var showDocumentScanner = false
     @State private var showCameraCapture = false
@@ -119,7 +121,9 @@ struct HomeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NavigationLink(value: SummaryNavigationMarker(scope: listScope)) {
+            Button {
+                showHealthSummarySheet = true
+            } label: {
                 HStack(alignment: .center, spacing: 14) {
                     Image(systemName: "heart.text.square.fill")
                         .font(.system(size: 26, weight: .medium))
@@ -187,9 +191,6 @@ struct HomeView: View {
         .animation(.default, value: displayedSessions.map(\.id))
         .navigationTitle(listTitle)
         .navigationBarTitleDisplayMode(.large)
-        .navigationDestination(for: SummaryNavigationMarker.self) { marker in
-            ScopedHealthSummaryView(scope: marker.scope, home: home, store: store)
-        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showSettings = true } label: {
@@ -239,7 +240,20 @@ struct HomeView: View {
             Task { await processPhotoPickerItems(newItems) }
         }
         .sheet(isPresented: $showSettings) {
-            SettingsView()
+            SettingsView(isPresented: $showSettings)
+        }
+        .sheet(isPresented: $showHealthSummarySheet) {
+            NavigationStack {
+                ScopedHealthSummaryView(scope: listScope, home: home, store: store)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showHealthSummarySheet = false }
+                        }
+                    }
+            }
+            .background(BrandPalette.canvas.ignoresSafeArea())
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .fullScreenCover(isPresented: $showCameraCapture) {
             CameraCaptureView { image in

@@ -2,6 +2,11 @@ import SwiftUI
 import SpeechSessionFeatures
 
 struct SettingsView: View {
+    /// Drives sheet dismissal from the presenter’s `isPresented` binding so UIKit tears down
+    /// presentation cleanly (nested `NavigationStack` + `Environment(\.dismiss)` can leave a
+    /// full-screen hit blocker on iPad after the sheet animates out).
+    @Binding var isPresented: Bool
+
     @AppStorage("speechSession.transcriptionBackend") private var backendRaw = TranscriptionBackend.onDeviceWhisperKit.rawValue
     @AppStorage("speechSession.openaiAPIKey") private var openAIAPIKey = ""
     @AppStorage("speechSession.whisperKitModel") private var whisperKitModel = DeviceCapabilityProfile.tinyWhisperKitModel
@@ -10,7 +15,6 @@ struct SettingsView: View {
     @AppStorage("speechSession.whisperKitExperimentalUnlock") private var whisperKitExperimentalUnlock = false
     @AppStorage("speechSession.skippedSignInGate") private var skippedSignInGate = false
     @EnvironmentObject private var kindeAuth: KindeAuthManager
-    @Environment(\.dismiss) private var dismiss
     @State private var accountActionError: String?
 
     private var selectedBackend: TranscriptionBackend {
@@ -198,7 +202,7 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button("Done") { isPresented = false }
                         .fontWeight(.semibold)
                 }
             }
@@ -211,7 +215,9 @@ struct SettingsView: View {
                 Text(accountActionError ?? "")
             }
         }
-        .background(BrandPalette.canvas)
+        .background(BrandPalette.canvas.ignoresSafeArea())
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
         .task {
             normalizeSettingsForDevice()
         }

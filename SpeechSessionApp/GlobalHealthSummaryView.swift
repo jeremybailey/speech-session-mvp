@@ -56,9 +56,12 @@ struct ScopedHealthSummaryView: View {
                 content
             }
         }
-        .background(BrandPalette.canvas.ignoresSafeArea())
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(BrandPalette.canvas)
         .navigationTitle("Summary")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(BrandPalette.canvas, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 if let payload = sharePayload {
@@ -132,7 +135,7 @@ struct ScopedHealthSummaryView: View {
             .padding(.horizontal, 20)
             Spacer()
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var loadingCard: some View {
