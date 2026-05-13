@@ -11,7 +11,7 @@ enum AddEntryMedium: Hashable {
     var navigationTitle: String {
         switch self {
         case .audio: "Audio"
-        case .photo: "Photo"
+        case .photo: "Photos"
         case .documents: "Documents"
         }
     }
@@ -56,10 +56,6 @@ struct AddEntryFlowSheet: View {
     private var mediumSelectionRoot: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("What are you adding?")
-                    .font(.title2.weight(.bold))
-                    .accessibilityAddTraits(.isHeader)
-
                 VStack(spacing: 14) {
                     AddEntryBigChoiceRow(
                         title: "Audio",
@@ -71,8 +67,8 @@ struct AddEntryFlowSheet: View {
                     }
 
                     AddEntryBigChoiceRow(
-                        title: "Photo",
-                        subtitle: "Use the camera or pick pictures to read text",
+                        title: "Photos",
+                        subtitle: "Use the camera or library to read text from images",
                         systemImage: "photo.circle.fill",
                         tint: .green
                     ) {
