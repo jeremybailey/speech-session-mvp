@@ -13,6 +13,7 @@ final class KindeAuthManager: ObservableObject {
     init() {
         Self.configureOnce()
         syncState()
+        completeSummaryEngineBootstrapIfSessionRestoredWithoutLogin()
     }
 
     private static func configureOnce() {
@@ -37,6 +38,7 @@ final class KindeAuthManager: ObservableObject {
     func login() async throws {
         try await KindeSDKAPI.auth.login()
         syncState()
+        applyFirstAccountOpenAISummaryDefaultIfNeeded()
     }
 
     func logout() async {
@@ -84,5 +86,38 @@ final class KindeAuthManager: ObservableObject {
                 return "Could not obtain an access token. Sign in again."
             }
         }
+    }
+
+    /// Once true, we never auto-change summary engine on login (user / restored-session state wins).
+    private static let summaryEngineAccountBootstrapCompletedKey = "speechSession.summaryEngineAccountBootstrapCompleted"
+
+    /// Cold start with a persisted Kinde session: respect whatever summary engine is already in AppStorage.
+    private func completeSummaryEngineBootstrapIfSessionRestoredWithoutLogin() {
+        guard UserDefaults.standard.object(forKey: Self.summaryEngineAccountBootstrapCompletedKey) == nil else { return }
+        guard isSignedIn else { return }
+        UserDefaults.standard.set(true, forKey: Self.summaryEngineAccountBootstrapCompletedKey)
+    }
+
+    /// First successful **interactive** login / sign-up on this install: prefer OpenAI when cloud (or debug BYOK) is ready.
+    /// Returning users who open the app already signed in are handled in `completeSummaryEngineBootstrapIfSessionRestoredWithoutLogin`.
+    private func applyFirstAccountOpenAISummaryDefaultIfNeeded() {
+        guard UserDefaults.standard.object(forKey: Self.summaryEngineAccountBootstrapCompletedKey) == nil else { return }
+        guard isSignedIn else { return }
+        if isCloudSummaryAvailableWhileSignedIn {
+            UserDefaults.standard.set("openai", forKey: "speechSession.summaryBackend")
+        }
+        UserDefaults.standard.set(true, forKey: Self.summaryEngineAccountBootstrapCompletedKey)
+    }
+
+    /// Same rule as `SettingsView.cloudInferenceReady` (without SwiftUI).
+    private var isCloudSummaryAvailableWhileSignedIn: Bool {
+        let signedInWithProxy = isSignedIn && CloudOpenAIConfiguration.hasProxy
+        #if DEBUG
+        let byokKey = (UserDefaults.standard.string(forKey: "speechSession.openaiAPIKey") ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return signedInWithProxy || !byokKey.isEmpty
+        #else
+        return signedInWithProxy
+        #endif
     }
 }

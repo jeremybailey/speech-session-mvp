@@ -31,6 +31,7 @@ struct HomeView: View {
     @State private var showSettings = false
     @State private var pulseAnimation = false
     @State private var showDocumentScanner = false
+    @State private var showCameraCapture = false
     /// Populated immediately before presenting the unified file importer (`showFileImporter`).
     @State private var pendingFileImportKind: FileImportKind?
     @State private var showFileImporter = false
@@ -210,7 +211,12 @@ struct HomeView: View {
                 },
                 onPhotoCapture: {
                     scanErrorMessage = nil
-                    showDocumentScanner = true
+                    guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+                        scanErrorMessage =
+                            "Camera isn’t available on this device. Use an iPhone or iPad with a camera, or choose photos from your library."
+                        return
+                    }
+                    showCameraCapture = true
                 },
                 onPhotoLibrary: {
                     scanErrorMessage = nil
@@ -236,6 +242,15 @@ struct HomeView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
+        }
+        .fullScreenCover(isPresented: $showCameraCapture) {
+            CameraCaptureView { image in
+                showCameraCapture = false
+                guard let image else { return }
+                isScanningDocument = true
+                scanErrorMessage = nil
+                Task { await processPickedImagesForOCR([image]) }
+            }
         }
         .fullScreenCover(isPresented: $showDocumentScanner) {
             DocumentScannerView { scan in
@@ -624,11 +639,9 @@ struct HomeView: View {
         }
     }
 
-    /// Loads picker items and OCRs images with the same pipeline as scans.
+    /// Loads picker items and OCRs images with the same pipeline as plain camera captures and document scans.
     private func processPhotoPickerItems(_ items: [PhotosPickerItem]) async {
         await MainActor.run { photoPickerItems.removeAll(keepingCapacity: false) }
-
-        defer { isScanningDocument = false }
 
         var images: [UIImage] = []
         images.reserveCapacity(items.count)
@@ -640,11 +653,15 @@ struct HomeView: View {
             }
         }
 
+        await processPickedImagesForOCR(images)
+    }
+
+    private func processPickedImagesForOCR(_ images: [UIImage]) async {
+        defer { isScanningDocument = false }
         guard !images.isEmpty else {
             scanErrorMessage = DocumentScanError.noImages.errorDescription
             return
         }
-
         do {
             let transcript = try await DocumentScanService().transcribe(images: images)
             try await persistDocumentTranscript(transcript, inputType: .documentImage)

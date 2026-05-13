@@ -2,6 +2,10 @@ import SwiftUI
 import SpeechSessionFeatures
 import SpeechSessionPersistence
 
+private enum OnDeviceSummaryMergeError: Error {
+    case emptyLayer
+}
+
 // MARK: - ScopedHealthSummaryView
 
 /// Health summary for **All entries** (App Group cache) or a **single folder** (`SessionFolder` cache).
@@ -334,67 +338,102 @@ struct ScopedHealthSummaryView: View {
         await generateSummaryOpenAI()
     }
 
-    private func entryBlocks() -> String {
-        scopedSessions.enumerated().map { i, session -> String in
-            let dateLabel = session.date.formatted(date: .abbreviated, time: .shortened)
-            let heading = session.title.map { "\($0) — \(dateLabel)" } ?? dateLabel
-            let transcript = session.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Prefer raw transcript so rollup summaries are not starved after a compressed per-entry summary omits details.
-            let body = transcript.isEmpty ? (session.summary ?? "") : transcript
-            return "=== Entry \(i + 1): \(heading) ===\n\(body)"
-        }.joined(separator: "\n\n")
-    }
-
-    private func systemPromptForOpenAI() -> String {
-        let count = scopedSessions.count
-        let intro: String
+    private func rollupScopeIntro(totalAppointments: Int) -> String {
         switch scope {
         case .all:
-            intro = """
-            You are a medical scribe synthesizing a longitudinal health profile across \
-            \(count) appointment\(count == 1 ? "" : "s").
-            """
+            return "You are a medical scribe synthesizing a longitudinal health profile across \(totalAppointments) appointment\(totalAppointments == 1 ? "" : "s")."
         case .folder:
             let name = folderRecord?.name ?? "this folder"
-            intro = """
-            You are a medical scribe synthesizing a longitudinal health profile for the folder "\(name)" across \
-            \(count) appointment\(count == 1 ? "" : "s").
+            return "You are a medical scribe synthesizing a longitudinal health profile for the folder \"\(name)\" across \(totalAppointments) appointment\(totalAppointments == 1 ? "" : "s")."
+        }
+    }
+
+    private func openAIMapSystemPrompt(batchIndex: Int, totalBatches: Int, totalAppointments: Int) -> String {
+        let intro = rollupScopeIntro(totalAppointments: totalAppointments)
+        if totalBatches == 1 {
+            return """
+            \(intro)
+            Review all provided entry data and create a comprehensive cross-visit health overview.
+            Only include information explicitly stated — do not infer or invent clinical details.
+            Omit any JSON field where there is no relevant information across the entries.
+
+            \(GlobalSummaryLongitudinalPrompts.categoryRulesAndJSONSchema)
             """
         }
-
         return """
         \(intro)
-        Review all provided entry data and create a comprehensive cross-visit health overview.
-        Only include information explicitly stated — do not infer or invent clinical details.
-        Omit any JSON field where there is no relevant information across the entries.
+        You are working on time-window batch \(batchIndex) of \(totalBatches) (entries are ordered oldest to newest across the full record). \
+        Only include facts explicitly stated in the entry data in this message—not from other batches. \
+        Produce a partial longitudinal JSON summary for ONLY these visits, using the same schema as the final merged summary. \
+        Omit JSON keys with no relevant content in this batch.
 
-        LONGITUDINAL CATEGORY RULES:
-        - carePlans: Consolidate ALL clinician-directed treatment and planning (medication changes/initiation, \
-        referrals, procedures, therapies, devices, clinical lifestyle/diet instructions from the care team, patient \
-        education, care coordination). Prefer carePlans over biopsychosocialContext for any actionable clinical plan.
-        - followUp: Scheduling and return logistics only (when to return, call-backs)—not the substantive treatment plan.
-        - biopsychosocialContext: ONLY non-clinical psychosocial / life context (stress, bereavement, housing, finances, \
-        support systems, broad mental health themes). Never place referrals, medication plans, procedures, or clinician \
-        orders here; those belong in carePlans, medications, or testsAndLabs.
-
-        Return a JSON object with only the fields that have content:
-        - "chiefComplaint": a concise longitudinal overview of the main problems, reasons for care, and presenting concerns \
-        across visits—the high-level "why" tying entries together—not a verbatim list of labels from every visit unless needed
-        - "symptoms": consolidated current and historical symptoms across all visits
-        - "diagnoses": findings from diagnosed conditions, confirmed medical history, and clinically relevant observations
-        - "medications": current medication list (prioritise most recent entry data)
-        - "carePlans": ongoing treatment and care plans mentioned across visits (see rules above)
-        - "vaccinations": vaccination history explicitly mentioned
-        - "allergies": known allergies and adverse reactions
-        - "testsAndLabs": ordered, pending, or completed tests and labs
-        - "followUp": scheduling/return actions (see rules above)
-        - "biopsychosocialContext": ONLY psychosocial life context (see rules above)
-        - "otherNotes": important details that never fit the categories above (omit if empty; do not duplicate other fields)
-
-        Format each field as a markdown bulleted list (- item) when multiple items exist, \
-        or a single sentence when there is only one item.
-        For "medications", prefer a JSON array of objects with keys name (required), strength, frequency, route, duration, instructions, classOrCategory—use classOrCategory only when explicitly stated for that drug in the entries.
+        \(GlobalSummaryLongitudinalPrompts.categoryRulesAndJSONSchema)
         """
+    }
+
+    private func openAIReduceSystemPrompt(totalBatches: Int, totalAppointments: Int) -> String {
+        let intro = rollupScopeIntro(totalAppointments: totalAppointments)
+        return """
+        \(intro)
+        You are merging \(totalBatches) partial JSON summar\(totalBatches == 1 ? "y" : "ies") into ONE consolidated longitudinal health overview. Each input is valid JSON with the same schema you must output. \
+        Inputs are given in time order (oldest partial first). Merge them: deduplicate overlapping facts; when timelines conflict, prefer the most recent clinical information. \
+        Only include information present in the partials—do not invent details. Omit empty JSON fields.
+
+        \(GlobalSummaryLongitudinalPrompts.categoryRulesAndJSONSchema)
+        """
+    }
+
+    /// Pairwise tree reduce so each API call only merges two (or one orphan) partials—stays within context limits.
+    private func openAIReducePartialJSONsPairwise(
+        transport: OpenAIChatTransport,
+        partials: [String],
+        totalAppointments: Int
+    ) async throws -> String {
+        var layer = partials
+        while layer.count > 1 {
+            try Task.checkCancellation()
+            var next: [String] = []
+            var i = 0
+            while i < layer.count {
+                if i + 1 < layer.count {
+                    let merged = try await openAIReduceOneGroup(
+                        transport: transport,
+                        partialJSONs: [layer[i], layer[i + 1]],
+                        totalAppointments: totalAppointments
+                    )
+                    next.append(merged)
+                    i += 2
+                } else {
+                    next.append(layer[i])
+                    i += 1
+                }
+            }
+            layer = next
+        }
+        guard let single = layer.first else {
+            throw GlobalSummaryOpenAIClient.ClientError.noAssistantContent
+        }
+        return single
+    }
+
+    private func openAIReduceOneGroup(
+        transport: OpenAIChatTransport,
+        partialJSONs: [String],
+        totalAppointments: Int
+    ) async throws -> String {
+        let reduceSys = openAIReduceSystemPrompt(
+            totalBatches: partialJSONs.count,
+            totalAppointments: totalAppointments
+        )
+        let reduceUser = partialJSONs.enumerated().map { i, json in
+            "Partial summary \(i + 1) of \(partialJSONs.count) (consecutive time windows, oldest first):\n\(json)"
+        }.joined(separator: "\n\n---\n\n")
+        return try await GlobalSummaryOpenAIClient.requestJSONObject(
+            transport: transport,
+            system: reduceSys,
+            user: reduceUser,
+            maxTokens: 3500
+        )
     }
 
     private var cloudOpenAINotConfiguredMessage: String {
@@ -411,69 +450,58 @@ struct ScopedHealthSummaryView: View {
             return
         }
 
-        let systemPrompt = systemPromptForOpenAI()
-        let userPrompt = "Synthesise a health summary from these appointments:\n\n\(entryBlocks())"
-
-        struct Msg: Encodable { let role: String; let content: String }
-        struct ResponseFormat: Encodable { let type: String }
-        struct ChatRequest: Encodable {
-            let model: String; let messages: [Msg]
-            let response_format: ResponseFormat; let max_tokens: Int; let temperature: Double
-        }
-        struct RespMsg: Decodable { let content: String? }
-        struct Choice: Decodable { let message: RespMsg }
-        struct ChatResponse: Decodable { let choices: [Choice] }
-        struct APIErr: Decodable { struct Err: Decodable { let message: String? }; let error: Err? }
-
-        var req = URLRequest(url: transport.chatCompletionsURL)
-        req.httpMethod = "POST"
-        do {
-            req.setValue(try await transport.makeAuthorizationHeader(), forHTTPHeaderField: "Authorization")
-        } catch {
-            summaryState = .failed(error.localizedDescription)
-            return
-        }
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.timeoutInterval = 90
-
-        let body = ChatRequest(
-            model: "gpt-4o-mini",
-            messages: [
-                Msg(role: "system", content: systemPrompt),
-                Msg(role: "user", content: userPrompt),
-            ],
-            response_format: ResponseFormat(type: "json_object"),
-            max_tokens: 2000,
-            temperature: 0
-        )
+        let mapLimits = RollupMapLimits.openAI
+        let ordered = GlobalSummaryRollupBatching.chronologicalSessions(scopedSessions)
+        let batches = GlobalSummaryRollupBatching.batches(for: ordered, limits: mapLimits)
+        let total = scopedSessions.count
 
         do {
-            req.httpBody = try JSONEncoder().encode(body)
-            let (data, response) = try await URLSession.shared.data(for: req)
+            var partialJSONStrings: [String] = []
+            var globalIndex = 1
+            for (bIdx, batch) in batches.enumerated() {
+                try Task.checkCancellation()
+                let blocks = GlobalSummaryRollupBatching.entryBlocks(for: batch, globalStartingIndex: globalIndex, limits: mapLimits)
+                globalIndex += batch.count
+                let sys = openAIMapSystemPrompt(
+                    batchIndex: bIdx + 1,
+                    totalBatches: batches.count,
+                    totalAppointments: total
+                )
+                let user = """
+                Synthesize a health summary from these appointment entries (batch \(bIdx + 1) of \(batches.count)):
 
-            guard let http = response as? HTTPURLResponse else {
-                summaryState = .failed("Invalid server response.")
-                return
+                \(blocks)
+                """
+                let content = try await GlobalSummaryOpenAIClient.requestJSONObject(
+                    transport: transport,
+                    system: sys,
+                    user: user,
+                    maxTokens: 2000
+                )
+                partialJSONStrings.append(content)
             }
-            guard (200...299).contains(http.statusCode) else {
-                let msg = (try? JSONDecoder().decode(APIErr.self, from: data))?.error?.message
-                summaryState = .failed(msg ?? "Server error (\(http.statusCode)). Try signing in again under Settings.")
-                return
+
+            let finalContent: String
+            if partialJSONStrings.count == 1 {
+                finalContent = partialJSONStrings[0]
+            } else {
+                try Task.checkCancellation()
+                finalContent = try await openAIReducePartialJSONsPairwise(
+                    transport: transport,
+                    partials: partialJSONStrings,
+                    totalAppointments: total
+                )
             }
-            guard
-                let chat = try? JSONDecoder().decode(ChatResponse.self, from: data),
-                let content = chat.choices.first?.message.content,
-                let contentData = content.data(using: .utf8)
-            else {
+
+            try Task.checkCancellation()
+            guard let contentData = finalContent.data(using: .utf8) else {
                 summaryState = .failed("Could not read the API response. Try again.")
                 return
             }
-
             let payloadDecoder = JSONDecoder()
             payloadDecoder.keyDecodingStrategy = .convertFromSnakeCase
-
             guard let payload = try? payloadDecoder.decode(GlobalSummaryPayload.self, from: contentData) else {
-                let preview = String(content.prefix(300))
+                let preview = String(finalContent.prefix(300))
                 summaryState = .failed("Could not parse the summary JSON. Raw response:\n\n\(preview)")
                 return
             }
@@ -483,8 +511,12 @@ struct ScopedHealthSummaryView: View {
             await persistCache(hydrated)
             summaryState = .loaded(hydrated)
 
+        } catch is CancellationError {
+            summaryState = .idle
+        } catch let clientError as GlobalSummaryOpenAIClient.ClientError {
+            summaryState = .failed(clientError.localizedDescription)
         } catch {
-            summaryState = error is CancellationError ? .idle : .failed(error.localizedDescription)
+            summaryState = .failed(error.localizedDescription)
         }
     }
 
@@ -499,39 +531,112 @@ struct ScopedHealthSummaryView: View {
         }
 
         let count = scopedSessions.count
-        let scopeLine: String
+        let baseScopeLine: String
         switch scope {
         case .all:
-            scopeLine = "Create a longitudinal health summary across \(count) appointment\(count == 1 ? "" : "s")."
+            baseScopeLine = "Create a longitudinal health summary across \(count) appointment\(count == 1 ? "" : "s")."
         case .folder:
             let name = folderRecord?.name ?? "this folder"
-            scopeLine = "Create a longitudinal health summary for folder \"\(name)\" across \(count) appointment\(count == 1 ? "" : "s")."
+            baseScopeLine = "Create a longitudinal health summary for folder \"\(name)\" across \(count) appointment\(count == 1 ? "" : "s")."
         }
 
-        let prompt = """
-        \(scopeLine)
-        Only include information explicitly stated in the provided entry data.
-
-        LONGITUDINAL CATEGORY RULES: Put actionable clinical plans in carePlans, not biopsychosocialContext. \
-        followUp is for scheduling only. biopsychosocialContext is for non-clinical life/psychosocial context only.
-
-        Return a JSON object using only these keys when relevant:
-        chiefComplaint, symptoms, diagnoses, medications, carePlans, vaccinations, allergies, testsAndLabs, followUp, biopsychosocialContext, otherNotes.
-        Prefer a JSON array of medication objects (name required; optional strength, frequency, route, duration, instructions, classOrCategory) when multiple drugs appear—never infer classOrCategory from drug names alone.
-        Use markdown bullet lists for fields with multiple items.
-
-        Entry data:
-
-        \(entryBlocks())
-        """
+        let mapLimits = RollupMapLimits.onDevice
+        let ordered = GlobalSummaryRollupBatching.chronologicalSessions(scopedSessions)
+        let batches = GlobalSummaryRollupBatching.batches(for: ordered, limits: mapLimits)
 
         do {
-            let payload = try await OnDeviceSummaryService().generateGlobalSummary(prompt: prompt)
-            await persistCache(payload)
-            summaryState = .loaded(payload)
+            var partials: [GlobalSummaryPayload] = []
+            var globalIndex = 1
+            for (bIdx, batch) in batches.enumerated() {
+                try Task.checkCancellation()
+                let blocks = GlobalSummaryRollupBatching.entryBlocks(for: batch, globalStartingIndex: globalIndex, limits: mapLimits)
+                globalIndex += batch.count
+
+                let scopeLine: String
+                if batches.count == 1 {
+                    scopeLine = baseScopeLine
+                } else {
+                    scopeLine = "\(baseScopeLine) Batch \(bIdx + 1) of \(batches.count), oldest first; facts from entry data only."
+                }
+
+                // Category rules and output shape live in `LanguageModelSession` instructions / `GlobalSummaryOutput`; keep user prompt tight for on-device context limits.
+                let prompt = """
+                \(scopeLine)
+
+                \(blocks)
+                """
+
+                let partial = try await OnDeviceSummaryService().generateGlobalSummary(prompt: prompt)
+                partials.append(partial)
+            }
+
+            let finalPayload: GlobalSummaryPayload
+            if partials.count == 1 {
+                finalPayload = partials[0]
+            } else {
+                try Task.checkCancellation()
+                finalPayload = try await onDeviceMergePayloadsPairwise(partials)
+            }
+
+            await persistCache(finalPayload)
+            summaryState = .loaded(finalPayload)
+        } catch is CancellationError {
+            summaryState = .idle
         } catch {
-            summaryState = error is CancellationError ? .idle : .failed(error.localizedDescription)
+            summaryState = .failed(error.localizedDescription)
         }
+    }
+
+    /// Tree-shaped merges (pairs) so each on-device call stays within context limits.
+    @available(iOS 26.0, *)
+    private func onDeviceMergePayloadsPairwise(_ payloads: [GlobalSummaryPayload]) async throws -> GlobalSummaryPayload {
+        var layer = payloads
+        while layer.count > 1 {
+            try Task.checkCancellation()
+            var next: [GlobalSummaryPayload] = []
+            var i = 0
+            while i < layer.count {
+                if i + 1 < layer.count {
+                    let merged = try await onDeviceMergePayloadPair(older: layer[i], newer: layer[i + 1])
+                    next.append(merged)
+                    i += 2
+                } else {
+                    next.append(layer[i])
+                    i += 1
+                }
+            }
+            layer = next
+        }
+        guard let single = layer.first else {
+            throw OnDeviceSummaryMergeError.emptyLayer
+        }
+        return single
+    }
+
+    @available(iOS 26.0, *)
+    private func onDeviceMergePayloadPair(
+        older: GlobalSummaryPayload,
+        newer: GlobalSummaryPayload
+    ) async throws -> GlobalSummaryPayload {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let olderData = try encoder.encode(older)
+        let newerData = try encoder.encode(newer)
+        let olderJSON = String(data: olderData, encoding: .utf8) ?? "{}"
+        let newerJSON = String(data: newerData, encoding: .utf8) ?? "{}"
+
+        let reducePrompt = """
+        Merge two partial JSON longitudinal summaries into ONE profile. Partial 1 is the older time window; Partial 2 is newer. \
+        Deduplicate overlapping items. When timelines conflict, prefer Partial 2. Only use facts present in the JSON below.
+
+        Partial 1 (older):
+        \(olderJSON)
+
+        Partial 2 (newer):
+        \(newerJSON)
+        """
+
+        return try await OnDeviceSummaryService().generateGlobalSummary(prompt: reducePrompt)
     }
 
     private func persistCache(_ payload: GlobalSummaryPayload) async {

@@ -158,7 +158,7 @@ struct AddEntryFlowSheet: View {
                     case .photo:
                         AddEntryBigChoiceRow(
                             title: "Take photos",
-                            subtitle: "Use the camera to capture text to read",
+                            subtitle: "Use the regular camera; text is read from the picture",
                             systemImage: "camera.circle.fill",
                             tint: .green
                         ) {

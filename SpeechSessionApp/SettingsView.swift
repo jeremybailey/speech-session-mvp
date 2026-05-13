@@ -327,9 +327,8 @@ struct SettingsView: View {
             whisperKitModel = fallbackModel
         }
 
-        if summaryBackendRaw == "openai", !cloudInferenceReady, isOnDeviceSummaryAvailable {
-            summaryBackendRaw = "onDevice"
-        }
+        // Keep the user's summary engine choice while signed out. Cloud summaries require sign-in at runtime;
+        // do not rewrite AppStorage to Apple on-device on every sign-out (that felt like losing their preference).
 
         if summaryBackendRaw == "onDevice", !isOnDeviceSummaryAvailable {
             summaryBackendRaw = "openai"

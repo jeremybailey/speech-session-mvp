@@ -38,6 +38,8 @@
 		BF26 /* EntriesShelfView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR29 /* EntriesShelfView.swift */; };
 		BF27 /* AppShellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR30 /* AppShellView.swift */; };
 		BF28 /* AddEntryFlowSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR31 /* AddEntryFlowSheet.swift */; };
+		BF29 /* CameraCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR32 /* CameraCaptureView.swift */; };
+		BF30 /* GlobalSummaryMapReduceSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR33 /* GlobalSummaryMapReduceSupport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -96,6 +98,8 @@
 		FR29 /* EntriesShelfView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntriesShelfView.swift; sourceTree = "<group>"; };
 		FR30 /* AppShellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellView.swift; sourceTree = "<group>"; };
 		FR31 /* AddEntryFlowSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddEntryFlowSheet.swift; sourceTree = "<group>"; };
+		FR32 /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
+		FR33 /* GlobalSummaryMapReduceSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSummaryMapReduceSupport.swift; sourceTree = "<group>"; };
 		PR01 /* SpeechSessionApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpeechSessionApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		PR02 /* VoiceMemoShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VoiceMemoShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -135,6 +139,7 @@
 			children = (
 				FR01 /* AppModel.swift */,
 				FR30 /* AppShellView.swift */,
+				FR32 /* CameraCaptureView.swift */,
 				FR02 /* SpeechSessionAppApp.swift */,
 				FR03 /* ContentView.swift */,
 				FR04 /* HomeView.swift */,
@@ -145,6 +150,7 @@
 				FR08 /* SettingsView.swift */,
 				FR09 /* OnDeviceSummaryService.swift */,
 				FR10 /* GlobalHealthSummaryView.swift */,
+				FR33 /* GlobalSummaryMapReduceSupport.swift */,
 				FR11 /* SummaryCardView.swift */,
 				FR12 /* DocumentScannerView.swift */,
 				FR13 /* DocumentScanService.swift */,
@@ -299,6 +305,7 @@
 			files = (
 				BF01 /* AppModel.swift in Sources */,
 				BF27 /* AppShellView.swift in Sources */,
+				BF29 /* CameraCaptureView.swift in Sources */,
 				BF02 /* SpeechSessionAppApp.swift in Sources */,
 				BF03 /* ContentView.swift in Sources */,
 				BF04 /* HomeView.swift in Sources */,
@@ -308,6 +315,7 @@
 				BF08 /* SettingsView.swift in Sources */,
 				BF09 /* OnDeviceSummaryService.swift in Sources */,
 				BF10 /* GlobalHealthSummaryView.swift in Sources */,
+				BF30 /* GlobalSummaryMapReduceSupport.swift in Sources */,
 				BF11 /* SummaryCardView.swift in Sources */,
 				BF12 /* DocumentScannerView.swift in Sources */,
 				BF13 /* DocumentScanService.swift in Sources */,
@@ -453,12 +461,13 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SpeechSessionApp/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.06;
+				MARKETING_VERSION = 1.07;
 				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -480,12 +489,13 @@
 				CURRENT_PROJECT_VERSION = 6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SpeechSessionApp/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.06;
+				MARKETING_VERSION = 1.07;
 				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
