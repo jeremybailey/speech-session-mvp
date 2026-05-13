@@ -54,6 +54,9 @@ struct SummaryCardsView: View {
 // MARK: SummaryCategoryCard
 
 /// A single Apple Health–style card: colored icon + uppercase label + collapsible content.
+/// Category titles use subheadline **bold** + `foregroundStyle(.primary)` so they read as WCAG **large text**
+/// (≥14pt bold at default content size) with **≥4.5:1** contrast on grouped backgrounds (typical AAA for large text).
+/// Dynamic Type scales the title with user text size settings.
 struct SummaryCategoryCard: View {
     let title: String
     let content: String
@@ -78,20 +81,24 @@ struct SummaryCategoryCard: View {
                             .foregroundStyle(categoryColor)
                     }
                     Text(title.uppercased())
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.primary)
                         .kerning(0.5)
+                        .accessibilityAddTraits(.isHeader)
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 }
                 .padding(16)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("\(title) section")
+            .accessibilityHint(isExpanded ? "Collapses this section" : "Expands this section")
 
             // Collapsible content
             if isExpanded {
@@ -100,21 +107,9 @@ struct SummaryCategoryCard: View {
 
                 Group {
                     if hasBullets {
-                        VStack(alignment: .leading, spacing: 5) {
-                            ForEach(bulletItems, id: \.self) { item in
-                                HStack(alignment: .top, spacing: 8) {
-                                    Circle()
-                                        .fill(Color.primary.opacity(0.35))
-                                        .frame(width: 5, height: 5)
-                                        .padding(.top, 7)
-                                    Text(item)
-                                        .font(.body)
-                                }
-                            }
-                        }
+                        dividedSummaryItemList(items: displayBulletItems)
                     } else {
-                        Text(content)
-                            .font(.body)
+                        freeformDividedContent(Self.strippingMarkdownBoldAsterisks(from: content))
                     }
                 }
                 .padding(16)
@@ -131,6 +126,82 @@ struct SummaryCategoryCard: View {
     private var hasBullets: Bool {
         content.components(separatedBy: "\n")
             .contains { $0.hasPrefix("- ") || $0.hasPrefix("• ") || $0.hasPrefix("* ") }
+    }
+
+    /// List-style rows separated by dividers; primary segment bold when line contains ` — ` / ` – ` / ` - `.
+    @ViewBuilder
+    private func dividedSummaryItemList(items: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                summaryPrimarySecondaryLine(item)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 10)
+                if index < items.count - 1 {
+                    Divider()
+                }
+            }
+        }
+    }
+
+    /// Bold primary label + secondary details when the line uses a recognized separator (model bullet style).
+    @ViewBuilder
+    private func summaryPrimarySecondaryLine(_ item: String) -> some View {
+        if let (primary, detail) = Self.splitPrimaryAndDetail(from: item) {
+            if let detail, !detail.isEmpty {
+                (Text(primary)
+                    .font(.body)
+                    .fontWeight(.semibold)
+                    + Text(" — ")
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    + Text(detail)
+                    .font(.body)
+                    .foregroundStyle(.secondary))
+                .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(primary)
+                    .font(.body)
+                    .fontWeight(.semibold)
+            }
+        } else {
+            Text(item)
+                .font(.body)
+        }
+    }
+
+    /// Non-bulleted body: one row per non-empty line (dividers when multiple lines); single line keeps optional primary/detail styling.
+    @ViewBuilder
+    private func freeformDividedContent(_ text: String) -> some View {
+        let lines = text
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        if lines.isEmpty {
+            Text(text).font(.body)
+        } else {
+            dividedSummaryItemList(items: lines)
+        }
+    }
+
+    /// First matching separator wins (matches longitudinal / visit summary list lines).
+    private static func splitPrimaryAndDetail(from line: String) -> (String, String?)? {
+        let separators = [" — ", " – ", " - "]
+        for sep in separators {
+            guard let range = line.range(of: sep) else { continue }
+            let primary = line[..<range.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+            let detail = line[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !primary.isEmpty else { continue }
+            return (primary, detail.isEmpty ? nil : detail)
+        }
+        return nil
+    }
+
+    private var displayBulletItems: [String] {
+        bulletItems.map { Self.strippingMarkdownBoldAsterisks(from: $0) }
+    }
+
+    private static func strippingMarkdownBoldAsterisks(from text: String) -> String {
+        text.replacingOccurrences(of: "**", with: "")
     }
 
     private var bulletItems: [String] {
@@ -210,20 +281,24 @@ struct CareTimelineCard: View {
                             .foregroundStyle(.blue)
                     }
                     Text("CARE TIMELINE")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.primary)
                         .kerning(0.5)
+                        .accessibilityAddTraits(.isHeader)
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 }
                 .padding(16)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Care timeline section")
+            .accessibilityHint(isExpanded ? "Collapses this section" : "Expands this section")
 
             if isExpanded {
                 Divider()

@@ -327,8 +327,8 @@ struct OnDeviceSummaryService {
                 }
                 let tail = parts.joined(separator: "; ")
                 let name = row.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                if tail.isEmpty { return "- **\(name)**" }
-                return "- **\(name)** — \(tail)"
+                if tail.isEmpty { return "- \(name)" }
+                return "- \(name) — \(tail)"
             }.joined(separator: "\n")
         }
 

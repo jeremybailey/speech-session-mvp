@@ -13,7 +13,9 @@ public enum SessionInputType: String, Codable, Sendable {
     case audio
     /// Legacy OCR/scan/photo uploads before PDF/text was distinguished (`documentImage` / `documentFile`).
     case document
-    /// VisionKit scanner, photo library, or shared image handoff → OCR text.
+    /// VisionKit “scan papers” (multi-page document camera).
+    case documentScan
+    /// Device camera, photo library, or shared image → OCR text (Photos add path).
     case documentImage
     /// Imported `.pdf` / plain-text file content.
     case documentFile

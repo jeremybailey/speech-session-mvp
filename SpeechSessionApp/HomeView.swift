@@ -536,15 +536,17 @@ struct HomeView: View {
         .listRowSeparator(.hidden)
     }
 
-    /// List-row badge: audio vs photo/OCR-derived vs uploaded PDF/text files.
+    /// List-row badge: aligned with `AddEntryFlowSheet` colors (audio blue, photos green, documents orange/brown).
     private func entryBadge(for inputType: SessionInputType) -> (symbol: String, color: Color) {
         switch inputType {
         case .audio:
             return ("waveform", .blue)
-        case .document, .documentImage:
+        case .documentScan:
+            return ("doc.viewfinder", .orange)
+        case .documentImage, .document:
             return ("photo.fill", .green)
         case .documentFile:
-            return ("doc.fill", .red)
+            return ("doc.badge.plus", .brown)
         }
     }
 
@@ -633,7 +635,7 @@ struct HomeView: View {
         defer { isScanningDocument = false }
         do {
             let transcript = try await DocumentScanService().transcribe(scan: scan)
-            try await persistDocumentTranscript(transcript, inputType: .documentImage)
+            try await persistDocumentTranscript(transcript, inputType: .documentScan)
         } catch {
             scanErrorMessage = error.localizedDescription
         }

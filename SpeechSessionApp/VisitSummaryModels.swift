@@ -295,8 +295,8 @@ enum VisitSummaryJSONParser {
         }
 
         let tail = fragments.filter { !$0.isEmpty }.joined(separator: "; ")
-        if tail.isEmpty { return "- **\(name)**" }
-        return "- **\(name)** — \(tail)"
+        if tail.isEmpty { return "- \(name)" }
+        return "- \(name) — \(tail)"
     }
 
     /// Turn arbitrary JSON fragment into scribe text (strings, arrays of strings/objects, single objects).
