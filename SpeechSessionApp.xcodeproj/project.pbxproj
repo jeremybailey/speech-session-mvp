@@ -40,6 +40,7 @@
 		BF28 /* AddEntryFlowSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR31 /* AddEntryFlowSheet.swift */; };
 		BF29 /* CameraCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR32 /* CameraCaptureView.swift */; };
 		BF30 /* GlobalSummaryMapReduceSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR33 /* GlobalSummaryMapReduceSupport.swift */; };
+		BF31 /* BrandPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR34 /* BrandPalette.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -100,6 +101,7 @@
 		FR31 /* AddEntryFlowSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddEntryFlowSheet.swift; sourceTree = "<group>"; };
 		FR32 /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
 		FR33 /* GlobalSummaryMapReduceSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSummaryMapReduceSupport.swift; sourceTree = "<group>"; };
+		FR34 /* BrandPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandPalette.swift; sourceTree = "<group>"; };
 		PR01 /* SpeechSessionApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpeechSessionApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		PR02 /* VoiceMemoShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VoiceMemoShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -138,6 +140,7 @@
 			isa = PBXGroup;
 			children = (
 				FR01 /* AppModel.swift */,
+				FR34 /* BrandPalette.swift */,
 				FR30 /* AppShellView.swift */,
 				FR32 /* CameraCaptureView.swift */,
 				FR02 /* SpeechSessionAppApp.swift */,
@@ -304,6 +307,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BF01 /* AppModel.swift in Sources */,
+				BF31 /* BrandPalette.swift in Sources */,
 				BF27 /* AppShellView.swift in Sources */,
 				BF29 /* CameraCaptureView.swift in Sources */,
 				BF02 /* SpeechSessionAppApp.swift in Sources */,

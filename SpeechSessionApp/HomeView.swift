@@ -145,10 +145,7 @@ struct HomeView: View {
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color(.secondarySystemGroupedBackground))
-                }
+                .summaryGlassCard(cornerRadius: 16)
                 .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.plain)
@@ -172,6 +169,7 @@ struct HomeView: View {
                         NavigationLink(value: session) {
                             sessionRow(session)
                         }
+                        .listRowBackground(BrandPalette.canvas)
                     }
                     .onDelete { indexSet in
                         for index in indexSet {
@@ -185,7 +183,7 @@ struct HomeView: View {
             .scrollContentBackground(.hidden)
             .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(BrandPalette.canvas)
         .animation(.default, value: displayedSessions.map(\.id))
         .navigationTitle(listTitle)
         .navigationBarTitleDisplayMode(.large)
@@ -390,7 +388,7 @@ struct HomeView: View {
                 .frame(width: 70, height: 70)
                 .background {
                     Circle()
-                        .fill(Color.accentColor)
+                        .fill(BrandPalette.brand)
                         .shadow(color: .black.opacity(0.2), radius: 12, y: 5)
                 }
         }
@@ -424,7 +422,7 @@ struct HomeView: View {
         }
         .padding(.horizontal, 28)
         .frame(height: 56)
-        .modifier(GlassCapsuleModifier())
+        .liquidGlassCapsule()
         .transition(.scale(scale: 0.85).combined(with: .opacity))
     }
 
@@ -464,7 +462,7 @@ struct HomeView: View {
             }
             .padding(.horizontal, 28)
             .frame(height: 56)
-            .modifier(GlassCapsuleModifier())
+            .liquidGlassCapsule()
         }
         .buttonStyle(.plain)
         .transition(.scale(scale: 0.85).combined(with: .opacity))
@@ -481,7 +479,7 @@ struct HomeView: View {
         }
         .padding(.horizontal, 28)
         .frame(height: 56)
-        .modifier(GlassCapsuleModifier())
+        .liquidGlassCapsule()
         .transition(.scale(scale: 0.85).combined(with: .opacity))
     }
 
@@ -496,7 +494,7 @@ struct HomeView: View {
         }
         .padding(.horizontal, 28)
         .frame(height: 56)
-        .modifier(GlassCapsuleModifier())
+        .liquidGlassCapsule()
         .transition(.scale(scale: 0.85).combined(with: .opacity))
     }
 
@@ -516,7 +514,7 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 60)
-        .listRowSeparator(.hidden)
+        .listRowBackground(BrandPalette.canvas)
     }
 
     private var folderEmptyStateRow: some View {
@@ -533,7 +531,7 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 48)
-        .listRowSeparator(.hidden)
+        .listRowBackground(BrandPalette.canvas)
     }
 
     /// List-row badge: aligned with `AddEntryFlowSheet` colors (audio blue, photos green, documents orange/brown).
@@ -951,32 +949,5 @@ struct HomeView: View {
 private extension Text {
     func italic(_ condition: Bool) -> Text {
         condition ? self.italic() : self
-    }
-}
-
-// MARK: - Liquid Glass modifiers (iOS 26+, graceful fallback)
-
-private struct GlassCircleModifier: ViewModifier {
-    var tint: Color = .blue
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.glassEffect(in: Circle())
-        } else {
-            content
-                .background(tint, in: Circle())
-                .shadow(color: tint.opacity(0.35), radius: 10, y: 4)
-        }
-    }
-}
-
-private struct GlassCapsuleModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.glassEffect(in: Capsule())
-        } else {
-            content
-                .background(.regularMaterial, in: Capsule())
-                .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
-        }
     }
 }

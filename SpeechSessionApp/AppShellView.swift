@@ -30,15 +30,6 @@ struct AppShellView: View {
 
 // MARK: - Sign-in gate
 
-private enum SignInGatePalette {
-    /// Screen background #FFF4E8
-    static let canvas = Color(red: 255 / 255, green: 244 / 255, blue: 232 / 255)
-    /// Brand / logotype / primary CTA fill #38244A
-    static let brand = Color(red: 56 / 255, green: 36 / 255, blue: 74 / 255)
-    /// Label on filled CTA
-    static let ctaLabel = Color.white
-}
-
 struct SignInGateView: View {
     @EnvironmentObject private var kindeAuth: KindeAuthManager
     @Environment(\.scenePhase) private var scenePhase
@@ -55,7 +46,6 @@ struct SignInGateView: View {
 
                 Text("CollectiveCare")
                     .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(SignInGatePalette.brand)
                     .multilineTextAlignment(.center)
 
                 Spacer(minLength: 32)
@@ -67,7 +57,7 @@ struct SignInGateView: View {
                         Group {
                             if isSigningIn {
                                 ProgressView()
-                                    .tint(SignInGatePalette.ctaLabel)
+                                    .tint(.white)
                                     .frame(maxWidth: .infinity)
                             } else {
                                 Text("Sign in or sign up")
@@ -76,31 +66,28 @@ struct SignInGateView: View {
                             }
                         }
                         .padding(.vertical, 14)
-                        .background(SignInGatePalette.brand)
-                        .foregroundStyle(SignInGatePalette.ctaLabel)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
+                    .buttonStyle(.borderedProminent)
                     .disabled(isSigningIn)
-                    .padding(.horizontal, 24)
 
                     Button("Skip for now (testing)") {
                         skippedSignInGate = true
                     }
                     .font(.subheadline)
-                    .foregroundStyle(SignInGatePalette.brand.opacity(0.85))
+                    .foregroundStyle(.secondary)
                     .disabled(isSigningIn)
                 }
-                .padding(.bottom, 36)
+                .padding(20)
+                .frame(maxWidth: .infinity)
+                .liquidGlassCard(cornerRadius: 20)
+                .padding(.horizontal, 20)
 
                 Spacer(minLength: 16)
             }
             .frame(maxWidth: .infinity)
-            .background(SignInGatePalette.canvas.ignoresSafeArea())
+            .background(BrandPalette.canvas.ignoresSafeArea())
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(SignInGatePalette.canvas, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(.light, for: .navigationBar)
         }
         .task {
             kindeAuth.syncState()

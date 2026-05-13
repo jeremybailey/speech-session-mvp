@@ -41,6 +41,7 @@ struct SessionDetailView: View {
                 summaryTab
             }
         }
+        .background(BrandPalette.canvas.ignoresSafeArea())
         .navigationTitle(localSession.title ?? localSession.date.formatted(date: .abbreviated, time: .shortened))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -97,6 +98,8 @@ struct SessionDetailView: View {
             Text(localSession.transcript.isEmpty ? "(No transcript recorded)" : localSession.transcript)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
+                .liquidGlassCard(cornerRadius: 14)
+                .padding()
         }
     }
 
@@ -108,12 +111,18 @@ struct SessionDetailView: View {
         case .idle:
             Color.clear
         case .loading:
-            VStack(spacing: 12) {
+            VStack {
                 Spacer()
-                ProgressView()
-                Text("Generating medical summary…")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("Generating medical summary…")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(28)
+                .frame(maxWidth: .infinity)
+                .liquidGlassCard(cornerRadius: 16)
+                .padding(.horizontal, 20)
                 Spacer()
             }
             .frame(maxWidth: .infinity)
@@ -122,22 +131,26 @@ struct SessionDetailView: View {
                 SummaryCardsView(text: text)
                     .padding(.vertical)
             }
-            .background(Color(.systemGroupedBackground))
         case .failed(let message):
-            VStack(spacing: 16) {
+            VStack {
                 Spacer()
-                Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.secondary)
-                Text(message)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 32)
-                Button("Try Again") {
-                    summaryState = .idle
-                    Task { await loadSummary() }
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.secondary)
+                    Text(message)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                    Button("Try Again") {
+                        summaryState = .idle
+                        Task { await loadSummary() }
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                .buttonStyle(.borderedProminent)
+                .padding(28)
+                .frame(maxWidth: .infinity)
+                .liquidGlassCard(cornerRadius: 16)
+                .padding(.horizontal, 20)
                 Spacer()
             }
             .frame(maxWidth: .infinity)

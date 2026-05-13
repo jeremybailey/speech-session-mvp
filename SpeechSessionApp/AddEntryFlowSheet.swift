@@ -39,6 +39,7 @@ struct AddEntryFlowSheet: View {
                     sourceSelectionPage(for: medium)
                 }
         }
+        .background(BrandPalette.canvas.ignoresSafeArea())
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onChange(of: isPresented) { _, isOpen in
@@ -89,7 +90,7 @@ struct AddEntryFlowSheet: View {
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(BrandPalette.canvas)
         .navigationTitle("New entry")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -195,7 +196,7 @@ struct AddEntryFlowSheet: View {
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(BrandPalette.canvas)
         .navigationTitle(medium.navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -242,10 +243,7 @@ private struct AddEntryBigChoiceRow: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color(.secondarySystemGroupedBackground))
-            )
+            .liquidGlassCard(cornerRadius: 18)
             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)

@@ -193,6 +193,7 @@ struct SettingsView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -210,6 +211,7 @@ struct SettingsView: View {
                 Text(accountActionError ?? "")
             }
         }
+        .background(BrandPalette.canvas)
         .task {
             normalizeSettingsForDevice()
         }

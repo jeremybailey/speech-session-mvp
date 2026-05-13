@@ -56,6 +56,7 @@ struct ScopedHealthSummaryView: View {
                 content
             }
         }
+        .background(BrandPalette.canvas.ignoresSafeArea())
         .navigationTitle("Summary")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -105,24 +106,30 @@ struct ScopedHealthSummaryView: View {
             .padding(.vertical)
             .padding(.horizontal)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(BrandPalette.canvas)
     }
 
     private var emptyState: some View {
         VStack(spacing: 14) {
             Spacer()
-            Image(systemName: "heart.text.square")
-                .font(.system(size: 52))
-                .foregroundStyle(.secondary)
-            Text(scope == .all ? "No entries yet" : "No entries in this folder")
-                .font(.headline)
-            Text(scope == .all
-                ? "Record an appointment to build a health summary."
-                : "Move or create entries here, then open Summary again.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
+            VStack(spacing: 14) {
+                Image(systemName: "heart.text.square")
+                    .font(.system(size: 52))
+                    .foregroundStyle(.secondary)
+                Text(scope == .all ? "No entries yet" : "No entries in this folder")
+                    .font(.headline)
+                Text(scope == .all
+                    ? "Record an appointment to build a health summary."
+                    : "Move or create entries here, then open Summary again.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 12)
+            }
+            .padding(28)
+            .frame(maxWidth: .infinity)
+            .liquidGlassCard(cornerRadius: 18)
+            .padding(.horizontal, 20)
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -137,8 +144,7 @@ struct ScopedHealthSummaryView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .summaryGlassCard(cornerRadius: 14)
     }
 
     private func errorCard(message: String) -> some View {
@@ -170,8 +176,7 @@ struct ScopedHealthSummaryView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .summaryGlassCard(cornerRadius: 14)
     }
 
     @ViewBuilder

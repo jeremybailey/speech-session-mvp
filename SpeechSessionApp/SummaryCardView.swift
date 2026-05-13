@@ -117,8 +117,7 @@ struct SummaryCategoryCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .summaryGlassCard(cornerRadius: 14)
     }
 
     // MARK: Bullet helpers
@@ -350,7 +349,6 @@ struct CareTimelineCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .summaryGlassCard(cornerRadius: 14)
     }
 }

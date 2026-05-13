@@ -43,6 +43,7 @@ struct EntriesShelfView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .listRowBackground(BrandPalette.canvas)
             }
 
             Section("My folders") {
@@ -50,6 +51,7 @@ struct EntriesShelfView: View {
                     Text("No folders yet. Open an entry list and use the plus button to add entries, or create a folder here.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .listRowBackground(BrandPalette.canvas)
                 }
                 ForEach(home.folders) { folder in
                     NavigationLink(value: EntryListScope.folder(folder.id)) {
@@ -64,10 +66,14 @@ struct EntriesShelfView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .listRowBackground(BrandPalette.canvas)
                 }
                 .onDelete(perform: deleteFolders)
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(BrandPalette.canvas)
         .navigationTitle("Entries")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {

@@ -32,6 +32,7 @@ struct RecordingView: View {
                 doneView(session: session)
             }
         }
+        .background(BrandPalette.canvas.ignoresSafeArea())
         .navigationTitle(phase == .recording || phase == .transcribing ? "Recording" : "Saved")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
@@ -60,7 +61,9 @@ struct RecordingView: View {
             ScrollView {
                 Text(livePlaceholder)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
             }
+            .liquidGlassCard(cornerRadius: 14)
             .frame(maxHeight: .infinity)
 
             if !batchInfoText.isEmpty && phase == .recording {
@@ -134,7 +137,7 @@ struct RecordingView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 28)
-            .modifier(GlassRectModifier())
+            .liquidGlassRectangle()
 
             Divider()
 
@@ -146,6 +149,7 @@ struct RecordingView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
             }
+            .liquidGlassRectangle()
 
             Divider()
 
@@ -192,17 +196,5 @@ struct RecordingView: View {
 
     private func formattedElapsed(_ t: TimeInterval) -> String {
         let s = Int(t); return String(format: "%d:%02d", s / 60, s % 60)
-    }
-}
-
-// MARK: - Liquid Glass modifier (iOS 26+, graceful fallback)
-
-private struct GlassRectModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.glassEffect(in: Rectangle())
-        } else {
-            content.background(.regularMaterial)
-        }
     }
 }

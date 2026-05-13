@@ -48,7 +48,12 @@ final class ShareViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .secondarySystemGroupedBackground
+        view.backgroundColor = UIColor(
+            red: 255 / 255,
+            green: 244 / 255,
+            blue: 232 / 255,
+            alpha: 1
+        )
 
         spinner.translatesAutoresizingMaskIntoConstraints = false
         spinner.hidesWhenStopped = false

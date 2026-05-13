@@ -25,6 +25,9 @@ struct ContentView: View {
                     }
                 }
         }
+        .background(BrandPalette.canvas.ignoresSafeArea())
+        .toolbarBackground(BrandPalette.canvas, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .onAppear {
             if !didBootstrapEntriesNavigation {
                 didBootstrapEntriesNavigation = true
