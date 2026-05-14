@@ -155,11 +155,11 @@ struct ScopedHealthSummaryView: View {
             HStack(spacing: 10) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.red.opacity(0.15))
+                        .fill(BrandPalette.systemRed.opacity(0.15))
                         .frame(width: 34, height: 34)
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(BrandPalette.systemRed)
                 }
                 Text("SUMMARY UNAVAILABLE")
                     .font(.caption)

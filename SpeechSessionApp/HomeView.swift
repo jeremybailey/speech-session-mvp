@@ -127,9 +127,9 @@ struct HomeView: View {
                 HStack(alignment: .center, spacing: 14) {
                     Image(systemName: "heart.text.square.fill")
                         .font(.system(size: 26, weight: .medium))
-                        .foregroundStyle(.pink)
+                        .foregroundStyle(BrandPalette.systemPink)
                         .frame(width: 36, height: 36)
-                        .background(Color.pink.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .background(BrandPalette.systemPink.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Health summary")
@@ -173,7 +173,7 @@ struct HomeView: View {
                         NavigationLink(value: session) {
                             sessionRow(session)
                         }
-                        .listRowBackground(BrandPalette.canvas)
+                        .listRowBackground(BrandPalette.surface)
                     }
                     .onDelete { indexSet in
                         for index in indexSet {
@@ -368,21 +368,21 @@ struct HomeView: View {
             if showRecordingError, let error = recording.errorMessage {
                 Text(error)
                     .font(.subheadline)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(BrandPalette.systemRed)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
             }
             if let error = scanErrorMessage {
                 Text(error)
                     .font(.subheadline)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(BrandPalette.systemRed)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
             }
             if let error = fileErrorMessage {
                 Text(error)
                     .font(.subheadline)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(BrandPalette.systemRed)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
             }
@@ -403,7 +403,7 @@ struct HomeView: View {
                 .background {
                     Circle()
                         .fill(BrandPalette.brand)
-                        .shadow(color: .black.opacity(0.2), radius: 12, y: 5)
+                        .shadow(color: BrandPalette.cardShadow, radius: 12, y: 5)
                 }
         }
         .buttonStyle(.plain)
@@ -451,7 +451,7 @@ struct HomeView: View {
             HStack(spacing: 14) {
                 // Pulsing red dot
                 Circle()
-                    .fill(Color.red)
+                    .fill(BrandPalette.systemRed)
                     .frame(width: 9, height: 9)
                     .scaleEffect(pulseAnimation ? 1.4 : 1.0)
                     .opacity(pulseAnimation ? 0.5 : 1.0)
@@ -472,7 +472,7 @@ struct HomeView: View {
 
                 Image(systemName: "stop.fill")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.red)
+                    .foregroundStyle(BrandPalette.systemRed)
             }
             .padding(.horizontal, 28)
             .frame(height: 56)
@@ -528,7 +528,7 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 60)
-        .listRowBackground(BrandPalette.canvas)
+        .listRowBackground(BrandPalette.surface)
     }
 
     private var folderEmptyStateRow: some View {
@@ -545,20 +545,20 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 48)
-        .listRowBackground(BrandPalette.canvas)
+        .listRowBackground(BrandPalette.surface)
     }
 
     /// List-row badge: aligned with `AddEntryFlowSheet` colors (audio blue, photos green, documents orange/brown).
     private func entryBadge(for inputType: SessionInputType) -> (symbol: String, color: Color) {
         switch inputType {
         case .audio:
-            return ("waveform", .blue)
+            return ("waveform", BrandPalette.systemBlue)
         case .documentScan:
-            return ("doc.viewfinder", .orange)
+            return ("doc.viewfinder", BrandPalette.systemOrange)
         case .documentImage, .document:
-            return ("photo.fill", .green)
+            return ("photo.fill", BrandPalette.systemGreen)
         case .documentFile:
-            return ("doc.badge.plus", .brown)
+            return ("doc.badge.plus", BrandPalette.systemBrown)
         }
     }
 

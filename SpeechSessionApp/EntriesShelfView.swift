@@ -30,7 +30,7 @@ struct EntriesShelfView: View {
                     HStack(spacing: 14) {
                         Image(systemName: "waveform")
                             .font(.system(size: 20, weight: .medium))
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(BrandPalette.systemBlue)
                             .frame(width: 28)
                         Text("All entries")
                         Spacer()
@@ -38,7 +38,7 @@ struct EntriesShelfView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .listRowBackground(BrandPalette.canvas)
+                .listRowBackground(BrandPalette.surface)
             }
 
             Section("My folders") {
@@ -46,14 +46,14 @@ struct EntriesShelfView: View {
                     Text("No folders yet. Open an entry list and use the plus button to add entries, or create a folder here.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .listRowBackground(BrandPalette.canvas)
+                        .listRowBackground(BrandPalette.surface)
                 }
                 ForEach(home.folders) { folder in
                     NavigationLink(value: EntryListScope.folder(folder.id)) {
                         HStack(spacing: 14) {
                             Image(systemName: "folder")
                                 .font(.system(size: 20, weight: .medium))
-                                .foregroundStyle(.blue)
+                                .foregroundStyle(BrandPalette.systemBlue)
                                 .frame(width: 28)
                             Text(folder.name)
                             Spacer()
@@ -61,7 +61,7 @@ struct EntriesShelfView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .listRowBackground(BrandPalette.canvas)
+                    .listRowBackground(BrandPalette.surface)
                 }
                 .onDelete(perform: deleteFolders)
             }

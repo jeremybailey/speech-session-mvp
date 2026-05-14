@@ -237,21 +237,21 @@ struct SummaryCategoryCard: View {
 
     var categoryColor: Color {
         let l = title.lowercased()
-        if l.contains("chief") || l.contains("complaint")       { return .blue }
-        if l.contains("symptom")                                 { return .orange }
-        if l.contains("finding")                                 { return .red }
-        if l.contains("diagnos") || l.contains("condition")     { return .red }
-        if l.contains("medication")                              { return .purple }
-        if l.contains("care plan") || l.contains("treatment")   { return .green }
-        if l.contains("vaccination")                             { return .teal }
-        if l.contains("allerg")                                  { return .yellow }
-        if l.contains("test") || l.contains("lab")              { return .indigo }
-        if l.contains("follow")                                  { return .cyan }
-        if l.contains("other notes") || l.contains("misc")      { return .gray }
+        if l.contains("chief") || l.contains("complaint") { return BrandPalette.systemBlue }
+        if l.contains("symptom") { return BrandPalette.systemOrange }
+        if l.contains("finding") { return BrandPalette.systemRed }
+        if l.contains("diagnos") || l.contains("condition") { return BrandPalette.systemRed }
+        if l.contains("medication") { return BrandPalette.systemPurple }
+        if l.contains("care plan") || l.contains("treatment") { return BrandPalette.systemGreen }
+        if l.contains("vaccination") { return BrandPalette.systemTeal }
+        if l.contains("allerg") { return BrandPalette.systemYellow }
+        if l.contains("test") || l.contains("lab") { return BrandPalette.systemIndigo }
+        if l.contains("follow") { return BrandPalette.systemCyan }
+        if l.contains("other notes") || l.contains("misc") { return BrandPalette.systemGray }
         if l.contains("biopsychosocial") || l.contains("psychosocial") || l.contains("context") {
-            return .pink
+            return BrandPalette.systemPink
         }
-        return .gray
+        return BrandPalette.systemGray
     }
 }
 
@@ -273,11 +273,11 @@ struct CareTimelineCard: View {
                 HStack(spacing: 10) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.blue.opacity(0.15))
+                            .fill(BrandPalette.systemBlue.opacity(0.15))
                             .frame(width: 34, height: 34)
                         Image(systemName: "clock.arrow.circlepath")
                             .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(BrandPalette.systemBlue)
                     }
                     Text("CARE TIMELINE")
                         .font(.subheadline)
@@ -308,12 +308,12 @@ struct CareTimelineCard: View {
                         HStack(alignment: .top, spacing: 14) {
                             VStack(spacing: 0) {
                                 Circle()
-                                    .fill(Color.blue)
+                                    .fill(BrandPalette.systemBlue)
                                     .frame(width: 9, height: 9)
                                     .padding(.top, 4)
                                 if index < sessions.count - 1 {
                                     Rectangle()
-                                        .fill(Color.blue.opacity(0.2))
+                                        .fill(BrandPalette.systemBlue.opacity(0.2))
                                         .frame(width: 2)
                                         .frame(minHeight: 28)
                                 }

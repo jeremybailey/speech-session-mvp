@@ -267,12 +267,12 @@ struct SettingsView: View {
 
         case .ready:
             Label("Ready to use", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+                .foregroundStyle(BrandPalette.systemGreen)
 
         case .failed(let message):
             VStack(alignment: .leading, spacing: 8) {
                 Label("Download failed", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(BrandPalette.systemRed)
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(.secondary)

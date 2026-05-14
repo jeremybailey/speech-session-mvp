@@ -62,7 +62,7 @@ struct AddEntryFlowSheet: View {
                         title: "Audio",
                         subtitle: "Record a visit or journal entry, or import an audio file",
                         systemImage: "waveform.circle.fill",
-                        tint: .blue
+                        tint: BrandPalette.systemBlue
                     ) {
                         path.append(AddEntryMedium.audio)
                     }
@@ -71,7 +71,7 @@ struct AddEntryFlowSheet: View {
                         title: "Photos",
                         subtitle: "Use the camera or library to read text from images",
                         systemImage: "photo.circle.fill",
-                        tint: .green
+                        tint: BrandPalette.systemGreen
                     ) {
                         path.append(AddEntryMedium.photo)
                     }
@@ -80,7 +80,7 @@ struct AddEntryFlowSheet: View {
                         title: "Documents",
                         subtitle: "Scan papers or import a PDF or text file",
                         systemImage: "doc.text.image",
-                        tint: .orange
+                        tint: BrandPalette.systemOrange
                     ) {
                         path.append(AddEntryMedium.documents)
                     }
@@ -136,7 +136,7 @@ struct AddEntryFlowSheet: View {
                             title: "Record",
                             subtitle: "Speak now; your words are saved as text",
                             systemImage: "mic.circle.fill",
-                            tint: .red
+                            tint: BrandPalette.systemRed
                         ) {
                             let intent = audioIntent
                             dismissThen { onAudioRecord(intent) }
@@ -146,7 +146,7 @@ struct AddEntryFlowSheet: View {
                             title: "Import audio file",
                             subtitle: "Choose a recording from Files or iCloud",
                             systemImage: "folder.circle.fill",
-                            tint: .indigo
+                            tint: BrandPalette.systemIndigo
                         ) {
                             let intent = audioIntent
                             dismissThen { onAudioImport(intent) }
@@ -157,7 +157,7 @@ struct AddEntryFlowSheet: View {
                             title: "Take photos",
                             subtitle: "Use the regular camera; text is read from the picture",
                             systemImage: "camera.circle.fill",
-                            tint: .green
+                            tint: BrandPalette.systemGreen
                         ) {
                             dismissThen(onPhotoCapture)
                         }
@@ -166,7 +166,7 @@ struct AddEntryFlowSheet: View {
                             title: "Choose photos",
                             subtitle: "Pick existing pictures from your library",
                             systemImage: "photo.stack",
-                            tint: .mint
+                            tint: BrandPalette.systemMint
                         ) {
                             dismissThen(onPhotoLibrary)
                         }
@@ -176,7 +176,7 @@ struct AddEntryFlowSheet: View {
                             title: "Scan papers",
                             subtitle: "Use the camera to scan pages",
                             systemImage: "doc.viewfinder",
-                            tint: .orange
+                            tint: BrandPalette.systemOrange
                         ) {
                             dismissThen(onDocumentScan)
                         }
@@ -185,7 +185,7 @@ struct AddEntryFlowSheet: View {
                             title: "Import file",
                             subtitle: "PDF or plain text from Files",
                             systemImage: "doc.badge.plus",
-                            tint: .brown
+                            tint: BrandPalette.systemBrown
                         ) {
                             dismissThen(onDocumentImport)
                         }

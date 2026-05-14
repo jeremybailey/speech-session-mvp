@@ -84,7 +84,7 @@ struct RecordingView: View {
             }
 
             if let err = vm.errorMessage {
-                Text(err).foregroundStyle(.red).font(.footnote)
+                Text(err).foregroundStyle(BrandPalette.systemRed).font(.footnote)
             }
 
             Button {
@@ -108,7 +108,7 @@ struct RecordingView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(.red)
+            .tint(BrandPalette.systemRed)
             .disabled(phase == .transcribing)
         }
         .padding()
@@ -123,7 +123,7 @@ struct RecordingView: View {
             VStack(spacing: 10) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 52))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(BrandPalette.systemGreen)
                     .scaleEffect(checkmarkScale)
                     .opacity(checkmarkOpacity)
                     .onAppear {

@@ -1,15 +1,35 @@
 import SwiftUI
+import UIKit
 
-/// CollectiveCare visual tokens.
+/// Semantic colors from UIKit — adapt automatically to Light/Dark mode and accessibility settings.
 enum BrandPalette {
-    /// Primary FAB (#38244A).
-    static let brand = Color(red: 56 / 255, green: 36 / 255, blue: 74 / 255)
+    /// Screen chrome behind plain lists and sheets (`systemGroupedBackground`).
+    static var canvas: Color { Color(uiColor: .systemGroupedBackground) }
 
-    /// Warm base screen tint (#FFF4E8).
-    static let canvas = Color(red: 255 / 255, green: 244 / 255, blue: 232 / 255)
+    /// Elevated rows / secondary plates (`secondarySystemGroupedBackground`).
+    static var surface: Color { Color(uiColor: .secondarySystemGroupedBackground) }
 
-    /// Lighter variation of ``canvas`` for cards and other foreground surfaces.
-    static let surface = Color(red: 255 / 255, green: 250 / 255, blue: 244 / 255)
+    /// Primary actions (FAB, tint-aligned controls). Uses the app’s accent color.
+    static var brand: Color { Color.accentColor }
+
+    // MARK: System UI colors (dynamic)
+
+    static var systemBlue: Color { Color(uiColor: .systemBlue) }
+    static var systemGreen: Color { Color(uiColor: .systemGreen) }
+    static var systemIndigo: Color { Color(uiColor: .systemIndigo) }
+    static var systemOrange: Color { Color(uiColor: .systemOrange) }
+    static var systemPink: Color { Color(uiColor: .systemPink) }
+    static var systemPurple: Color { Color(uiColor: .systemPurple) }
+    static var systemRed: Color { Color(uiColor: .systemRed) }
+    static var systemTeal: Color { Color(uiColor: .systemTeal) }
+    static var systemYellow: Color { Color(uiColor: .systemYellow) }
+    static var systemCyan: Color { Color(uiColor: .systemCyan) }
+    static var systemGray: Color { Color(uiColor: .systemGray) }
+    static var systemMint: Color { Color(uiColor: .systemMint) }
+    static var systemBrown: Color { Color(uiColor: .systemBrown) }
+
+    /// Subtle elevation shadow that respects light/dark foreground.
+    static var cardShadow: Color { Color(uiColor: .label.withAlphaComponent(0.08)) }
 }
 
 // MARK: - Liquid Glass (iOS 26+ `glassEffect`, frosted material fallback)
@@ -25,7 +45,7 @@ struct LiquidGlassRoundedCardModifier: ViewModifier {
         } else {
             content
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .shadow(color: .black.opacity(0.08), radius: 10, y: 4)
+                .shadow(color: BrandPalette.cardShadow, radius: 10, y: 4)
         }
     }
 }
@@ -38,13 +58,13 @@ struct LiquidGlassCapsuleModifier: ViewModifier {
         } else {
             content
                 .background(.ultraThinMaterial, in: Capsule())
-                .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+                .shadow(color: Color(uiColor: .label.withAlphaComponent(0.12)), radius: 10, y: 4)
         }
     }
 }
 
 struct LiquidGlassCircleModifier: ViewModifier {
-    var fallbackTint: Color = .blue
+    var fallbackTint: Color = Color.accentColor
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -53,7 +73,7 @@ struct LiquidGlassCircleModifier: ViewModifier {
         } else {
             content
                 .background(fallbackTint, in: Circle())
-                .shadow(color: fallbackTint.opacity(0.35), radius: 10, y: 4)
+                .shadow(color: Color(uiColor: .label.withAlphaComponent(0.18)), radius: 10, y: 4)
         }
     }
 }
@@ -70,7 +90,7 @@ struct LiquidGlassRectangleModifier: ViewModifier {
 }
 
 extension View {
-    /// Default Liquid Glass rounded surface for floating content over ``BrandPalette.canvas``.
+    /// Default Liquid Glass rounded surface over grouped screen chrome.
     func liquidGlassCard(cornerRadius: CGFloat = 14) -> some View {
         modifier(LiquidGlassRoundedCardModifier(cornerRadius: cornerRadius))
     }
@@ -84,7 +104,7 @@ extension View {
         modifier(LiquidGlassCapsuleModifier())
     }
 
-    func liquidGlassCircle(fallbackTint: Color = .blue) -> some View {
+    func liquidGlassCircle(fallbackTint: Color = Color.accentColor) -> some View {
         modifier(LiquidGlassCircleModifier(fallbackTint: fallbackTint))
     }
 
