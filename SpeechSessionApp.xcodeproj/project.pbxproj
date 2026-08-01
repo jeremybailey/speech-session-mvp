@@ -41,6 +41,7 @@
 		BF29 /* CameraCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR32 /* CameraCaptureView.swift */; };
 		BF30 /* GlobalSummaryMapReduceSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR33 /* GlobalSummaryMapReduceSupport.swift */; };
 		BF31 /* BrandPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR34 /* BrandPalette.swift */; };
+		BF32 /* PractitionerContactsFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR35 /* PractitionerContactsFormatting.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -102,6 +103,7 @@
 		FR32 /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
 		FR33 /* GlobalSummaryMapReduceSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSummaryMapReduceSupport.swift; sourceTree = "<group>"; };
 		FR34 /* BrandPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandPalette.swift; sourceTree = "<group>"; };
+		FR35 /* PractitionerContactsFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PractitionerContactsFormatting.swift; sourceTree = "<group>"; };
 		PR01 /* SpeechSessionApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpeechSessionApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		PR02 /* VoiceMemoShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VoiceMemoShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -154,6 +156,7 @@
 				FR09 /* OnDeviceSummaryService.swift */,
 				FR10 /* GlobalHealthSummaryView.swift */,
 				FR33 /* GlobalSummaryMapReduceSupport.swift */,
+				FR35 /* PractitionerContactsFormatting.swift */,
 				FR11 /* SummaryCardView.swift */,
 				FR12 /* DocumentScannerView.swift */,
 				FR13 /* DocumentScanService.swift */,
@@ -320,6 +323,7 @@
 				BF09 /* OnDeviceSummaryService.swift in Sources */,
 				BF10 /* GlobalHealthSummaryView.swift in Sources */,
 				BF30 /* GlobalSummaryMapReduceSupport.swift in Sources */,
+				BF32 /* PractitionerContactsFormatting.swift in Sources */,
 				BF11 /* SummaryCardView.swift in Sources */,
 				BF12 /* DocumentScannerView.swift in Sources */,
 				BF13 /* DocumentScanService.swift in Sources */,
@@ -461,7 +465,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = SpeechSessionApp/SpeechSessionApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 10;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SpeechSessionApp/Info.plist;
@@ -471,7 +475,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.08;
+				MARKETING_VERSION = 1.085;
 				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -490,7 +494,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = SpeechSessionApp/SpeechSessionApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 10;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SpeechSessionApp/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
@@ -499,7 +503,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.08;
+				MARKETING_VERSION = 1.085;
 				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

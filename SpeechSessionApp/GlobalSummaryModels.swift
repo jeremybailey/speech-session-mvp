@@ -8,6 +8,8 @@ struct GlobalSummaryPayload: Codable {
     var diagnoses: String?
     var medications: String?
     var carePlans: String?
+    /// Care-team contacts; generated entries preserve only details explicitly tied to the same source block.
+    var practitionerContacts: String?
     var vaccinations: String?
     var allergies: String?
     var testsAndLabs: String?
@@ -18,7 +20,7 @@ struct GlobalSummaryPayload: Codable {
 
     enum CodingKeys: String, CodingKey {
         case chiefComplaint
-        case symptoms, diagnoses, medications, carePlans, vaccinations
+        case symptoms, diagnoses, medications, carePlans, practitionerContacts, vaccinations
         case allergies, testsAndLabs, followUp, biopsychosocialContext, otherNotes
     }
 
@@ -28,6 +30,7 @@ struct GlobalSummaryPayload: Codable {
         diagnoses: String? = nil,
         medications: String? = nil,
         carePlans: String? = nil,
+        practitionerContacts: String? = nil,
         vaccinations: String? = nil,
         allergies: String? = nil,
         testsAndLabs: String? = nil,
@@ -40,6 +43,7 @@ struct GlobalSummaryPayload: Codable {
         self.diagnoses = diagnoses
         self.medications = medications
         self.carePlans = carePlans
+        self.practitionerContacts = practitionerContacts
         self.vaccinations = vaccinations
         self.allergies = allergies
         self.testsAndLabs = testsAndLabs
@@ -55,6 +59,7 @@ struct GlobalSummaryPayload: Codable {
         diagnoses = c.decodeFlexible(.diagnoses)
         medications = c.decodeFlexible(.medications)
         carePlans = c.decodeFlexible(.carePlans)
+        practitionerContacts = c.decodeFlexible(.practitionerContacts)
         vaccinations = c.decodeFlexible(.vaccinations)
         allergies = c.decodeFlexible(.allergies)
         testsAndLabs = c.decodeFlexible(.testsAndLabs)
@@ -71,6 +76,7 @@ struct GlobalSummaryPayload: Codable {
             ("Findings", diagnoses),
             ("Medications", medications),
             ("Care Plans", carePlans),
+            ("Care team & contacts", practitionerContacts),
             ("Vaccinations", vaccinations),
             ("Allergies", allergies),
             ("Tests & Labs", testsAndLabs),

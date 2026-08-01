@@ -76,6 +76,7 @@ struct SessionDetailView: View {
         // the user reads the transcript so there's no wait when they switch to the Summary tab.
         .task {
             if let cached = localSession.summary {
+                await ensureAtomicEntriesFromLegacyIfNeeded(markdown: cached)
                 summaryState = .loaded(cached)
             } else {
                 await loadSummary()
@@ -128,8 +129,18 @@ struct SessionDetailView: View {
             .frame(maxWidth: .infinity)
         case .loaded(let text):
             ScrollView {
-                SummaryCardsView(text: text)
+                if !activeSummaryEntries.isEmpty {
+                    AtomicSummaryCardsView(
+                        entries: activeSummaryEntries,
+                        onSave: { entry in Task { await saveSummaryEntry(entry) } },
+                        onDelete: { entry in Task { await deleteSummaryEntry(entry) } },
+                        onAdd: { category in Task { await addSummaryEntry(category: category) } }
+                    )
                     .padding(.vertical)
+                } else {
+                    SummaryCardsView(text: text)
+                        .padding(.vertical)
+                }
             }
         case .failed(let message):
             VStack {
@@ -163,6 +174,71 @@ struct SessionDetailView: View {
         await home.loadSessions()
     }
 
+    private var activeSummaryEntries: [SummaryEntry] {
+        (localSession.summaryEntries ?? []).filter { !$0.isDeleted }
+    }
+
+    private func ensureAtomicEntriesFromLegacyIfNeeded(markdown: String) async {
+        guard (localSession.summaryEntries ?? []).isEmpty else { return }
+        let imported = SummaryEntryFactory.legacyEntries(from: markdown, session: localSession)
+        guard !imported.isEmpty else { return }
+        localSession.summaryEntries = imported
+        try? await store.upsert(localSession)
+        await home.loadSessions()
+    }
+
+    private func saveSummaryEntry(_ entry: SummaryEntry) async {
+        var entries = localSession.summaryEntries ?? []
+        if let index = entries.firstIndex(where: { $0.id == entry.id }) {
+            entries[index] = entry
+        } else {
+            entries.append(entry)
+        }
+        localSession.summaryEntries = entries
+        try? await store.upsert(localSession)
+        await home.loadSessions()
+    }
+
+    private func deleteSummaryEntry(_ entry: SummaryEntry) async {
+        var entries = localSession.summaryEntries ?? []
+        if let index = entries.firstIndex(where: { $0.id == entry.id }) {
+            entries[index].isDeleted = true
+            entries[index].updatedAt = Date()
+            entries[index].origin = .userEdited
+        }
+        localSession.summaryEntries = entries
+        try? await store.upsert(localSession)
+        await home.loadSessions()
+    }
+
+    private func addSummaryEntry(category: SummaryEntryCategory) async {
+        let now = Date()
+        let entry = SummaryEntry(
+            category: category,
+            title: "Add \(category.displayTitle.lowercased())",
+            details: "",
+            fields: [
+                SummaryEntryField(label: category.displayTitle, value: "", isMissing: true, needsReview: true),
+            ],
+            relevantDate: nil,
+            dateNeedsReview: true,
+            sourceSessionID: localSession.id,
+            sourceTitle: localSession.title,
+            sourceDate: localSession.date,
+            provenance: "User-added detail",
+            needsReview: true,
+            reviewReason: "Add missing details and the actual relevant date.",
+            origin: .userAdded,
+            createdAt: now,
+            updatedAt: now
+        )
+        var entries = localSession.summaryEntries ?? []
+        entries.append(entry)
+        localSession.summaryEntries = entries
+        try? await store.upsert(localSession)
+        await home.loadSessions()
+    }
+
     // MARK: - Share
 
     /// Returns the text and subject to hand to the share sheet, or nil when there is nothing ready to share.
@@ -178,10 +254,32 @@ struct SessionDetailView: View {
 
         case .summary:
             guard case .loaded(let text) = summaryState else { return nil }
-            let summary = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let atomicText = atomicShareText().trimmingCharacters(in: .whitespacesAndNewlines)
+            let summary = atomicText.isEmpty ? text.trimmingCharacters(in: .whitespacesAndNewlines) : atomicText
             guard !summary.isEmpty else { return nil }
             return (text: summary, subject: "\(sessionLabel) — Medical Summary")
         }
+    }
+
+    private func atomicShareText() -> String {
+        let entries = activeSummaryEntries
+        guard !entries.isEmpty else { return "" }
+        var parts: [String] = []
+        for category in SummaryEntryCategory.allCases {
+            let matches = entries.filter { $0.category == category }
+            guard !matches.isEmpty else { continue }
+            parts.append(category.displayTitle.uppercased())
+            for entry in matches {
+                let date = entry.relevantDate?.formatted(date: .abbreviated, time: .omitted) ?? "Date missing"
+                let line = [entry.title, entry.details].filter { !$0.isEmpty }.joined(separator: " — ")
+                parts.append("• \(date): \(line)")
+                if !entry.provenance.isEmpty {
+                    parts.append("  Source: \(entry.provenance)")
+                }
+            }
+            parts.append("")
+        }
+        return parts.joined(separator: "\n")
     }
 
     // MARK: - Summary Generation
@@ -261,6 +359,7 @@ struct SessionDetailView: View {
             }
             localSession.summary = summary
             if !title.isEmpty { localSession.title = title }
+            localSession.summaryEntries = SummaryEntryFactory.legacyEntries(from: summary, session: localSession)
             let sessionToSave = localSession
             try? await store.upsert(sessionToSave)
             await home.loadSessions()
@@ -386,6 +485,7 @@ struct SessionDetailView: View {
             // Persist title and summary so they never need to be regenerated.
             localSession.summary = summaryText
             if !titleText.isEmpty { localSession.title = titleText }
+            localSession.summaryEntries = SummaryEntryFactory.entries(from: fields, session: localSession)
             let sessionToSave = localSession
             try? await store.upsert(sessionToSave)
             await home.loadSessions()

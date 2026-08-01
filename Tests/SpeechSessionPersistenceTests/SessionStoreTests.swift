@@ -56,7 +56,7 @@ final class SessionStoreTests: XCTestCase {
         let fileURL = tempDir.appendingPathComponent(SessionStore.sessionsFileName)
         let data = try Data(contentsOf: fileURL)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        XCTAssertEqual(json?["version"] as? Int, 2)
+        XCTAssertEqual(json?["version"] as? Int, 3)
         let loaded = try await store.loadAll()
         XCTAssertEqual(loaded.count, 1)
         XCTAssertEqual(loaded[0].transcript, "hello")
@@ -70,5 +70,48 @@ final class SessionStoreTests: XCTestCase {
         let loaded = try await store.loadAll()
         XCTAssertEqual(loaded.count, 1)
         XCTAssertEqual(loaded[0].transcript, "v2")
+    }
+
+    func testSessionDecoding_legacyWithoutSummaryEntries_defaultsNil() throws {
+        let json = """
+        {
+          "id": "00000000-0000-0000-0000-000000000001",
+          "date": "2024-01-01T00:00:00Z",
+          "transcript": "legacy transcript",
+          "title": "Legacy",
+          "summary": "## Symptoms\\nHeadache"
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let session = try decoder.decode(Session.self, from: Data(json.utf8))
+        XCTAssertEqual(session.transcript, "legacy transcript")
+        XCTAssertNil(session.summaryEntries)
+    }
+
+    func testUpsert_roundTripsSummaryEntries() async throws {
+        let store = try SessionStore(storageDirectory: tempDir)
+        let sourceDate = Date(timeIntervalSince1970: 1_704_067_200)
+        let entry = SummaryEntry(
+            category: .practitionerContact,
+            title: "Dr. Jane Smith",
+            details: "Cardiology",
+            fields: [
+                SummaryEntryField(label: "Name", value: "Dr. Jane Smith"),
+                SummaryEntryField(label: "Phone", value: "555-123-4567"),
+            ],
+            relevantDate: sourceDate,
+            sourceSessionID: UUID(uuidString: "00000000-0000-0000-0000-000000000001"),
+            provenance: "Source entry - Jan 1, 2024",
+            needsReview: false
+        )
+        let session = Session(date: sourceDate, transcript: "contact note", summaryEntries: [entry])
+        try await store.upsert(session)
+
+        let loaded = try await store.loadAll()
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded[0].summaryEntries?.count, 1)
+        XCTAssertEqual(loaded[0].summaryEntries?.first?.category, .practitionerContact)
+        XCTAssertEqual(loaded[0].summaryEntries?.first?.fields.first?.value, "Dr. Jane Smith")
     }
 }

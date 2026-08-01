@@ -75,6 +75,12 @@ struct OnDeviceSummaryService {
         @Guide(description: "Narrative prescriber/pharmacist directions, tapers, or monitoring beyond per-line sigs.")
         var treatmentPlan: String?
 
+        @Guide(description: """
+        One contact per line from printed headers. Include name, organization, role, phone, email, and address only when explicitly tied \
+        to that same contact block. Never merge a name from one part of the document with contact text from another.
+        """)
+        var practitionerContacts: String?
+
         @Guide(description: "Tests, labs, or monitoring explicitly tied to medications in the source.")
         var testsAndLabs: String?
 
@@ -122,6 +128,13 @@ struct OnDeviceSummaryService {
         diet/lifestyle advice from clinician, patient education—anything 'we should / start / continue / refer / order'.
         """ )
         var treatmentPlan: String?
+
+        @Guide(description: """
+        One contact per line. Include a person or clinic/org name plus role, phone, email, and address only when explicitly tied to that \
+        same source block. Never associate a provider mentioned in dialogue with Rx/pharmacy address from a different block or entry. \
+        Omit first-name-only speech and missing details.
+        """)
+        var practitionerContacts: String?
 
         @Guide(description: "Vaccination history mentioned in this visit.")
         var vaccinations: String?
@@ -176,6 +189,13 @@ struct OnDeviceSummaryService {
         care coordination. Do NOT park clinical plans only in biopsychosocialContext or followUp.
         """)
         var carePlans: String?
+
+        @Guide(description: """
+        One contact per line across entries. Include name, organization, role, phone, email, and address only when explicitly tied to that \
+        same source entry or printed block. Never combine names from one entry with address or Rx/pharmacy text from another. \
+        Omit first-name-only transcript mentions. Deduplicate identical contacts across visits.
+        """)
+        var practitionerContacts: String?
 
         @Guide(description: "Vaccination history explicitly mentioned.")
         var vaccinations: String?
@@ -259,6 +279,7 @@ struct OnDeviceSummaryService {
                 findings: output.findings,
                 medications: output.medications,
                 treatmentPlan: output.treatmentPlan,
+                practitionerContacts: output.practitionerContacts,
                 vaccinations: output.vaccinations,
                 allergies: output.allergies,
                 testsAndLabs: output.testsAndLabs,
@@ -285,10 +306,11 @@ struct OnDeviceSummaryService {
         Extract only clinically relevant information explicitly stated in the provided entry data. \
         Do not infer, assume, or invent any clinical details. \
         Omit fields that have no relevant content. \
-        Be concise and format multi-item fields as markdown bullet lists.
+        Be concise; use markdown bullets in string fields except practitionerContacts (plain lines per field guides).
 
         Longitudinal CATEGORY RULES: \
         Put actionable clinician-directed plans (medication changes/referrals/therapies/procedures/education/coordination) in carePlans—not in biopsychosocialContext or followUp alone. \
+        practitionerContacts: one contact per line; include contact details only when tied to the same source block; never merge unrelated entries (e.g. psychologist name + Rx pharmacy address). Omit first-name-only dialogue. \
         followUp is for scheduling/return logistics across visits. \
         biopsychosocialContext is ONLY psychosocial or life-context without a clinical order.
         """)
@@ -301,6 +323,7 @@ struct OnDeviceSummaryService {
             diagnoses: output.diagnoses?.trimmedNilIfEmpty,
             medications: output.medications?.trimmedNilIfEmpty,
             carePlans: output.carePlans?.trimmedNilIfEmpty,
+            practitionerContacts: output.practitionerContacts?.trimmedNilIfEmpty,
             vaccinations: output.vaccinations?.trimmedNilIfEmpty,
             allergies: output.allergies?.trimmedNilIfEmpty,
             testsAndLabs: output.testsAndLabs?.trimmedNilIfEmpty,
@@ -340,6 +363,7 @@ struct OnDeviceSummaryService {
             findings: med.findings,
             medications: medBody.isEmpty ? nil : medBody,
             treatmentPlan: med.treatmentPlan,
+            practitionerContacts: med.practitionerContacts,
             vaccinations: med.vaccinations,
             allergies: med.allergies,
             testsAndLabs: med.testsAndLabs,

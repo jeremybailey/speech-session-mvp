@@ -5,7 +5,7 @@ struct SessionsEnvelope: Codable, Equatable {
     var sessions: [Session]
     var folders: [SessionFolder]
 
-    static let currentVersion = 2
+    static let currentVersion = 3
 
     enum CodingKeys: String, CodingKey {
         case version, sessions, folders

@@ -113,6 +113,10 @@ enum GlobalSummaryLongitudinalPrompts {
     - biopsychosocialContext: ONLY non-clinical psychosocial / life context (stress, bereavement, housing, finances, \
     support systems, broad mental health themes). Never place referrals, medication plans, procedures, or clinician \
     orders here; those belong in carePlans, medications, or testsAndLabs.
+    - practitionerContacts: one contact per line or array item. Include a person/organization name plus role, phone, fax, email, URL, \
+    or address ONLY when that detail is explicitly tied to the same printed/source block. Do not attach contact text from one printed block \
+    to a person or org named in another entry or section (e.g. never pair a **psychologist** named in therapy content with a **pharmacy address** from an Rx in a different entry). \
+    Omit first-name-only dialogue mentions and missing details.
 
     Return a JSON object with only the fields that have content:
     - "chiefComplaint": a concise longitudinal overview of the main problems, reasons for care, and presenting concerns \
@@ -121,6 +125,7 @@ enum GlobalSummaryLongitudinalPrompts {
     - "diagnoses": findings from diagnosed conditions, confirmed medical history, and clinically relevant observations
     - "medications": current medication list (prioritise most recent entry data)
     - "carePlans": ongoing treatment and care plans mentioned across visits (see rules above)
+    - "practitionerContacts": one contact per line or array item. Preserve explicitly tied contact fields from the same source block; do not invent missing fields.
     - "vaccinations": vaccination history explicitly mentioned
     - "allergies": known allergies and adverse reactions
     - "testsAndLabs": ordered, pending, or completed tests and labs
@@ -128,8 +133,7 @@ enum GlobalSummaryLongitudinalPrompts {
     - "biopsychosocialContext": ONLY psychosocial life context (see rules above)
     - "otherNotes": important details that never fit the categories above (omit if empty; do not duplicate other fields)
 
-    Format each field as a markdown bulleted list (- item) when multiple items exist, \
-    or a single sentence when there is only one item.
+    Format each string field as one item per distinct source, event, provider, medication, or care-plan entry. Use markdown bullets only when multiple atomic items exist.
     For "medications", prefer a JSON array of objects with keys name (required), strength, frequency, route, duration, instructions, classOrCategory—use classOrCategory only when explicitly stated for that drug in the entries.
     """
 }

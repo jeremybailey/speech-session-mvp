@@ -246,6 +246,8 @@ enum SummaryPromptAssembly {
             - Symptoms: Feelings, symptoms, side effects, or concerns they describe about themselves in first person.
             - Findings: Sparingly—conditions, diagnoses, or test results they state as facts about themselves (not your interpretation).
             - Medications: Drugs, doses, or changes they mention.
+            - practitionerContacts: one contact per line. Include name, org, role, phone, email, and address only when explicitly tied to the same source block. \
+            Never mix names from narrative with contact blocks elsewhere. Omit first-name-only mentions and missing details.
             - Treatment Plan: Self-care, habits, goals, reminders, or instructions they recall or plan—not a “visit plan” unless they said so.
             - Follow-up: Only appointments, calls, or dates they explicitly mention.
             - Allergies / Vaccinations / Tests & Labs: Only when explicitly stated.
@@ -255,6 +257,8 @@ enum SummaryPromptAssembly {
             CATEGORY RULES (health document — not assumed to be a single visit):
             - Treatment Plan: Patient education, self-management, lifestyle/diet/activity instructions, goals, warning signs, \
             care steps, and clinician-directed actions described in the document. Prefer this over stretching content into Symptoms.
+            - practitionerContacts: one contact per line. Include contact details only when explicitly present for that same person or org. \
+            Do not attach names to addresses from another section.
             - Findings: Stated diagnoses, conditions, problem lists, or examination/impression lines given as facts in the source.
             - Medications: Drugs, doses, changes—only what the document lists.
             - Chief Complaint / Symptoms: Include only when clearly stated as patient concerns—not from brochure titles alone.
@@ -267,6 +271,9 @@ enum SummaryPromptAssembly {
             - Medications: Highest priority—output one row per drug in structured form when using on-device generation; \
             for cloud JSON, use a medications array of objects (name required; optional strength, frequency, route, duration, instructions, classOrCategory). \
             Put classOrCategory ONLY when the source explicitly states it for that same drug—never infer from the drug name.
+            - practitionerContacts: one contact per line from the document. Include phone, fax, address, or email only when explicitly tied to the same person or printed org. \
+            **Never** pair a clinician name with pharmacy/Rx footer from a different context. \
+            Omit narrative treatment instructions (**Treatment Plan**).
             - Allergies: Include if present.
             - Treatment Plan: Use for prescriber/pharmacist directions that are narrative (tapers, monitoring, indication) when written \
             beyond bullets; do not duplicate the entire med table.

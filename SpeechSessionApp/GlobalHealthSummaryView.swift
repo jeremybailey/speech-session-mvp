@@ -184,9 +184,123 @@ struct ScopedHealthSummaryView: View {
 
     @ViewBuilder
     private func summaryCards(for payload: GlobalSummaryPayload) -> some View {
-        ForEach(payload.nonemptyDisplaySections, id: \.title) { row in
-            SummaryCategoryCard(title: row.title, content: row.content)
+        let atomicEntries = scopedAtomicEntries
+        if atomicEntries.isEmpty {
+            ForEach(payload.nonemptyDisplaySections, id: \.title) { row in
+                SummaryCategoryCard(title: row.title, content: row.content)
+            }
+        } else {
+            if let overview = overviewContent(from: payload) {
+                SummaryCategoryCard(title: "Overview", content: overview)
+            }
+            AtomicSummaryCardsView(
+                entries: atomicEntries,
+                onSave: { entry in Task { await saveScopedSummaryEntry(entry) } },
+                onDelete: { entry in Task { await deleteScopedSummaryEntry(entry) } },
+                onAdd: { category in Task { await addScopedSummaryEntry(category: category) } }
+            )
+            .padding(.top, 4)
         }
+    }
+
+    private func overviewContent(from payload: GlobalSummaryPayload) -> String? {
+        let sections = payload.nonemptyDisplaySections
+        guard !sections.isEmpty else { return nil }
+        let text = sections
+            .map { section in
+                let body = section.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !body.isEmpty else { return "" }
+                return "\(section.title): \(body)"
+            }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
+    private var scopedAtomicEntries: [SummaryEntry] {
+        scopedSessions.flatMap { session -> [SummaryEntry] in
+            if let entries = session.summaryEntries, !entries.isEmpty {
+                return entries.filter { !$0.isDeleted }
+            }
+            if let summary = session.summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return SummaryEntryFactory.legacyEntries(from: summary, session: session)
+            }
+            return []
+        }
+    }
+
+    private func saveScopedSummaryEntry(_ entry: SummaryEntry) async {
+        guard let sourceID = entry.sourceSessionID,
+              var session = home.sessions.first(where: { $0.id == sourceID }) else { return }
+        var entries = existingEntries(for: session)
+        if let index = entries.firstIndex(where: { $0.id == entry.id }) {
+            entries[index] = entry
+        } else {
+            entries.append(entry)
+        }
+        session.summaryEntries = entries
+        try? await store.upsert(session)
+        await home.loadSessions()
+    }
+
+    private func deleteScopedSummaryEntry(_ entry: SummaryEntry) async {
+        guard let sourceID = entry.sourceSessionID,
+              var session = home.sessions.first(where: { $0.id == sourceID }) else { return }
+        var entries = existingEntries(for: session)
+        if let index = entries.firstIndex(where: { $0.id == entry.id }) {
+            entries[index].isDeleted = true
+            entries[index].updatedAt = Date()
+            entries[index].origin = .userEdited
+        } else {
+            var deleted = entry
+            deleted.isDeleted = true
+            deleted.updatedAt = Date()
+            deleted.origin = .userEdited
+            entries.append(deleted)
+        }
+        session.summaryEntries = entries
+        try? await store.upsert(session)
+        await home.loadSessions()
+    }
+
+    private func addScopedSummaryEntry(category: SummaryEntryCategory) async {
+        guard var session = scopedSessions.sorted(by: { $0.date > $1.date }).first else { return }
+        let now = Date()
+        let entry = SummaryEntry(
+            category: category,
+            title: "Add \(category.displayTitle.lowercased())",
+            details: "",
+            fields: [
+                SummaryEntryField(label: category.displayTitle, value: "", isMissing: true, needsReview: true),
+            ],
+            relevantDate: nil,
+            dateNeedsReview: true,
+            sourceSessionID: session.id,
+            sourceTitle: session.title,
+            sourceDate: session.date,
+            provenance: "User-added detail",
+            needsReview: true,
+            reviewReason: "Add missing details and the actual relevant date.",
+            origin: .userAdded,
+            createdAt: now,
+            updatedAt: now
+        )
+        var entries = existingEntries(for: session)
+        entries.append(entry)
+        session.summaryEntries = entries
+        try? await store.upsert(session)
+        await home.loadSessions()
+    }
+
+    private func existingEntries(for session: Session) -> [SummaryEntry] {
+        if let entries = session.summaryEntries, !entries.isEmpty {
+            return entries
+        }
+        if let summary = session.summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return SummaryEntryFactory.legacyEntries(from: summary, session: session)
+        }
+        return []
     }
 
     // MARK: - Share
@@ -204,6 +318,26 @@ struct ScopedHealthSummaryView: View {
                 parts.append("")
                 parts.append(section.title.uppercased())
                 parts.append(section.content)
+            }
+        }
+
+        let entries = scopedAtomicEntries
+        if !entries.isEmpty {
+            parts.append("")
+            parts.append("Atomic summary cards")
+            for category in SummaryEntryCategory.allCases {
+                let matches = entries.filter { $0.category == category }
+                guard !matches.isEmpty else { continue }
+                parts.append("")
+                parts.append(category.displayTitle.uppercased())
+                for entry in matches {
+                    let date = entry.relevantDate?.formatted(date: .abbreviated, time: .omitted) ?? "Date missing"
+                    let line = [entry.title, entry.details].filter { !$0.isEmpty }.joined(separator: " — ")
+                    parts.append("• \(date): \(line)")
+                    if !entry.provenance.isEmpty {
+                        parts.append("  Source: \(entry.provenance)")
+                    }
+                }
             }
         }
 
