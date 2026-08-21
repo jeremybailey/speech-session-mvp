@@ -119,8 +119,12 @@ enum GlobalSummaryLongitudinalPrompts {
     Omit first-name-only dialogue mentions and missing details.
 
     Return a JSON object with only the fields that have content:
-    - "chiefComplaint": a concise longitudinal overview of the main problems, reasons for care, and presenting concerns \
-    across visits—the high-level "why" tying entries together—not a verbatim list of labels from every visit unless needed
+    - "overview": categorized markdown digest — NOT a paragraph and NOT first-person narrative. \
+    Use `###` headings and short bullets. Group presenting problems under body systems \
+    (\(BodySystem.promptAllowedList)). Use ordinary clinical headings (Medications, Care plans, Allergies, Follow-up, etc.) \
+    for the remaining facts. Omit empty headings. Facts only from the entries.
+    - "chiefComplaint": presenting concerns grouped by body system. Use `###` headings from \
+    \(BodySystem.promptAllowedList), then one bullet per distinct complaint. No narrative paragraph.
     - "symptoms": consolidated current and historical symptoms across all visits
     - "diagnoses": findings from diagnosed conditions, confirmed medical history, and clinically relevant observations
     - "medications": current medication list (prioritise most recent entry data)
@@ -133,7 +137,8 @@ enum GlobalSummaryLongitudinalPrompts {
     - "biopsychosocialContext": ONLY psychosocial life context (see rules above)
     - "otherNotes": important details that never fit the categories above (omit if empty; do not duplicate other fields)
 
-    Format each string field as one item per distinct source, event, provider, medication, or care-plan entry. Use markdown bullets only when multiple atomic items exist.
+    Format each string field as one item per distinct source, event, provider, medication, or care-plan entry. Use markdown bullets. \
+    For "overview" and "chiefComplaint", bullets must sit under the headings described above—never a continuous paragraph.
     For "medications", prefer a JSON array of objects with keys name (required), strength, frequency, route, duration, instructions, classOrCategory—use classOrCategory only when explicitly stated for that drug in the entries.
     """
 }

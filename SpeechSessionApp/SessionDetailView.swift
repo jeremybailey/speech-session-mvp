@@ -13,7 +13,7 @@ struct SessionDetailView: View {
     @AppStorage("speechSession.openaiAPIKey") private var openAIAPIKey = ""
     @AppStorage("speechSession.summaryBackend") private var summaryBackendRaw = "openai"
 
-    @State private var selectedTab: DetailTab = .transcription
+    @State private var selectedTab: DetailTab = .summary
     @State private var summaryState: SummaryState = .idle
 
     init(session: Session, store: SessionStore, home: HomeViewModel) {
@@ -25,8 +25,8 @@ struct SessionDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             Picker("View", selection: $selectedTab) {
-                Text("Transcription").tag(DetailTab.transcription)
                 Text("Summary").tag(DetailTab.summary)
+                Text("Transcription").tag(DetailTab.transcription)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)
@@ -35,10 +35,10 @@ struct SessionDetailView: View {
             Divider()
 
             switch selectedTab {
-            case .transcription:
-                transcriptionTab
             case .summary:
                 summaryTab
+            case .transcription:
+                transcriptionTab
             }
         }
         .background(BrandPalette.canvas.ignoresSafeArea())
@@ -129,19 +129,23 @@ struct SessionDetailView: View {
             .frame(maxWidth: .infinity)
         case .loaded(let text):
             ScrollView {
-                if !activeSummaryEntries.isEmpty {
-                    AtomicSummaryCardsView(
-                        entries: activeSummaryEntries,
-                        onSave: { entry in Task { await saveSummaryEntry(entry) } },
-                        onDelete: { entry in Task { await deleteSummaryEntry(entry) } },
-                        onAdd: { category in Task { await addSummaryEntry(category: category) } }
-                    )
-                    .padding(.vertical)
-                } else {
-                    SummaryCardsView(text: text)
+                Group {
+                    if !activeSummaryEntries.isEmpty {
+                        AtomicSummaryCardsView(
+                            entries: activeSummaryEntries,
+                            onSave: { entry in Task { await saveSummaryEntry(entry) } },
+                            onDelete: { entry in Task { await deleteSummaryEntry(entry) } },
+                            onAdd: { category in Task { await addSummaryEntry(category: category) } }
+                        )
                         .padding(.vertical)
+                    } else {
+                        SummaryCardsView(text: text)
+                            .padding(.vertical)
+                    }
                 }
+                .padding(.bottom, 28)
             }
+            .scrollDismissesKeyboard(.interactively)
         case .failed(let message):
             VStack {
                 Spacer()
@@ -201,10 +205,22 @@ struct SessionDetailView: View {
 
     private func deleteSummaryEntry(_ entry: SummaryEntry) async {
         var entries = localSession.summaryEntries ?? []
-        if let index = entries.firstIndex(where: { $0.id == entry.id }) {
+        if let index = entries.firstIndex(where: { $0.id == entry.id })
+            ?? entries.firstIndex(where: {
+                !$0.isDeleted
+                    && $0.category == entry.category
+                    && $0.title == entry.title
+                    && $0.details == entry.details
+            }) {
             entries[index].isDeleted = true
             entries[index].updatedAt = Date()
             entries[index].origin = .userEdited
+        } else {
+            var deleted = entry
+            deleted.isDeleted = true
+            deleted.updatedAt = Date()
+            deleted.origin = .userEdited
+            entries.append(deleted)
         }
         localSession.summaryEntries = entries
         try? await store.upsert(localSession)
@@ -215,11 +231,9 @@ struct SessionDetailView: View {
         let now = Date()
         let entry = SummaryEntry(
             category: category,
-            title: "Add \(category.displayTitle.lowercased())",
+            title: "",
             details: "",
-            fields: [
-                SummaryEntryField(label: category.displayTitle, value: "", isMissing: true, needsReview: true),
-            ],
+            fields: SummaryEntryFactory.fieldsForNewUserEntry(category: category),
             relevantDate: nil,
             dateNeedsReview: true,
             sourceSessionID: localSession.id,

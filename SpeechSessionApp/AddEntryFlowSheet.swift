@@ -17,6 +17,11 @@ enum AddEntryMedium: Hashable {
     }
 }
 
+private enum AudioCaptureAction: Hashable {
+    case record
+    case importFile
+}
+
 // MARK: - Full-screen sheet (Wallet-style drill-down)
 
 /// Two-step add flow: choose medium → choose source (and audio intent). Large controls for readability.
@@ -24,6 +29,7 @@ struct AddEntryFlowSheet: View {
     @Binding var isPresented: Bool
     @State private var path = NavigationPath()
     @State private var audioIntent: SessionEntryIntent = .clinicalVisit
+    @State private var pendingAudioAction: AudioCaptureAction?
 
     let onAudioRecord: (SessionEntryIntent) -> Void
     let onAudioImport: (SessionEntryIntent) -> Void
@@ -42,8 +48,51 @@ struct AddEntryFlowSheet: View {
         .background(BrandPalette.canvas.ignoresSafeArea())
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .confirmationDialog(
+            "Before transcribing",
+            isPresented: Binding(
+                get: { pendingAudioAction != nil },
+                set: { if !$0 { pendingAudioAction = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(consentCTA) {
+                confirmPendingAudioAction()
+            }
+            Button("Cancel", role: .cancel) {
+                pendingAudioAction = nil
+            }
+        } message: {
+            Text("This audio will be turned into a written transcript.")
+        }
         .onChange(of: isPresented) { _, isOpen in
-            if isOpen { path = NavigationPath() }
+            if isOpen {
+                path = NavigationPath()
+                pendingAudioAction = nil
+            }
+        }
+    }
+
+    private var consentCTA: String {
+        switch audioIntent {
+        case .clinicalVisit:
+            return "I confirm everyone present consented"
+        case .personalJournal:
+            return "I confirm I have consent to transcribe"
+        }
+    }
+
+    private func confirmPendingAudioAction() {
+        let intent = audioIntent
+        let action = pendingAudioAction
+        pendingAudioAction = nil
+        switch action {
+        case .record:
+            dismissThen { onAudioRecord(intent) }
+        case .importFile:
+            dismissThen { onAudioImport(intent) }
+        case nil:
+            break
         }
     }
 
@@ -138,8 +187,7 @@ struct AddEntryFlowSheet: View {
                             systemImage: "mic.circle.fill",
                             tint: BrandPalette.systemRed
                         ) {
-                            let intent = audioIntent
-                            dismissThen { onAudioRecord(intent) }
+                            pendingAudioAction = .record
                         }
 
                         AddEntryBigChoiceRow(
@@ -148,8 +196,7 @@ struct AddEntryFlowSheet: View {
                             systemImage: "folder.circle.fill",
                             tint: BrandPalette.systemIndigo
                         ) {
-                            let intent = audioIntent
-                            dismissThen { onAudioImport(intent) }
+                            pendingAudioAction = .importFile
                         }
 
                     case .photo:

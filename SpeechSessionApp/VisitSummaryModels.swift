@@ -1,6 +1,230 @@
 import Foundation
 import SpeechSessionPersistence
 
+// MARK: - Body systems (chief complaints)
+
+/// Organ systems used to group chief complaints. Names match the labels we ask the model to emit.
+enum BodySystem: String, CaseIterable, Hashable, Identifiable, Sendable {
+    case neurological
+    case nervous
+    case digestive
+    case immune
+    case lymphatic
+    case urinary
+    case musculoskeletal
+    case cardiovascular
+    case respiratory
+    case endocrine
+    case integumentary
+    case reproductive
+    case mentalHealth
+    case other
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .neurological: return "Neurological"
+        case .nervous: return "Nervous"
+        case .digestive: return "Digestive"
+        case .immune: return "Immune"
+        case .lymphatic: return "Lymphatic"
+        case .urinary: return "Urinary"
+        case .musculoskeletal: return "Musculoskeletal"
+        case .cardiovascular: return "Cardiovascular"
+        case .respiratory: return "Respiratory"
+        case .endocrine: return "Endocrine"
+        case .integumentary: return "Integumentary"
+        case .reproductive: return "Reproductive"
+        case .mentalHealth: return "Mental health"
+        case .other: return "Other"
+        }
+    }
+
+    static let fieldLabel = "Body system"
+
+    static var promptAllowedList: String {
+        allCases.filter { $0 != .other }.map(\.displayName).joined(separator: ", ") + ", Other"
+    }
+
+    static func parse(_ raw: String?) -> BodySystem? {
+        guard let raw else { return nil }
+        let n = normalizeLabel(raw)
+        guard !n.isEmpty else { return nil }
+        switch n {
+        case "neurological", "neurologic", "neuro", "cns", "central nervous":
+            return .neurological
+        case "nervous", "peripheral nervous", "pns":
+            return .nervous
+        case "digestive", "gastrointestinal", "gi", "gastro":
+            return .digestive
+        case "immune", "immunologic", "immunological":
+            return .immune
+        case "lymphatic", "lymph":
+            return .lymphatic
+        case "urinary", "renal", "genitourinary", "gu", "kidney", "urologic":
+            return .urinary
+        case "musculoskeletal", "musculo skeletal", "msk", "ortho", "orthopedic":
+            return .musculoskeletal
+        case "cardiovascular", "cardiac", "heart", "cv":
+            return .cardiovascular
+        case "respiratory", "pulmonary", "lung":
+            return .respiratory
+        case "endocrine", "hormonal":
+            return .endocrine
+        case "integumentary", "skin", "dermatologic", "dermatological":
+            return .integumentary
+        case "reproductive", "gynecologic", "gynaecologic", "obgyn":
+            return .reproductive
+        case "mental health", "psychiatric", "psych", "behavioral":
+            return .mentalHealth
+        case "other", "unspecified", "general":
+            return .other
+        default:
+            return allCases.first { normalizeLabel($0.displayName) == n }
+        }
+    }
+
+    /// Group raw chief-complaint markdown/lines under body systems.
+    static func groupedLines(from raw: String) -> [(system: BodySystem, lines: [String])] {
+        var current: BodySystem?
+        var buckets: [BodySystem: [String]] = [:]
+
+        for original in raw.components(separatedBy: "\n") {
+            let trimmed = original.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            if let heading = markdownHeading(from: trimmed) {
+                current = parse(heading) ?? .other
+                continue
+            }
+            let unmarked = stripLeadingListMarker(trimmed)
+            guard !unmarked.isEmpty else { continue }
+            if let labeled = splitLabeledLine(unmarked) {
+                buckets[labeled.system, default: []].append(labeled.text)
+                continue
+            }
+            let system = current ?? classify(unmarked)
+            buckets[system, default: []].append(unmarked)
+        }
+
+        return allCases.compactMap { system in
+            guard let lines = buckets[system], !lines.isEmpty else { return nil }
+            return (system, lines)
+        }
+    }
+
+    static func resolved(for entry: SummaryEntry) -> BodySystem {
+        if let field = entry.fields.first(where: { $0.label.caseInsensitiveCompare(fieldLabel) == .orderedSame }) {
+            if let parsed = parse(field.value) { return parsed }
+        }
+        let haystack = [entry.title, entry.details].joined(separator: " ")
+        if let labeled = splitLabeledLine(haystack) { return labeled.system }
+        return classify(haystack)
+    }
+
+    static func classify(_ text: String) -> BodySystem {
+        let l = text.lowercased()
+
+        let lymphatic = ["lymph", "lymphedema", "lymphoma", "swollen gland", "adenopathy"]
+        if lymphatic.contains(where: { l.contains($0) }) { return .lymphatic }
+
+        let immune = ["autoimmune", "immunodeficienc", "lupus", "hashimoto", "celiac", "guillain", "anaphylaxis"]
+        if immune.contains(where: { l.contains($0) }) { return .immune }
+
+        let urinary = ["urin", "bladder", "kidney", "renal", "uti", "incontinen", "prostat", "dysuria", "hematuria"]
+        if urinary.contains(where: { l.contains($0) }) { return .urinary }
+
+        let digestive = [
+            "digest", "stomach", "abdom", "nause", "vomit", "diarrhea", "constipat", "gerd", "reflux",
+            "heartburn", "ibs", "bowel", "intestin", "liver", "hepatic", "pancrea", "gallbladder",
+            "gi ", "indigest", "crohn", "colitis", "appetite",
+        ]
+        if digestive.contains(where: { l.contains($0) }) { return .digestive }
+
+        let musculoskeletal = [
+            "musculo", "back pain", "low back", "joint", "arthritis", "osteo", "knee", "hip", "shoulder",
+            "spine", "spinal", "fracture", "muscle", "bone", "tendon", "ligament", "fibromyalgia",
+            "sciatica", "neck pain", "orthop", "sprain", "strain",
+        ]
+        if musculoskeletal.contains(where: { l.contains($0) }) { return .musculoskeletal }
+
+        let nervous = ["neuropath", "nerve pain", "neuralgia", "numbness", "tingling", "paresthesia", "carpal tunnel"]
+        if nervous.contains(where: { l.contains($0) }) { return .nervous }
+
+        let neurological = [
+            "neurolog", "headache", "migraine", "seizure", "stroke", "tbi", "concussion", "dizziness",
+            "vertigo", "memory", "dementia", "parkinson", "multiple sclerosis", "ms ", "tremor",
+            "faint", "syncope", "cognitive", "brain",
+        ]
+        if neurological.contains(where: { l.contains($0) }) { return .neurological }
+
+        let cardiovascular = [
+            "heart", "cardiac", "chest pain", "hypertension", "blood pressure", "palpitation",
+            "afib", "arrhythm", "cholesterol", "coronary", "angina",
+        ]
+        if cardiovascular.contains(where: { l.contains($0) }) { return .cardiovascular }
+
+        let respiratory = ["asthma", "cough", "lung", "shortness of breath", "dyspnea", "copd", "pneumonia", "wheez", "sinus"]
+        if respiratory.contains(where: { l.contains($0) }) { return .respiratory }
+
+        let endocrine = ["diabet", "thyroid", "hormon", "adrenal", "a1c", "insulin", "endocrin"]
+        if endocrine.contains(where: { l.contains($0) }) { return .endocrine }
+
+        let integumentary = ["skin", "rash", "eczema", "psoriasis", "lesion", "dermat", "wound", "itch"]
+        if integumentary.contains(where: { l.contains($0) }) { return .integumentary }
+
+        let reproductive = ["pregnan", "menstrual", "menopaus", "pelvic", "ovary", "uter", "gynec", "prostate cancer"]
+        if reproductive.contains(where: { l.contains($0) }) { return .reproductive }
+
+        let mental = ["depress", "anxi", "ptsd", "bipolar", "insomnia", "panic", "adhd", "mental health", "psychiatr"]
+        if mental.contains(where: { l.contains($0) }) { return .mentalHealth }
+
+        return .other
+    }
+
+    fileprivate static func normalizeLabel(_ raw: String) -> String {
+        raw.lowercased()
+            .replacingOccurrences(of: "–", with: " ")
+            .replacingOccurrences(of: "—", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "/", with: " ")
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    fileprivate static func markdownHeading(from line: String) -> String? {
+        var s = line
+        if s.hasPrefix("### ") { s = String(s.dropFirst(4)) }
+        else if s.hasPrefix("## ") { s = String(s.dropFirst(3)) }
+        else if s.hasPrefix("# ") { s = String(s.dropFirst(2)) }
+        else { return nil }
+        return s.trimmingCharacters(in: CharacterSet(charactersIn: "#* ")).trimmingCharacters(in: .whitespaces)
+    }
+
+    fileprivate static func splitLabeledLine(_ line: String) -> (system: BodySystem, text: String)? {
+        for sep in [": ", " — ", " – ", " - "] {
+            guard let range = line.range(of: sep) else { continue }
+            let label = String(line[..<range.lowerBound]).trimmingCharacters(in: CharacterSet(charactersIn: "* "))
+            guard let system = parse(label) else { continue }
+            let text = line[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            return (system, text)
+        }
+        return nil
+    }
+
+    fileprivate static func stripLeadingListMarker(_ line: String) -> String {
+        var s = line.replacingOccurrences(of: "**", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("- ") || s.hasPrefix("• ") || s.hasPrefix("* ") {
+            s = String(s.dropFirst(2))
+        } else if let range = s.range(of: #"^\d+\.\s+"#, options: .regularExpression) {
+            s.removeSubrange(range)
+        }
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 // MARK: - Shared field aggregation (OpenAI decode + on-device structured output → markdown)
 
 /// Optional section fields for a single-visit summary. Used to build markdown with fixed ## headers only.
@@ -129,38 +353,75 @@ enum SummaryEntryFactory {
         let lines = normalizedLines(from: rawContent)
         guard !lines.isEmpty else { return [] }
 
-        return lines.map { line in
-            let split = splitPrimaryAndDetail(from: line)
-            let title = split.primary
-            let details = split.detail ?? ""
-            let contactFields = category == .practitionerContact
-                ? PractitionerContactsFormatting.editableFields(from: line)
-                : []
-            let baseFields = contactFields.isEmpty
-                ? defaultFields(for: category, title: title, details: details)
-                : contactFields
-            let needsDateReview = true
-            let reviewReason = needsDateReview
-                ? "Confirm the actual relevant date for this information."
-                : nil
+        if category == .chiefComplaint {
+            return BodySystem.groupedLines(from: rawContent ?? "").flatMap { group in
+                group.lines.map { line in
+                    makeEntry(
+                        category: category,
+                        line: line,
+                        bodySystem: group.system,
+                        session: session,
+                        origin: origin
+                    )
+                }
+            }
+        }
 
-            return SummaryEntry(
+        return lines.map { line in
+            makeEntry(
                 category: category,
-                title: title,
-                details: details,
-                fields: baseFields,
-                relevantDate: session.date,
-                dateNeedsReview: needsDateReview,
-                sourceSessionID: session.id,
-                sourceTitle: session.title,
-                sourceDate: session.date,
-                sourceExcerpt: sourceExcerpt(for: line, in: session.transcript),
-                provenance: provenanceLabel(for: session),
-                needsReview: needsDateReview || baseFields.contains(where: { $0.needsReview || $0.isMissing }),
-                reviewReason: reviewReason,
+                line: line,
+                bodySystem: nil,
+                session: session,
                 origin: origin
             )
         }
+    }
+
+    private static func makeEntry(
+        category: SummaryEntryCategory,
+        line: String,
+        bodySystem: BodySystem?,
+        session: Session,
+        origin: SummaryEntryOrigin
+    ) -> SummaryEntry {
+        let split = splitPrimaryAndDetail(from: line)
+        let title = split.primary
+        let details = split.detail ?? ""
+        let contactFields = category == .practitionerContact
+            ? PractitionerContactsFormatting.editableFields(from: line)
+            : []
+        var baseFields = contactFields.isEmpty
+            ? defaultFields(for: category, title: title, details: details, bodySystem: bodySystem)
+            : contactFields
+        if category == .chiefComplaint, !baseFields.contains(where: { $0.label.caseInsensitiveCompare(BodySystem.fieldLabel) == .orderedSame }) {
+            let system = bodySystem ?? BodySystem.classify(line)
+            baseFields.insert(
+                SummaryEntryField(label: BodySystem.fieldLabel, value: system.displayName, isMissing: false, needsReview: false),
+                at: 0
+            )
+        }
+        let needsDateReview = true
+        let reviewReason = needsDateReview
+            ? "Confirm the actual relevant date for this information."
+            : nil
+
+        return SummaryEntry(
+            category: category,
+            title: title,
+            details: details,
+            fields: baseFields,
+            relevantDate: session.date,
+            dateNeedsReview: needsDateReview,
+            sourceSessionID: session.id,
+            sourceTitle: session.title,
+            sourceDate: session.date,
+            sourceExcerpt: sourceExcerpt(for: line, in: session.transcript),
+            provenance: provenanceLabel(for: session),
+            needsReview: needsDateReview || baseFields.contains(where: { $0.needsReview || $0.isMissing }),
+            reviewReason: reviewReason,
+            origin: origin
+        )
     }
 
     private static func normalizedLines(from raw: String?) -> [String] {
@@ -198,22 +459,46 @@ enum SummaryEntryFactory {
     private static func defaultFields(
         for category: SummaryEntryCategory,
         title: String,
-        details: String
+        details: String,
+        bodySystem: BodySystem? = nil
     ) -> [SummaryEntryField] {
+        var fields: [SummaryEntryField] = []
         switch category {
-        case .carePlan:
-            return [
-                SummaryEntryField(label: "Plan", value: [title, details].filter { !$0.isEmpty }.joined(separator: " - ")),
-                SummaryEntryField(label: "Practitioner or session", value: "", isMissing: true, needsReview: true),
-            ]
+        case .practitionerContact:
+            return []
+        case .chiefComplaint:
+            let system = bodySystem ?? BodySystem.classify([title, details].joined(separator: " "))
+            fields.append(
+                SummaryEntryField(label: BodySystem.fieldLabel, value: system.displayName, isMissing: false, needsReview: false)
+            )
         case .medications:
+            if !details.isEmpty {
+                fields.append(
+                    SummaryEntryField(label: "Details", value: details, isMissing: false, needsReview: false)
+                )
+            }
+        default:
+            break
+        }
+        fields.append(
+            SummaryEntryField(label: "Practitioner", value: "", isMissing: true, needsReview: true)
+        )
+        return fields
+    }
+
+    /// Fields for a blank user-created card (summary list hides label echoes).
+    static func fieldsForNewUserEntry(category: SummaryEntryCategory) -> [SummaryEntryField] {
+        switch category {
+        case .practitionerContact:
+            return PractitionerContactsFormatting.editableFields(from: "")
+        case .chiefComplaint:
             return [
-                SummaryEntryField(label: "Medication", value: title),
-                SummaryEntryField(label: "Details", value: details, isMissing: details.isEmpty, needsReview: details.isEmpty),
+                SummaryEntryField(label: BodySystem.fieldLabel, value: BodySystem.other.displayName, isMissing: false, needsReview: true),
+                SummaryEntryField(label: "Practitioner", value: "", isMissing: true, needsReview: true),
             ]
         default:
             return [
-                SummaryEntryField(label: category.displayTitle, value: [title, details].filter { !$0.isEmpty }.joined(separator: " - ")),
+                SummaryEntryField(label: "Practitioner", value: "", isMissing: true, needsReview: true),
             ]
         }
     }
@@ -570,6 +855,9 @@ enum VisitSummaryPromptGuidance {
     unless the transcript only states an isolated label with no actionable plan elsewhere.
     - Medications: List drug names/doses/adherence explicitly mentioned; if a NEW medication is STARTED as part \
     of today’s plan, summarize it briefly in Medications AND keep the clinician’s prescribing intent under Treatment Plan.
+    - Chief Complaint: Organize each presenting concern by body system. Use markdown `###` headings \
+    (or a system label before the bullet) from this set: \(BodySystem.promptAllowedList). \
+    One bullet per distinct complaint. Do not write a narrative paragraph.
     """
 
     /// Exact JSON key contract per routed `contentKind` (OpenAI `json_object`). `otherNotes` catches important residue only.
@@ -583,6 +871,7 @@ enum VisitSummaryPromptGuidance {
         A legacy "summary" markdown field is acceptable ONLY when every other section key would be empty.
         Every item in each field must describe one distinct source, event, provider, medication, or care-plan entry. \
         Include dates only when explicitly stated; otherwise do not invent dates. \
+        For chiefComplaint, group bullets under body-system headings (\(BodySystem.promptAllowedList)); omit empty systems. \
         For practitionerContacts: one contact per line or array item; include name, org, role, phone, email, and address only when explicitly tied to that contact in the same source block. \
         Never merge names with contact details from a different document or section.
         """

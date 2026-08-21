@@ -104,11 +104,14 @@ struct ScopedHealthSummaryView: View {
                     errorCard(message: message)
                 }
 
-                CareTimelineCard(sessions: scopedSessions)
+                // Care timeline hidden for now; may bring back later.
+                // CareTimelineCard(sessions: scopedSessions)
             }
             .padding(.vertical)
             .padding(.horizontal)
+            .padding(.bottom, 28)
         }
+        .scrollDismissesKeyboard(.interactively)
         .background(BrandPalette.canvas)
     }
 
@@ -185,14 +188,17 @@ struct ScopedHealthSummaryView: View {
     @ViewBuilder
     private func summaryCards(for payload: GlobalSummaryPayload) -> some View {
         let atomicEntries = scopedAtomicEntries
+        let sections = payload.overviewBulletSections()
+        if !sections.isEmpty {
+            OverviewSummaryCard(sections: sections)
+        }
         if atomicEntries.isEmpty {
-            ForEach(payload.nonemptyDisplaySections, id: \.title) { row in
-                SummaryCategoryCard(title: row.title, content: row.content)
+            if sections.isEmpty {
+                ForEach(payload.nonemptyDisplaySections, id: \.title) { row in
+                    SummaryCategoryCard(title: row.title, content: row.content)
+                }
             }
         } else {
-            if let overview = overviewContent(from: payload) {
-                SummaryCategoryCard(title: "Overview", content: overview)
-            }
             AtomicSummaryCardsView(
                 entries: atomicEntries,
                 onSave: { entry in Task { await saveScopedSummaryEntry(entry) } },
@@ -201,21 +207,6 @@ struct ScopedHealthSummaryView: View {
             )
             .padding(.top, 4)
         }
-    }
-
-    private func overviewContent(from payload: GlobalSummaryPayload) -> String? {
-        let sections = payload.nonemptyDisplaySections
-        guard !sections.isEmpty else { return nil }
-        let text = sections
-            .map { section in
-                let body = section.content.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !body.isEmpty else { return "" }
-                return "\(section.title): \(body)"
-            }
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? nil : text
     }
 
     private var scopedAtomicEntries: [SummaryEntry] {
@@ -245,10 +236,20 @@ struct ScopedHealthSummaryView: View {
     }
 
     private func deleteScopedSummaryEntry(_ entry: SummaryEntry) async {
-        guard let sourceID = entry.sourceSessionID,
+        let sourceID = entry.sourceSessionID
+            ?? scopedSessions.first(where: { session in
+                (session.summaryEntries ?? []).contains(where: { $0.id == entry.id })
+            })?.id
+        guard let sourceID,
               var session = home.sessions.first(where: { $0.id == sourceID }) else { return }
         var entries = existingEntries(for: session)
-        if let index = entries.firstIndex(where: { $0.id == entry.id }) {
+        if let index = entries.firstIndex(where: { $0.id == entry.id })
+            ?? entries.firstIndex(where: {
+                !$0.isDeleted
+                    && $0.category == entry.category
+                    && $0.title == entry.title
+                    && $0.details == entry.details
+            }) {
             entries[index].isDeleted = true
             entries[index].updatedAt = Date()
             entries[index].origin = .userEdited
@@ -269,11 +270,9 @@ struct ScopedHealthSummaryView: View {
         let now = Date()
         let entry = SummaryEntry(
             category: category,
-            title: "Add \(category.displayTitle.lowercased())",
+            title: "",
             details: "",
-            fields: [
-                SummaryEntryField(label: category.displayTitle, value: "", isMissing: true, needsReview: true),
-            ],
+            fields: SummaryEntryFactory.fieldsForNewUserEntry(category: category),
             relevantDate: nil,
             dateNeedsReview: true,
             sourceSessionID: session.id,
@@ -310,6 +309,20 @@ struct ScopedHealthSummaryView: View {
         guard !scopedSessions.isEmpty else { return nil }
 
         var parts: [String] = []
+
+        let overviewSections = payload.overviewBulletSections()
+        if !overviewSections.isEmpty {
+            parts.append("Medical summary — \(scopeShareLabel)")
+            parts.append("")
+            parts.append("OVERVIEW")
+            for section in overviewSections {
+                parts.append("")
+                parts.append(section.title)
+                for bullet in section.bullets {
+                    parts.append("• \(bullet)")
+                }
+            }
+        }
 
         let sections = payload.nonemptyDisplaySections
         if !sections.isEmpty {

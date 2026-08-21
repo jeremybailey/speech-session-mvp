@@ -110,7 +110,10 @@ struct OnDeviceSummaryService {
         @Guide(description: "Short appointment title, 3–6 words (e.g. Back pain follow-up, Annual physical exam).")
         var title: String
 
-        @Guide(description: "Chief complaint / reason for visit, if stated.")
+        @Guide(description: """
+        Chief complaint / reason for visit, grouped by body system when possible. Use ### headings \
+        (Neurological, Digestive, Immune, Lymphatic, Nervous, Urinary, Musculoskeletal, etc.) and one bullet per concern.
+        """)
         var chiefComplaint: String?
 
         @Guide(description: "Current symptoms and concerns explicitly mentioned.")
@@ -169,8 +172,16 @@ struct OnDeviceSummaryService {
     @Generable
     struct GlobalSummaryOutput {
         @Guide(description: """
-        Concise longitudinal overview of the main problems, reasons for care, and presenting concerns across visits—the \
-        high-level 'why' tying entries together—not a verbatim label from each visit unless that is the explicit content.
+        Categorized markdown digest with ### headings and short bullets. Not a paragraph and not first-person. \
+        Group problems under body systems (Neurological, Nervous, Digestive, Immune, Lymphatic, Urinary, Musculoskeletal, \
+        Cardiovascular, Respiratory, Endocrine, Integumentary, Reproductive, Mental health, Other). \
+        Use Medications / Care plans / Allergies / Follow-up headings for remaining facts. Omit empty headings. Facts only.
+        """)
+        var overview: String?
+
+        @Guide(description: """
+        Presenting concerns grouped by body system. Use ### headings (Neurological, Nervous, Digestive, Immune, Lymphatic, \
+        Urinary, Musculoskeletal, and other body systems as needed) and one bullet per complaint. No narrative paragraph.
         """)
         var chiefComplaint: String?
 
@@ -306,9 +317,12 @@ struct OnDeviceSummaryService {
         Extract only clinically relevant information explicitly stated in the provided entry data. \
         Do not infer, assume, or invent any clinical details. \
         Omit fields that have no relevant content. \
-        Be concise; use markdown bullets in string fields except practitionerContacts (plain lines per field guides).
+        Be concise; use markdown bullets in string fields. \
+        overview must be categorized headings + bullets, never a spoken first-person paragraph. \
+        chiefComplaint must be grouped under body-system headings.
 
         Longitudinal CATEGORY RULES: \
+        Always include overview as categorized bullets (body systems for problems; Medications, Care plans, Allergies, etc. for the rest). \
         Put actionable clinician-directed plans (medication changes/referrals/therapies/procedures/education/coordination) in carePlans—not in biopsychosocialContext or followUp alone. \
         practitionerContacts: one contact per line; include contact details only when tied to the same source block; never merge unrelated entries (e.g. psychologist name + Rx pharmacy address). Omit first-name-only dialogue. \
         followUp is for scheduling/return logistics across visits. \
@@ -318,6 +332,7 @@ struct OnDeviceSummaryService {
         let response = try await session.respond(to: prompt, generating: GlobalSummaryOutput.self)
         let output = response.content
         return GlobalSummaryPayload(
+            overview: output.overview?.trimmedNilIfEmpty,
             chiefComplaint: output.chiefComplaint?.trimmedNilIfEmpty,
             symptoms: output.symptoms?.trimmedNilIfEmpty,
             diagnoses: output.diagnoses?.trimmedNilIfEmpty,

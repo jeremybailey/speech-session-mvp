@@ -51,6 +51,60 @@ struct SummaryCardsView: View {
     }
 }
 
+// MARK: OverviewSummaryCard
+
+/// Cross-visit digest as categorized bullets (not a spoken paragraph).
+struct OverviewSummaryCard: View {
+    let sections: [OverviewBulletSection]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(BrandPalette.systemBlue.opacity(0.18))
+                        .frame(width: 34, height: 34)
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(BrandPalette.systemBlue)
+                }
+                Text("OVERVIEW")
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.primary)
+                    .kerning(0.5)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(section.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(Array(section.bullets.enumerated()), id: \.offset) { _, bullet in
+                                HStack(alignment: .top, spacing: 8) {
+                                    Text("•")
+                                        .foregroundStyle(.secondary)
+                                    Text(bullet)
+                                        .font(.body)
+                                        .foregroundStyle(.primary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .summaryGlassCard(cornerRadius: 14)
+    }
+}
+
 // MARK: SummaryCategoryCard
 
 /// A single Apple Health–style card: colored icon + uppercase label + collapsible content.
@@ -320,7 +374,18 @@ private struct AtomicSummaryCategorySection: View {
     let onDelete: (SummaryEntry) -> Void
     let onAdd: (SummaryEntryCategory) -> Void
 
-    @State private var isExpanded = true
+    @State private var isExpanded = false
+
+    private var entriesByBodySystem: [(system: BodySystem, entries: [SummaryEntry])] {
+        var buckets: [BodySystem: [SummaryEntry]] = [:]
+        for entry in entries {
+            buckets[BodySystem.resolved(for: entry), default: []].append(entry)
+        }
+        return BodySystem.allCases.compactMap { system in
+            guard let list = buckets[system], !list.isEmpty else { return nil }
+            return (system, list)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -354,14 +419,34 @@ private struct AtomicSummaryCategorySection: View {
             if isExpanded {
                 Divider()
                     .padding(.horizontal, 16)
-                VStack(spacing: 10) {
-                    ForEach(entries) { entry in
-                        AtomicSummaryEntryCard(
-                            entry: entry,
-                            knownPractitioners: knownPractitioners,
-                            onSave: onSave,
-                            onDelete: onDelete
-                        )
+                VStack(alignment: .leading, spacing: 10) {
+                    if category == .chiefComplaint {
+                        ForEach(entriesByBodySystem, id: \.system) { group in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(group.system.displayName)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .textCase(.uppercase)
+                                    .kerning(0.4)
+                                ForEach(group.entries) { entry in
+                                    AtomicSummaryEntryCard(
+                                        entry: entry,
+                                        knownPractitioners: knownPractitioners,
+                                        onSave: onSave,
+                                        onDelete: onDelete
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        ForEach(entries) { entry in
+                            AtomicSummaryEntryCard(
+                                entry: entry,
+                                knownPractitioners: knownPractitioners,
+                                onSave: onSave,
+                                onDelete: onDelete
+                            )
+                        }
                     }
                     Button {
                         onAdd(category)
@@ -388,44 +473,75 @@ private struct AtomicSummaryEntryCard: View {
     @State private var editingEntry: SummaryEntry?
     @State private var dragOffset: CGFloat = 0
 
+    private let revealWidth: CGFloat = 52
+
     var body: some View {
         ZStack(alignment: .trailing) {
-            Button(role: .destructive) {
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                    dragOffset = 0
-                }
-                onDelete(entry)
+            Button {
+                commitDelete()
             } label: {
-                Label("Delete", systemImage: "trash")
-                    .font(.caption)
-                    .labelStyle(.iconOnly)
-                    .frame(width: 76)
-                    .frame(maxHeight: .infinity)
+                Image(systemName: "trash")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(BrandPalette.systemRed))
             }
-            .buttonStyle(.borderedProminent)
-            .tint(BrandPalette.systemRed)
-            .opacity(dragOffset < -8 ? 1 : 0)
+            .buttonStyle(.plain)
+            .padding(.trailing, 10)
+            .opacity(dragOffset < -12 ? 1 : 0)
+            .allowsHitTesting(dragOffset < -20)
+            .accessibilityLabel("Delete")
 
             entryContent
                 .offset(x: dragOffset)
                 .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .onTapGesture {
-                    editingEntry = entry
+                    if dragOffset < -12 {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                            dragOffset = 0
+                        }
+                    } else {
+                        editingEntry = entryEnsuringPractitionerField(entry)
+                    }
                 }
-                .gesture(
-                    DragGesture(minimumDistance: 12)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 20, coordinateSpace: .local)
                         .onChanged { value in
-                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                            dragOffset = min(0, max(-88, value.translation.width))
+                            let dx = value.translation.width
+                            let dy = value.translation.height
+                            if abs(dy) > abs(dx) + 6 {
+                                if dragOffset != 0 {
+                                    dragOffset = 0
+                                }
+                                return
+                            }
+                            guard abs(dx) > abs(dy) + 8 else { return }
+                            dragOffset = min(0, max(-revealWidth, dx))
                         }
                         .onEnded { value in
-                            withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                                dragOffset = value.translation.width < -44 ? -88 : 0
+                            let dx = value.translation.width
+                            let dy = value.translation.height
+                            guard abs(dx) > abs(dy) + 8 else {
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                                    dragOffset = 0
+                                }
+                                return
+                            }
+                            if dx < -72 {
+                                commitDelete()
+                            } else if dx < -28 {
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                                    dragOffset = -revealWidth
+                                }
+                            } else {
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                                    dragOffset = 0
+                                }
                             }
                         }
                 )
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipped()
         .sheet(item: $editingEntry) { entry in
             SummaryEntryEditor(entry: entry, knownPractitioners: knownPractitioners) { updated in
                 editingEntry = nil
@@ -433,69 +549,217 @@ private struct AtomicSummaryEntryCard: View {
                 onSave(updated)
             } onCancel: {
                 editingEntry = nil
+            } onDelete: {
+                editingEntry = nil
+                commitDelete()
             }
         }
     }
 
+    private func commitDelete() {
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+            dragOffset = 0
+        }
+        onDelete(entry)
+    }
+
     private var entryContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: iconName)
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(color)
                     .frame(width: 24)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(entry.title.isEmpty ? "Untitled detail" : entry.title)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(displayTitle)
                         .font(.body)
                         .fontWeight(.semibold)
-                    Text(dateLabel)
+
+                    Text(dateLineText)
                         .font(.caption)
-                        .foregroundStyle(entry.dateNeedsReview || entry.relevantDate == nil ? BrandPalette.systemOrange : .secondary)
+                        .foregroundStyle(dateNeedsAttention ? BrandPalette.systemBlue : .secondary)
+
+                    if showsPractitionerLine {
+                        Text(practitionerLineText)
+                            .font(.caption)
+                            .foregroundStyle(practitionerNeedsAttention ? BrandPalette.systemBlue : .secondary)
+                    }
+
+                    if let details = uniqueDetailsText {
+                        Text(details)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
                     if !entry.provenance.isEmpty {
                         Label(entry.provenance, systemImage: "link")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                }
 
-                Spacer()
-            }
-
-            if !entry.details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(entry.details)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if !entry.fields.isEmpty {
-                VStack(spacing: 6) {
-                    ForEach(entry.fields) { field in
-                        HStack(alignment: .top) {
-                            Text(field.label)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 118, alignment: .leading)
-                            Text(field.value.isEmpty ? "Add \(field.label.lowercased())" : field.value)
-                                .font(.caption)
-                                .foregroundStyle(field.isMissing || field.needsReview ? BrandPalette.systemOrange : .primary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                    if !remainingDisplayFields.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(remainingDisplayFields) { field in
+                                let missing = field.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    || field.isMissing
+                                    || field.needsReview
+                                Text(missing ? Self.addLinkTitle(field.label) : field.value)
+                                    .font(.caption)
+                                    .foregroundStyle(missing ? BrandPalette.systemBlue : .secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                     }
                 }
+
+                Spacer(minLength: 0)
             }
         }
         .padding(12)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    private var dateLabel: String {
-        guard let date = entry.relevantDate else {
-            return "Add the relevant date"
+    private var displayTitle: String {
+        let trimmed = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Untitled detail" : trimmed
+    }
+
+    /// Omit details when they repeat the title (common when models echo the same fact twice).
+    private var uniqueDetailsText: String? {
+        let details = entry.details.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !details.isEmpty else { return nil }
+        let title = displayTitle
+        if details.caseInsensitiveCompare(title) == .orderedSame { return nil }
+        // "Title - same detail" / "Title — same detail" style echoes
+        for sep in [" — ", " – ", " - "] {
+            if details.hasPrefix(title + sep) {
+                let rest = String(details.dropFirst(title.count + sep.count))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if rest.isEmpty || rest.caseInsensitiveCompare(title) == .orderedSame {
+                    return nil
+                }
+            }
         }
-        let formatted = date.formatted(date: .abbreviated, time: .omitted)
-        return entry.dateNeedsReview ? "Confirm relevant date: \(formatted)" : formatted
+        return details
+    }
+
+    private var dateNeedsAttention: Bool {
+        entry.relevantDate == nil
+    }
+
+    private var dateLineText: String {
+        guard let date = entry.relevantDate else {
+            return Self.addLinkTitle("date")
+        }
+        return date.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    private var practitionerField: SummaryEntryField? {
+        entry.fields.first { Self.isPractitionerOrSessionField($0) }
+    }
+
+    /// Care-plan (and similar) cards get a dedicated practitioner line; contact cards already use the title as the name.
+    private var showsPractitionerLine: Bool {
+        // Every clinical fact should name a practitioner; contact cards use the title as the name.
+        entry.category != .practitionerContact
+    }
+
+    private var practitionerNeedsAttention: Bool {
+        guard let field = practitionerField else { return true }
+        let value = field.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty || field.isMissing || field.needsReview
+    }
+
+    private var practitionerLineText: String {
+        guard let field = practitionerField else { return Self.addLinkTitle("practitioner") }
+        let value = field.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.isEmpty || field.isMissing || field.needsReview {
+            return Self.addLinkTitle("practitioner")
+        }
+        return value
+    }
+
+    /// Title Case CTA for missing fields, e.g. "Add Date", "Add Practitioner".
+    private static func addLinkTitle(_ phrase: String) -> String {
+        let titled = phrase
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { word -> String in
+                guard let first = word.first else { return "" }
+                return String(first).uppercased() + word.dropFirst().lowercased()
+            }
+            .joined(separator: " ")
+        return "Add \(titled)"
+    }
+
+    /// Fields shown under the card body, excluding labels/values that duplicate title, details, or practitioner.
+    private var remainingDisplayFields: [SummaryEntryField] {
+        let titleNorm = Self.normalized(displayTitle)
+        let detailsNorm = Self.normalized(uniqueDetailsText ?? "")
+        let joinedNorm = Self.normalized(
+            [displayTitle, uniqueDetailsText].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " - ")
+        )
+        let practitionerNorm = Self.normalized(
+            practitionerField?.value.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        )
+
+        return entry.fields.filter { field in
+            if Self.isPractitionerOrSessionField(field) { return false }
+            if field.label.caseInsensitiveCompare(BodySystem.fieldLabel) == .orderedSame {
+                return false
+            }
+            let value = field.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            let valueNorm = Self.normalized(value)
+            if !valueNorm.isEmpty {
+                if valueNorm == titleNorm { return false }
+                if !detailsNorm.isEmpty, valueNorm == detailsNorm { return false }
+                if !joinedNorm.isEmpty, valueNorm == joinedNorm { return false }
+                if !practitionerNorm.isEmpty, valueNorm == practitionerNorm { return false }
+            }
+            // Hide empty Name on contact cards — title already carries the name.
+            let label = field.label.lowercased()
+            if entry.category == .practitionerContact, label == "name", value.isEmpty || valueNorm == titleNorm {
+                return false
+            }
+            // Hide Plan / category echo fields that only restate the title line.
+            if label == "plan" || label == entry.category.displayTitle.lowercased() {
+                if value.isEmpty || valueNorm == titleNorm || valueNorm == joinedNorm { return false }
+            }
+            if label == "details", value.isEmpty || valueNorm == detailsNorm || valueNorm == titleNorm {
+                return false
+            }
+            if label == "medication", valueNorm == titleNorm { return false }
+            return true
+        }
+    }
+
+    private static func isPractitionerOrSessionField(_ field: SummaryEntryField) -> Bool {
+        let label = field.label.lowercased()
+        return label.contains("practitioner")
+            || label.contains("provider")
+            || label.contains("clinician")
+            || label.contains("session")
+    }
+
+    private static func normalized(_ text: String) -> String {
+        text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    }
+
+    /// Ensure the editor always has a Practitioner field so it can be filled when missing.
+    private func entryEnsuringPractitionerField(_ entry: SummaryEntry) -> SummaryEntry {
+        guard entry.category != .practitionerContact else { return entry }
+        if entry.fields.contains(where: { Self.isPractitionerOrSessionField($0) }) {
+            return entry
+        }
+        var updated = entry
+        updated.fields.append(
+            SummaryEntryField(label: "Practitioner", value: "", isMissing: true, needsReview: true)
+        )
+        return updated
     }
 
     private var iconName: String {
@@ -512,6 +776,7 @@ private struct SummaryEntryEditor: View {
 
     let onSave: (SummaryEntry) -> Void
     let onCancel: () -> Void
+    let onDelete: () -> Void
     let knownPractitioners: [String]
 
     @State private var entry: SummaryEntry
@@ -521,12 +786,23 @@ private struct SummaryEntryEditor: View {
         entry: SummaryEntry,
         knownPractitioners: [String],
         onSave: @escaping (SummaryEntry) -> Void,
-        onCancel: @escaping () -> Void
+        onCancel: @escaping () -> Void,
+        onDelete: @escaping () -> Void
     ) {
         self.onSave = onSave
         self.onCancel = onCancel
+        self.onDelete = onDelete
         self.knownPractitioners = knownPractitioners
-        _entry = State(initialValue: entry)
+        var initial = entry
+        if initial.category == .chiefComplaint,
+           !initial.fields.contains(where: { $0.label.caseInsensitiveCompare(BodySystem.fieldLabel) == .orderedSame }) {
+            let system = BodySystem.resolved(for: initial)
+            initial.fields.insert(
+                SummaryEntryField(label: BodySystem.fieldLabel, value: system.displayName, isMissing: false, needsReview: false),
+                at: 0
+            )
+        }
+        _entry = State(initialValue: initial)
         _editableDate = State(initialValue: entry.relevantDate ?? entry.sourceDate ?? Date())
     }
 
@@ -554,10 +830,19 @@ private struct SummaryEntryEditor: View {
                                 .foregroundStyle(.secondary)
                             if isPractitionerField(field) {
                                 practitionerPicker(for: $field)
+                            } else if isBodySystemField(field) {
+                                bodySystemPicker(for: $field)
                             } else {
                                 TextField("Add \(field.label.lowercased())", text: $field.value, axis: .vertical)
                             }
                         }
+                    }
+                }
+
+                Section {
+                    Button("Delete card", role: .destructive) {
+                        onDelete()
+                        dismiss()
                     }
                 }
 
@@ -587,10 +872,18 @@ private struct SummaryEntryEditor: View {
                         entry.relevantDate = editableDate
                         entry.dateNeedsReview = false
                         for index in entry.fields.indices {
+                            let isBodySystem = entry.fields[index].label.caseInsensitiveCompare(BodySystem.fieldLabel) == .orderedSame
                             let value = entry.fields[index].value.trimmingCharacters(in: .whitespacesAndNewlines)
                             entry.fields[index].value = value
-                            entry.fields[index].isMissing = value.isEmpty
-                            entry.fields[index].needsReview = value.isEmpty
+                            if isBodySystem {
+                                let system = BodySystem.parse(value) ?? BodySystem.classify([entry.title, entry.details].joined(separator: " "))
+                                entry.fields[index].value = system.displayName
+                                entry.fields[index].isMissing = false
+                                entry.fields[index].needsReview = false
+                            } else {
+                                entry.fields[index].isMissing = value.isEmpty
+                                entry.fields[index].needsReview = value.isEmpty
+                            }
                         }
                         entry.updatedAt = Date()
                         entry.origin = entry.origin == .userAdded ? .userAdded : .userEdited
@@ -648,6 +941,26 @@ private struct SummaryEntryEditor: View {
     private func isPractitionerField(_ field: SummaryEntryField) -> Bool {
         let label = field.label.lowercased()
         return label.contains("practitioner") || label.contains("provider") || label.contains("clinician")
+    }
+
+    private func isBodySystemField(_ field: SummaryEntryField) -> Bool {
+        field.label.caseInsensitiveCompare(BodySystem.fieldLabel) == .orderedSame
+    }
+
+    @ViewBuilder
+    private func bodySystemPicker(for field: Binding<SummaryEntryField>) -> some View {
+        Picker("Body system", selection: Binding(
+            get: { BodySystem.parse(field.wrappedValue.value) ?? .other },
+            set: { selected in
+                field.wrappedValue.value = selected.displayName
+                field.wrappedValue.isMissing = false
+                field.wrappedValue.needsReview = false
+            }
+        )) {
+            ForEach(BodySystem.allCases) { system in
+                Text(system.displayName).tag(system)
+            }
+        }
     }
 }
 
