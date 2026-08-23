@@ -242,8 +242,8 @@ enum SummaryPromptAssembly {
         case .personalJournal:
             return """
             CATEGORY RULES (personal journal — not a clinical encounter):
-            - Chief Complaint: Use only if the author clearly names a main worry, focus, or problem in their narrative.
-            - Symptoms: Feelings, symptoms, side effects, or concerns they describe about themselves in first person.
+            - Chief Complaint: Use only if the author clearly names a main worry, focus, or problem in their narrative. Prefer a short title with detail after an em dash.
+            - Symptoms: Feelings, symptoms, side effects, or concerns they describe about themselves in first person. Prefer short stable titles with severity/course after an em dash.
             - Findings: Sparingly—conditions, diagnoses, or test results they state as facts about themselves (not your interpretation).
             - Medications: Drugs, doses, or changes they mention.
             - practitionerContacts: one contact per line. Include name, org, role, phone, email, and address only when explicitly tied to the same source block. \

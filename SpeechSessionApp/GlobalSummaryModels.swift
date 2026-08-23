@@ -1,17 +1,9 @@
 import Foundation
 
-/// One labeled group of bullets shown in the Overview card.
-struct OverviewBulletSection: Equatable, Identifiable {
-    var title: String
-    var bullets: [String]
-
-    var id: String { title }
-}
-
 /// The model sometimes returns a plain string, sometimes a JSON array of strings.
 /// This struct handles both by normalising arrays into "- item" bullet strings.
 struct GlobalSummaryPayload: Codable {
-    /// Categorized markdown digest (headings + bullets). Legacy caches may still store a spoken paragraph.
+    /// Short plain-English paragraph that sets clinical context for the patient (not a category dump).
     var overview: String?
     var chiefComplaint: String?
     var symptoms: String?
@@ -104,45 +96,45 @@ struct GlobalSummaryPayload: Codable {
         }
     }
 
-    /// Overview card content: categorized bullets, never a spoken paragraph.
-    func overviewBulletSections() -> [OverviewBulletSection] {
-        if let fromOverview = CategorizedBulletParser.sections(from: overview),
-           CategorizedBulletParser.looksCategorized(fromOverview) {
-            return fromOverview
+    /// Simple contextual overview paragraph for the Overview card.
+    /// Prefer a stored `overview` field; if legacy caches stored categorized bullets, collapse to prose.
+    func overviewParagraph() -> String? {
+        guard let raw = overview?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
         }
-
-        var sections: [OverviewBulletSection] = []
-        if let cc = chiefComplaint?.trimmingCharacters(in: .whitespacesAndNewlines), !cc.isEmpty {
-            for group in BodySystem.groupedLines(from: cc) {
-                sections.append(OverviewBulletSection(title: group.system.displayName, bullets: group.lines))
-            }
+        if let sections = CategorizedBulletParser.sections(from: raw),
+           CategorizedBulletParser.looksCategorized(sections) {
+            // Legacy categorized overview → one short prose join (context only; details live on cards).
+            let lines = sections.flatMap(\.bullets)
+            let joined = lines.prefix(4).joined(separator: " ")
+            return joined.isEmpty ? nil : joined
         }
-        for row in nonemptyDisplaySections where row.title != "Chief Complaint" {
-            let bullets = CategorizedBulletParser.lines(from: row.content)
-            if !bullets.isEmpty {
-                sections.append(OverviewBulletSection(title: row.title, bullets: bullets))
-            }
-        }
-        if sections.isEmpty, let bullets = CategorizedBulletParser.proseFallbackBullets(from: overview), !bullets.isEmpty {
-            sections.append(OverviewBulletSection(title: "Summary", bullets: bullets))
-        }
-        return sections
+        return raw
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 }
 
-/// Turn markdown or prose blobs into labeled bullet groups.
+/// Turn markdown or prose blobs into labeled bullet groups (used to detect legacy categorized overviews).
 enum CategorizedBulletParser {
-    static func sections(from raw: String?) -> [OverviewBulletSection]? {
+    struct Section: Equatable {
+        var title: String
+        var bullets: [String]
+    }
+
+    static func sections(from raw: String?) -> [Section]? {
         guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
         var currentTitle: String?
         var currentBullets: [String] = []
-        var result: [OverviewBulletSection] = []
+        var result: [Section] = []
 
         func flush() {
             guard let title = currentTitle else { return }
             let bullets = currentBullets.filter { !$0.isEmpty }
             if !bullets.isEmpty {
-                result.append(OverviewBulletSection(title: title, bullets: bullets))
+                result.append(Section(title: title, bullets: bullets))
             }
             currentBullets = []
         }
@@ -161,30 +153,12 @@ enum CategorizedBulletParser {
         return result.isEmpty ? nil : result
     }
 
-    static func looksCategorized(_ sections: [OverviewBulletSection]) -> Bool {
+    static func looksCategorized(_ sections: [Section]) -> Bool {
         if sections.count >= 2 { return true }
         guard let only = sections.first else { return false }
         let title = only.title.lowercased()
         if TitleHints.contains(where: { title.contains($0) }) { return true }
         return only.bullets.count >= 2 && only.bullets.allSatisfy { $0.count < 160 }
-    }
-
-    static func lines(from raw: String) -> [String] {
-        raw.components(separatedBy: "\n")
-            .map { stripListMarker($0) }
-            .filter { !$0.isEmpty }
-    }
-
-    static func proseFallbackBullets(from raw: String?) -> [String]? {
-        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
-        let fromLines = lines(from: raw)
-        if fromLines.count >= 2 { return fromLines }
-        let sentences = raw
-            .replacingOccurrences(of: #"[.!?]\s+"#, with: "\n", options: .regularExpression)
-            .components(separatedBy: "\n")
-            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " .")) }
-            .filter { $0.count > 8 }
-        return sentences.isEmpty ? fromLines : sentences
     }
 
     private static let TitleHints = [

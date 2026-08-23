@@ -37,15 +37,33 @@ enum BrandPalette {
 /// Rounded cards / tiles (health summary sections, choice rows, sign-in panel).
 struct LiquidGlassRoundedCardModifier: ViewModifier {
     var cornerRadius: CGFloat
+    var interactive: Bool = false
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            content.glassEffect(in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            if interactive {
+                content.glassEffect(.regular.interactive(), in: shape)
+            } else {
+                content.glassEffect(.regular, in: shape)
+            }
         } else {
             content
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .shadow(color: BrandPalette.cardShadow, radius: 10, y: 4)
+        }
+    }
+}
+
+/// Inset row surface inside a glass card — avoids stacking glass/material (expensive + breaks refraction).
+struct SummaryEntryRowSurfaceModifier: ViewModifier {
+    var cornerRadius: CGFloat = 12
+
+    func body(content: Content) -> some View {
+        content.background {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.quaternary.opacity(0.38))
         }
     }
 }
@@ -91,13 +109,27 @@ struct LiquidGlassRectangleModifier: ViewModifier {
 
 extension View {
     /// Default Liquid Glass rounded surface over grouped screen chrome.
-    func liquidGlassCard(cornerRadius: CGFloat = 14) -> some View {
-        modifier(LiquidGlassRoundedCardModifier(cornerRadius: cornerRadius))
+    func liquidGlassCard(cornerRadius: CGFloat = 14, interactive: Bool = false) -> some View {
+        modifier(LiquidGlassRoundedCardModifier(cornerRadius: cornerRadius, interactive: interactive))
     }
 
     /// Alias for health / summary tiles (same as ``liquidGlassCard``).
-    func summaryGlassCard(cornerRadius: CGFloat = 14) -> some View {
-        liquidGlassCard(cornerRadius: cornerRadius)
+    func summaryGlassCard(cornerRadius: CGFloat = 14, interactive: Bool = false) -> some View {
+        liquidGlassCard(cornerRadius: cornerRadius, interactive: interactive)
+    }
+
+    /// Nested row chrome inside a summary glass card (not another glass layer).
+    func summaryEntryRowSurface(cornerRadius: CGFloat = 12) -> some View {
+        modifier(SummaryEntryRowSurfaceModifier(cornerRadius: cornerRadius))
+    }
+
+    @ViewBuilder
+    func summarySecondaryButtonStyle() -> some View {
+        if #available(iOS 26.0, *) {
+            self.buttonStyle(.glass)
+        } else {
+            self.buttonStyle(.bordered)
+        }
     }
 
     func liquidGlassCapsule() -> some View {

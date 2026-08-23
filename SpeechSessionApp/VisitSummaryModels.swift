@@ -857,7 +857,12 @@ enum VisitSummaryPromptGuidance {
     of today’s plan, summarize it briefly in Medications AND keep the clinician’s prescribing intent under Treatment Plan.
     - Chief Complaint: Organize each presenting concern by body system. Use markdown `###` headings \
     (or a system label before the bullet) from this set: \(BodySystem.promptAllowedList). \
-    One bullet per distinct complaint. Do not write a narrative paragraph.
+    One bullet per distinct complaint. Prefer a short stable title (e.g. "Migraine") with severity, \
+    triggers, course, and treatment response after an em dash or on the detail side of the line \
+    (e.g. "- Migraine — photophobia, 2-day duration"). Do not write a narrative paragraph.
+    - Symptoms: One bullet per distinct symptom. Prefer a short stable title ("Nausea", "Low back pain") \
+    and put severity, triggers, course, and response-to-treatment in the detail after an em dash so \
+    the same symptom can be compared across visits. Do not invent facts.
     """
 
     /// Exact JSON key contract per routed `contentKind` (OpenAI `json_object`). `otherNotes` catches important residue only.
@@ -872,6 +877,7 @@ enum VisitSummaryPromptGuidance {
         Every item in each field must describe one distinct source, event, provider, medication, or care-plan entry. \
         Include dates only when explicitly stated; otherwise do not invent dates. \
         For chiefComplaint, group bullets under body-system headings (\(BodySystem.promptAllowedList)); omit empty systems. \
+        For chiefComplaint and symptoms, prefer short stable titles (e.g. "Migraine") with severity/triggers/course after an em dash. \
         For practitionerContacts: one contact per line or array item; include name, org, role, phone, email, and address only when explicitly tied to that contact in the same source block. \
         Never merge names with contact details from a different document or section.
         """

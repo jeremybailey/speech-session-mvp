@@ -53,18 +53,18 @@ struct SummaryCardsView: View {
 
 // MARK: OverviewSummaryCard
 
-/// Cross-visit digest as categorized bullets (not a spoken paragraph).
+/// Short contextual paragraph that sets the scene for the patient's health story.
 struct OverviewSummaryCard: View {
-    let sections: [OverviewBulletSection]
+    let paragraph: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(BrandPalette.systemBlue.opacity(0.18))
                         .frame(width: 34, height: 34)
-                    Image(systemName: "list.bullet")
+                    Image(systemName: "text.alignleft")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(BrandPalette.systemBlue)
                 }
@@ -77,27 +77,10 @@ struct OverviewSummaryCard: View {
                 Spacer(minLength: 0)
             }
 
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(section.title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(Array(section.bullets.enumerated()), id: \.offset) { _, bullet in
-                                HStack(alignment: .top, spacing: 8) {
-                                    Text("•")
-                                        .foregroundStyle(.secondary)
-                                    Text(bullet)
-                                        .font(.body)
-                                        .foregroundStyle(.primary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            Text(paragraph)
+                .font(.body)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -375,6 +358,8 @@ private struct AtomicSummaryCategorySection: View {
     let onAdd: (SummaryEntryCategory) -> Void
 
     @State private var isExpanded = false
+    @State private var expandedStackIDs: Set<String> = []
+    @State private var editingEntry: SummaryEntry?
 
     private var entriesByBodySystem: [(system: BodySystem, entries: [SummaryEntry])] {
         var buckets: [BodySystem: [SummaryEntry]] = [:]
@@ -385,6 +370,10 @@ private struct AtomicSummaryCategorySection: View {
             guard let list = buckets[system], !list.isEmpty else { return nil }
             return (system, list)
         }
+    }
+
+    private var categoryClusters: [SummaryEntryCluster] {
+        SummaryEntryClusterBuilder.clusters(from: entries, category: category)
     }
 
     var body: some View {
@@ -419,220 +408,128 @@ private struct AtomicSummaryCategorySection: View {
             if isExpanded {
                 Divider()
                     .padding(.horizontal, 16)
-                VStack(alignment: .leading, spacing: 10) {
-                    if category == .chiefComplaint {
-                        ForEach(entriesByBodySystem, id: \.system) { group in
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(group.system.displayName)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                    .textCase(.uppercase)
-                                    .kerning(0.4)
-                                ForEach(group.entries) { entry in
-                                    AtomicSummaryEntryCard(
-                                        entry: entry,
-                                        knownPractitioners: knownPractitioners,
-                                        onSave: onSave,
-                                        onDelete: onDelete
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        ForEach(entries) { entry in
-                            AtomicSummaryEntryCard(
-                                entry: entry,
-                                knownPractitioners: knownPractitioners,
-                                onSave: onSave,
-                                onDelete: onDelete
-                            )
-                        }
-                    }
-                    Button {
-                        onAdd(category)
-                    } label: {
-                        Label("Add Entry", systemImage: "plus.circle")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .padding(16)
+
+                summaryEntryList
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 12)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .summaryGlassCard(cornerRadius: 14)
-    }
-}
-
-private struct AtomicSummaryEntryCard: View {
-    let entry: SummaryEntry
-    let knownPractitioners: [String]
-    let onSave: (SummaryEntry) -> Void
-    let onDelete: (SummaryEntry) -> Void
-
-    @State private var editingEntry: SummaryEntry?
-    @State private var dragOffset: CGFloat = 0
-
-    private let revealWidth: CGFloat = 52
-
-    var body: some View {
-        ZStack(alignment: .trailing) {
-            Button {
-                commitDelete()
-            } label: {
-                Image(systemName: "trash")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .background(Circle().fill(BrandPalette.systemRed))
-            }
-            .buttonStyle(.plain)
-            .padding(.trailing, 10)
-            .opacity(dragOffset < -12 ? 1 : 0)
-            .allowsHitTesting(dragOffset < -20)
-            .accessibilityLabel("Delete")
-
-            entryContent
-                .offset(x: dragOffset)
-                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .onTapGesture {
-                    if dragOffset < -12 {
-                        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                            dragOffset = 0
-                        }
-                    } else {
-                        editingEntry = entryEnsuringPractitionerField(entry)
-                    }
-                }
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 20, coordinateSpace: .local)
-                        .onChanged { value in
-                            let dx = value.translation.width
-                            let dy = value.translation.height
-                            if abs(dy) > abs(dx) + 6 {
-                                if dragOffset != 0 {
-                                    dragOffset = 0
-                                }
-                                return
-                            }
-                            guard abs(dx) > abs(dy) + 8 else { return }
-                            dragOffset = min(0, max(-revealWidth, dx))
-                        }
-                        .onEnded { value in
-                            let dx = value.translation.width
-                            let dy = value.translation.height
-                            guard abs(dx) > abs(dy) + 8 else {
-                                withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                                    dragOffset = 0
-                                }
-                                return
-                            }
-                            if dx < -72 {
-                                commitDelete()
-                            } else if dx < -28 {
-                                withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                                    dragOffset = -revealWidth
-                                }
-                            } else {
-                                withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                                    dragOffset = 0
-                                }
-                            }
-                        }
-                )
-        }
-        .clipped()
         .sheet(item: $editingEntry) { entry in
             SummaryEntryEditor(entry: entry, knownPractitioners: knownPractitioners) { updated in
                 editingEntry = nil
-                dragOffset = 0
                 onSave(updated)
             } onCancel: {
                 editingEntry = nil
             } onDelete: {
                 editingEntry = nil
-                commitDelete()
+                withAnimation(.snappy) {
+                    onDelete(entry)
+                }
             }
         }
     }
 
-    private func commitDelete() {
-        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-            dragOffset = 0
-        }
-        onDelete(entry)
-    }
-
-    private var entryContent: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: iconName)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(color)
-                    .frame(width: 24)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(displayTitle)
-                        .font(.body)
-                        .fontWeight(.semibold)
-
-                    Text(dateLineText)
-                        .font(.caption)
-                        .foregroundStyle(dateNeedsAttention ? BrandPalette.systemBlue : .secondary)
-
-                    if showsPractitionerLine {
-                        Text(practitionerLineText)
-                            .font(.caption)
-                            .foregroundStyle(practitionerNeedsAttention ? BrandPalette.systemBlue : .secondary)
-                    }
-
-                    if let details = uniqueDetailsText {
-                        Text(details)
-                            .font(.subheadline)
+    private var summaryEntryList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if category == .chiefComplaint {
+                ForEach(entriesByBodySystem, id: \.system) { group in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(group.system.displayName)
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    if !entry.provenance.isEmpty {
-                        Label(entry.provenance, systemImage: "link")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if !remainingDisplayFields.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(remainingDisplayFields) { field in
-                                let missing = field.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                    || field.isMissing
-                                    || field.needsReview
-                                Text(missing ? Self.addLinkTitle(field.label) : field.value)
-                                    .font(.caption)
-                                    .foregroundStyle(missing ? BrandPalette.systemBlue : .secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
+                            .textCase(.uppercase)
+                            .kerning(0.4)
+                        clusterRowsView(
+                            SummaryEntryClusterBuilder.clusters(from: group.entries, category: category)
+                        )
                     }
                 }
-
-                Spacer(minLength: 0)
+            } else {
+                clusterRowsView(categoryClusters)
             }
+
+            Button {
+                onAdd(category)
+            } label: {
+                Label("Add Entry", systemImage: "plus.circle")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .summarySecondaryButtonStyle()
         }
-        .padding(12)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    private var displayTitle: String {
+    @ViewBuilder
+    private func clusterRowsView(_ clusters: [SummaryEntryCluster]) -> some View {
+        ForEach(clusters) { cluster in
+            if cluster.isStack {
+                stackRowsView(for: cluster)
+            } else if let entry = cluster.entries.first {
+                entryRowView(entry)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func stackRowsView(for cluster: SummaryEntryCluster) -> some View {
+        let isStackExpanded = expandedStackIDs.contains(cluster.id)
+
+        Button {
+            withAnimation(.snappy) {
+                if isStackExpanded {
+                    expandedStackIDs.remove(cluster.id)
+                } else {
+                    expandedStackIDs.insert(cluster.id)
+                }
+            }
+        } label: {
+            SummaryEntryStackRowContent(
+                cluster: cluster,
+                isExpanded: isStackExpanded
+            )
+        }
+        .buttonStyle(.plain)
+
+        if isStackExpanded {
+            ForEach(cluster.entries) { entry in
+                entryRowView(entry, nested: true)
+            }
+        }
+    }
+
+    private func entryRowView(_ entry: SummaryEntry, nested: Bool = false) -> some View {
+        SummaryEntryRowContent(entry: entry)
+            .padding(.leading, nested ? 12 : 0)
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .onTapGesture {
+                editingEntry = SummaryEntryDisplay.entryEnsuringPractitionerField(entry)
+            }
+            .contextMenu {
+                Button(role: .destructive) {
+                    withAnimation(.snappy) {
+                        onDelete(entry)
+                    }
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+    }
+}
+
+// MARK: - Entry row display
+
+private enum SummaryEntryDisplay {
+    static func displayTitle(for entry: SummaryEntry) -> String {
         let trimmed = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "Untitled detail" : trimmed
     }
 
-    /// Omit details when they repeat the title (common when models echo the same fact twice).
-    private var uniqueDetailsText: String? {
+    static func uniqueDetails(for entry: SummaryEntry) -> String? {
         let details = entry.details.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !details.isEmpty else { return nil }
-        let title = displayTitle
+        let title = displayTitle(for: entry)
         if details.caseInsensitiveCompare(title) == .orderedSame { return nil }
-        // "Title - same detail" / "Title — same detail" style echoes
         for sep in [" — ", " – ", " - "] {
             if details.hasPrefix(title + sep) {
                 let rest = String(details.dropFirst(title.count + sep.count))
@@ -645,44 +542,21 @@ private struct AtomicSummaryEntryCard: View {
         return details
     }
 
-    private var dateNeedsAttention: Bool {
-        entry.relevantDate == nil
+    static func sentenceSummary(for entry: SummaryEntry) -> String {
+        SummaryEntrySentence.make(
+            title: displayTitle(for: entry),
+            details: uniqueDetails(for: entry) ?? entry.details
+        )
     }
 
-    private var dateLineText: String {
+    static func dateLineText(for entry: SummaryEntry) -> String {
         guard let date = entry.relevantDate else {
-            return Self.addLinkTitle("date")
+            return addLinkTitle("date")
         }
         return date.formatted(date: .abbreviated, time: .omitted)
     }
 
-    private var practitionerField: SummaryEntryField? {
-        entry.fields.first { Self.isPractitionerOrSessionField($0) }
-    }
-
-    /// Care-plan (and similar) cards get a dedicated practitioner line; contact cards already use the title as the name.
-    private var showsPractitionerLine: Bool {
-        // Every clinical fact should name a practitioner; contact cards use the title as the name.
-        entry.category != .practitionerContact
-    }
-
-    private var practitionerNeedsAttention: Bool {
-        guard let field = practitionerField else { return true }
-        let value = field.value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty || field.isMissing || field.needsReview
-    }
-
-    private var practitionerLineText: String {
-        guard let field = practitionerField else { return Self.addLinkTitle("practitioner") }
-        let value = field.value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if value.isEmpty || field.isMissing || field.needsReview {
-            return Self.addLinkTitle("practitioner")
-        }
-        return value
-    }
-
-    /// Title Case CTA for missing fields, e.g. "Add Date", "Add Practitioner".
-    private static func addLinkTitle(_ phrase: String) -> String {
+    static func addLinkTitle(_ phrase: String) -> String {
         let titled = phrase
             .split(whereSeparator: { $0.isWhitespace })
             .map { word -> String in
@@ -693,66 +567,16 @@ private struct AtomicSummaryEntryCard: View {
         return "Add \(titled)"
     }
 
-    /// Fields shown under the card body, excluding labels/values that duplicate title, details, or practitioner.
-    private var remainingDisplayFields: [SummaryEntryField] {
-        let titleNorm = Self.normalized(displayTitle)
-        let detailsNorm = Self.normalized(uniqueDetailsText ?? "")
-        let joinedNorm = Self.normalized(
-            [displayTitle, uniqueDetailsText].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " - ")
-        )
-        let practitionerNorm = Self.normalized(
-            practitionerField?.value.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        )
-
-        return entry.fields.filter { field in
-            if Self.isPractitionerOrSessionField(field) { return false }
-            if field.label.caseInsensitiveCompare(BodySystem.fieldLabel) == .orderedSame {
-                return false
-            }
-            let value = field.value.trimmingCharacters(in: .whitespacesAndNewlines)
-            let valueNorm = Self.normalized(value)
-            if !valueNorm.isEmpty {
-                if valueNorm == titleNorm { return false }
-                if !detailsNorm.isEmpty, valueNorm == detailsNorm { return false }
-                if !joinedNorm.isEmpty, valueNorm == joinedNorm { return false }
-                if !practitionerNorm.isEmpty, valueNorm == practitionerNorm { return false }
-            }
-            // Hide empty Name on contact cards — title already carries the name.
-            let label = field.label.lowercased()
-            if entry.category == .practitionerContact, label == "name", value.isEmpty || valueNorm == titleNorm {
-                return false
-            }
-            // Hide Plan / category echo fields that only restate the title line.
-            if label == "plan" || label == entry.category.displayTitle.lowercased() {
-                if value.isEmpty || valueNorm == titleNorm || valueNorm == joinedNorm { return false }
-            }
-            if label == "details", value.isEmpty || valueNorm == detailsNorm || valueNorm == titleNorm {
-                return false
-            }
-            if label == "medication", valueNorm == titleNorm { return false }
-            return true
-        }
-    }
-
-    private static func isPractitionerOrSessionField(_ field: SummaryEntryField) -> Bool {
-        let label = field.label.lowercased()
-        return label.contains("practitioner")
-            || label.contains("provider")
-            || label.contains("clinician")
-            || label.contains("session")
-    }
-
-    private static func normalized(_ text: String) -> String {
-        text
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-    }
-
-    /// Ensure the editor always has a Practitioner field so it can be filled when missing.
-    private func entryEnsuringPractitionerField(_ entry: SummaryEntry) -> SummaryEntry {
+    static func entryEnsuringPractitionerField(_ entry: SummaryEntry) -> SummaryEntry {
         guard entry.category != .practitionerContact else { return entry }
-        if entry.fields.contains(where: { Self.isPractitionerOrSessionField($0) }) {
+        let isPractitionerField = { (field: SummaryEntryField) -> Bool in
+            let label = field.label.lowercased()
+            return label.contains("practitioner")
+                || label.contains("provider")
+                || label.contains("clinician")
+                || label.contains("session")
+        }
+        if entry.fields.contains(where: isPractitionerField) {
             return entry
         }
         var updated = entry
@@ -761,13 +585,106 @@ private struct AtomicSummaryEntryCard: View {
         )
         return updated
     }
+}
 
-    private var iconName: String {
-        entry.category == .practitionerContact ? "person.crop.circle.fill" : "doc.text.fill"
+private struct SummaryEntryRowContent: View {
+    let entry: SummaryEntry
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(SummaryEntryDisplay.sentenceSummary(for: entry))
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 8) {
+                    Text(SummaryEntryDisplay.dateLineText(for: entry))
+                        .font(.caption)
+                        .foregroundStyle(entry.relevantDate == nil ? BrandPalette.systemBlue : .secondary)
+                    ClinicalStatusBadge(status: entry.clinicalStatus)
+                    Spacer(minLength: 0)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .summaryEntryRowSurface(cornerRadius: 12)
+    }
+}
+
+private struct SummaryEntryStackRowContent: View {
+    let cluster: SummaryEntryCluster
+    let isExpanded: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(cluster.sentenceSummary)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 8) {
+                    if let range = cluster.dateRangeText {
+                        Text(range)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    ClinicalStatusBadge(status: cluster.clinicalStatus)
+                    Text("\(cluster.entries.count) sources")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                    Spacer(minLength: 0)
+                }
+            }
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                .padding(.top, 4)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .summaryEntryRowSurface(cornerRadius: 12)
+        .accessibilityLabel(
+            "\(cluster.sentenceSummary), \(cluster.clinicalStatus.displayTitle), \(cluster.entries.count) sources"
+        )
+        .accessibilityHint(isExpanded ? "Collapses source list" : "Expands source list")
+    }
+}
+
+private struct ClinicalStatusBadge: View {
+    let status: SummaryEntryClinicalStatus
+
+    var body: some View {
+        Text(status.displayTitle)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(foregroundColor)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(backgroundColor))
+            .accessibilityLabel(status.displayTitle)
     }
 
-    private var color: Color {
-        entry.category == .practitionerContact ? BrandPalette.systemIndigo : BrandPalette.systemBlue
+    private var foregroundColor: Color {
+        switch status {
+        case .active: return BrandPalette.systemGreen
+        case .inactive: return BrandPalette.systemOrange
+        case .resolved: return .secondary
+        }
+    }
+
+    private var backgroundColor: Color {
+        switch status {
+        case .active: return BrandPalette.systemGreen.opacity(0.14)
+        case .inactive: return BrandPalette.systemOrange.opacity(0.14)
+        case .resolved: return Color.secondary.opacity(0.12)
+        }
     }
 }
 
@@ -813,6 +730,15 @@ private struct SummaryEntryEditor: View {
                     TextField("Title", text: $entry.title)
                     TextField("Details", text: $entry.details, axis: .vertical)
                         .lineLimit(3...8)
+                }
+
+                Section("Status") {
+                    Picker("Status", selection: $entry.clinicalStatus) {
+                        ForEach(SummaryEntryClinicalStatus.allCases, id: \.self) { status in
+                            Text(status.displayTitle).tag(status)
+                        }
+                    }
+                    .pickerStyle(.segmented)
                 }
 
                 Section("Relevant date") {

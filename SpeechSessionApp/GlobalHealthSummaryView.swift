@@ -188,15 +188,12 @@ struct ScopedHealthSummaryView: View {
     @ViewBuilder
     private func summaryCards(for payload: GlobalSummaryPayload) -> some View {
         let atomicEntries = scopedAtomicEntries
-        let sections = payload.overviewBulletSections()
-        if !sections.isEmpty {
-            OverviewSummaryCard(sections: sections)
+        if let overview = payload.overviewParagraph() {
+            OverviewSummaryCard(paragraph: overview)
         }
         if atomicEntries.isEmpty {
-            if sections.isEmpty {
-                ForEach(payload.nonemptyDisplaySections, id: \.title) { row in
-                    SummaryCategoryCard(title: row.title, content: row.content)
-                }
+            ForEach(payload.nonemptyDisplaySections, id: \.title) { row in
+                SummaryCategoryCard(title: row.title, content: row.content)
             }
         } else {
             AtomicSummaryCardsView(
@@ -310,18 +307,11 @@ struct ScopedHealthSummaryView: View {
 
         var parts: [String] = []
 
-        let overviewSections = payload.overviewBulletSections()
-        if !overviewSections.isEmpty {
+        if let overview = payload.overviewParagraph() {
             parts.append("Medical summary — \(scopeShareLabel)")
             parts.append("")
             parts.append("OVERVIEW")
-            for section in overviewSections {
-                parts.append("")
-                parts.append(section.title)
-                for bullet in section.bullets {
-                    parts.append("• \(bullet)")
-                }
-            }
+            parts.append(overview)
         }
 
         let sections = payload.nonemptyDisplaySections

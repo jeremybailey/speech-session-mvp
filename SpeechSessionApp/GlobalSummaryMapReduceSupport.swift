@@ -119,26 +119,28 @@ enum GlobalSummaryLongitudinalPrompts {
     Omit first-name-only dialogue mentions and missing details.
 
     Return a JSON object with only the fields that have content:
-    - "overview": categorized markdown digest — NOT a paragraph and NOT first-person narrative. \
-    Use `###` headings and short bullets. Group presenting problems under body systems \
-    (\(BodySystem.promptAllowedList)). Use ordinary clinical headings (Medications, Care plans, Allergies, Follow-up, etc.) \
-    for the remaining facts. Omit empty headings. Facts only from the entries.
+    - "overview": ONE short plain-English paragraph (about 2–4 sentences) that sets clinical context for this patient— \
+    who they are in care terms and the main ongoing themes. Not a category dump, not bullet lists, not first-person spoken script. \
+    Facts only from the entries. Details belong in the other fields.
     - "chiefComplaint": presenting concerns grouped by body system. Use `###` headings from \
-    \(BodySystem.promptAllowedList), then one bullet per distinct complaint. No narrative paragraph.
-    - "symptoms": consolidated current and historical symptoms across all visits
-    - "diagnoses": findings from diagnosed conditions, confirmed medical history, and clinically relevant observations
-    - "medications": current medication list (prioritise most recent entry data)
-    - "carePlans": ongoing treatment and care plans mentioned across visits (see rules above)
+    \(BodySystem.promptAllowedList), then one bullet per distinct complaint. Prefer short stable titles \
+    (e.g. "Migraine") with severity, triggers, course, or treatment response after an em dash. No narrative paragraph.
+    - "symptoms": consolidated current and historical symptoms across all visits. Prefer short stable titles \
+    with detail after an em dash (severity, triggers, course) so the same symptom can be compared across visits.
+    - "diagnoses": findings from diagnosed conditions, confirmed medical history, and clinically relevant observations. Prefer short stable titles with detail after an em dash.
+    - "medications": current medication list (prioritise most recent entry data). Prefer drug name as the title; dose/frequency/notes after an em dash or in structured objects.
+    - "carePlans": ongoing treatment and care plans mentioned across visits (see rules above). Prefer short stable plan titles with detail after an em dash.
     - "practitionerContacts": one contact per line or array item. Preserve explicitly tied contact fields from the same source block; do not invent missing fields.
     - "vaccinations": vaccination history explicitly mentioned
     - "allergies": known allergies and adverse reactions
-    - "testsAndLabs": ordered, pending, or completed tests and labs
+    - "testsAndLabs": ordered, pending, or completed tests and labs. Prefer short stable test names with detail after an em dash.
     - "followUp": scheduling/return actions (see rules above)
     - "biopsychosocialContext": ONLY psychosocial life context (see rules above)
     - "otherNotes": important details that never fit the categories above (omit if empty; do not duplicate other fields)
 
     Format each string field as one item per distinct source, event, provider, medication, or care-plan entry. Use markdown bullets. \
-    For "overview" and "chiefComplaint", bullets must sit under the headings described above—never a continuous paragraph.
+    For "overview", keep a single continuous paragraph. For "chiefComplaint", bullets must sit under body-system headings. \
+    Prefer short repeatable titles across visits so identical facts can stack.
     For "medications", prefer a JSON array of objects with keys name (required), strength, frequency, route, duration, instructions, classOrCategory—use classOrCategory only when explicitly stated for that drug in the entries.
     """
 }

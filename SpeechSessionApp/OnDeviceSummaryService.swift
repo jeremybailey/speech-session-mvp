@@ -112,11 +112,15 @@ struct OnDeviceSummaryService {
 
         @Guide(description: """
         Chief complaint / reason for visit, grouped by body system when possible. Use ### headings \
-        (Neurological, Digestive, Immune, Lymphatic, Nervous, Urinary, Musculoskeletal, etc.) and one bullet per concern.
+        (Neurological, Digestive, Immune, Lymphatic, Nervous, Urinary, Musculoskeletal, etc.) and one bullet per concern. \
+        Prefer short stable titles (e.g. Migraine) with severity, triggers, course after an em dash.
         """)
         var chiefComplaint: String?
 
-        @Guide(description: "Current symptoms and concerns explicitly mentioned.")
+        @Guide(description: """
+        Current symptoms and concerns explicitly mentioned. One line per symptom; prefer a short stable title \
+        with severity, triggers, or course after an em dash (e.g. Nausea — worse in morning).
+        """)
         var symptoms: String?
 
         @Guide(description: "Examination findings, diagnoses, impressions—NOT the treatment plan itself.")
@@ -172,20 +176,22 @@ struct OnDeviceSummaryService {
     @Generable
     struct GlobalSummaryOutput {
         @Guide(description: """
-        Categorized markdown digest with ### headings and short bullets. Not a paragraph and not first-person. \
-        Group problems under body systems (Neurological, Nervous, Digestive, Immune, Lymphatic, Urinary, Musculoskeletal, \
-        Cardiovascular, Respiratory, Endocrine, Integumentary, Reproductive, Mental health, Other). \
-        Use Medications / Care plans / Allergies / Follow-up headings for remaining facts. Omit empty headings. Facts only.
+        ONE short plain-English paragraph (about 2–4 sentences) that sets clinical context for this patient— \
+        main ongoing themes and care situation. Not bullets, not category headings, not a first-person spoken script. Facts only.
         """)
         var overview: String?
 
         @Guide(description: """
         Presenting concerns grouped by body system. Use ### headings (Neurological, Nervous, Digestive, Immune, Lymphatic, \
-        Urinary, Musculoskeletal, and other body systems as needed) and one bullet per complaint. No narrative paragraph.
+        Urinary, Musculoskeletal, and other body systems as needed) and one bullet per complaint. Prefer short stable titles \
+        with severity/triggers/course after an em dash. No narrative paragraph.
         """)
         var chiefComplaint: String?
 
-        @Guide(description: "Current and historical symptoms explicitly mentioned across all visits.")
+        @Guide(description: """
+        Current and historical symptoms explicitly mentioned across all visits. Prefer short stable titles with \
+        severity, triggers, or course after an em dash so the same symptom can be compared across visits.
+        """)
         var symptoms: String?
 
         @Guide(description: "Findings from diagnosed conditions, confirmed medical history, and clinically relevant observations.")
@@ -317,12 +323,12 @@ struct OnDeviceSummaryService {
         Extract only clinically relevant information explicitly stated in the provided entry data. \
         Do not infer, assume, or invent any clinical details. \
         Omit fields that have no relevant content. \
-        Be concise; use markdown bullets in string fields. \
-        overview must be categorized headings + bullets, never a spoken first-person paragraph. \
+        Be concise; use markdown bullets in string fields except overview (one continuous paragraph). \
+        Prefer short stable titles with detail after an em dash so the same fact can stack across visits. \
         chiefComplaint must be grouped under body-system headings.
 
         Longitudinal CATEGORY RULES: \
-        Always include overview as categorized bullets (body systems for problems; Medications, Care plans, Allergies, etc. for the rest). \
+        Always include overview as a short contextual paragraph (2–4 sentences) about the patient's care themes—not a bullet digest and not first-person spoken script. \
         Put actionable clinician-directed plans (medication changes/referrals/therapies/procedures/education/coordination) in carePlans—not in biopsychosocialContext or followUp alone. \
         practitionerContacts: one contact per line; include contact details only when tied to the same source block; never merge unrelated entries (e.g. psychologist name + Rx pharmacy address). Omit first-name-only dialogue. \
         followUp is for scheduling/return logistics across visits. \

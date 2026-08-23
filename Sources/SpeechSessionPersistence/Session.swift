@@ -85,6 +85,54 @@ public struct SummaryEntryField: Codable, Equatable, Hashable, Identifiable, Sen
     }
 }
 
+/// Whether a clinical fact is ongoing, inactive, or resolved.
+public enum SummaryEntryClinicalStatus: String, Hashable, Sendable, CaseIterable {
+    case active
+    case inactive
+    case resolved
+
+    public var displayTitle: String {
+        switch self {
+        case .active: return "Active"
+        case .inactive: return "Inactive"
+        case .resolved: return "Resolved"
+        }
+    }
+
+    /// Most current status wins when stacking multiple sources (active → inactive → resolved).
+    public static func dominant(in statuses: some Sequence<SummaryEntryClinicalStatus>) -> SummaryEntryClinicalStatus {
+        let set = Set(statuses)
+        if set.contains(.active) { return .active }
+        if set.contains(.inactive) { return .inactive }
+        return .resolved
+    }
+}
+
+extension SummaryEntryClinicalStatus: Codable {
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        switch raw {
+        case "active":
+            self = .active
+        case "inactive":
+            self = .inactive
+        case "resolved":
+            self = .resolved
+        default:
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unknown clinical status: \(raw)"
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
 /// One durable, editable summary fact. Each entry should map to one source, event, provider, or care-plan item.
 public struct SummaryEntry: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var id: UUID
@@ -103,8 +151,18 @@ public struct SummaryEntry: Codable, Equatable, Hashable, Identifiable, Sendable
     public var reviewReason: String?
     public var isDeleted: Bool
     public var origin: SummaryEntryOrigin
+    /// Active, inactive, or resolved problem/item status. Defaults to `.active` for legacy entries.
+    public var clinicalStatus: SummaryEntryClinicalStatus
     public var createdAt: Date
     public var updatedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, category, title, details, fields
+        case relevantDate, dateNeedsReview
+        case sourceSessionID, sourceTitle, sourceDate, sourceExcerpt
+        case provenance, needsReview, reviewReason, isDeleted, origin
+        case clinicalStatus, createdAt, updatedAt
+    }
 
     public init(
         id: UUID = UUID(),
@@ -123,6 +181,7 @@ public struct SummaryEntry: Codable, Equatable, Hashable, Identifiable, Sendable
         reviewReason: String? = nil,
         isDeleted: Bool = false,
         origin: SummaryEntryOrigin = .generated,
+        clinicalStatus: SummaryEntryClinicalStatus? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -142,8 +201,57 @@ public struct SummaryEntry: Codable, Equatable, Hashable, Identifiable, Sendable
         self.reviewReason = reviewReason
         self.isDeleted = isDeleted
         self.origin = origin
+        self.clinicalStatus = clinicalStatus ?? Self.inferredStatus(title: title, details: details)
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        category = try c.decode(SummaryEntryCategory.self, forKey: .category)
+        title = try c.decode(String.self, forKey: .title)
+        details = try c.decodeIfPresent(String.self, forKey: .details) ?? ""
+        fields = try c.decodeIfPresent([SummaryEntryField].self, forKey: .fields) ?? []
+        relevantDate = try c.decodeIfPresent(Date.self, forKey: .relevantDate)
+        dateNeedsReview = try c.decodeIfPresent(Bool.self, forKey: .dateNeedsReview) ?? false
+        sourceSessionID = try c.decodeIfPresent(UUID.self, forKey: .sourceSessionID)
+        sourceTitle = try c.decodeIfPresent(String.self, forKey: .sourceTitle)
+        sourceDate = try c.decodeIfPresent(Date.self, forKey: .sourceDate)
+        sourceExcerpt = try c.decodeIfPresent(String.self, forKey: .sourceExcerpt)
+        provenance = try c.decodeIfPresent(String.self, forKey: .provenance) ?? ""
+        needsReview = try c.decodeIfPresent(Bool.self, forKey: .needsReview) ?? false
+        reviewReason = try c.decodeIfPresent(String.self, forKey: .reviewReason)
+        isDeleted = try c.decodeIfPresent(Bool.self, forKey: .isDeleted) ?? false
+        origin = try c.decodeIfPresent(SummaryEntryOrigin.self, forKey: .origin) ?? .generated
+        createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
+        if let status = try c.decodeIfPresent(SummaryEntryClinicalStatus.self, forKey: .clinicalStatus) {
+            clinicalStatus = status
+        } else {
+            clinicalStatus = Self.inferredStatus(title: title, details: details)
+        }
+    }
+
+    /// Infer status from wording when the model or user did not set one explicitly.
+    public static func inferredStatus(title: String, details: String) -> SummaryEntryClinicalStatus {
+        let hay = "\(title) \(details)".lowercased()
+        let resolvedHints = [
+            "resolved", "resolution", "cleared", "gone", "healed", "in remission",
+            "has resolved", "was resolved", "fully resolved", "symptom-free", "symptom free",
+            "no longer present", "completed course",
+        ]
+        if resolvedHints.contains(where: { hay.contains($0) }) {
+            return .resolved
+        }
+        let inactiveHints = [
+            "inactive", "discontinued", "stopped taking", "no longer taking", "not currently",
+            "on hold", "paused", "held", "withdrawn", "off medication", "no longer on",
+        ]
+        if inactiveHints.contains(where: { hay.contains($0) }) {
+            return .inactive
+        }
+        return .active
     }
 }
 
