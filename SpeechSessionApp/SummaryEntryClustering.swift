@@ -248,6 +248,16 @@ struct SummaryEntryCluster: Identifiable {
         SummaryEntryClinicalStatus.dominant(in: entries.map(\.clinicalStatus))
     }
 
+    /// Newest source date in the stack — used for recency sorting within a status section.
+    var newestOccurrenceDate: Date {
+        entries.map(SummaryEntryClusterKey.occurrenceDate).max() ?? .distantPast
+    }
+
+    /// Entries ordered newest-first for expanded source lists.
+    var entriesNewestFirst: [SummaryEntry] {
+        entries.sorted(by: SummaryEntryClusterKey.sortNewestFirst)
+    }
+
     /// One-line sentence for the collapsed row — prefer the fullest entry wording, not the cluster stem.
     var sentenceSummary: String {
         let ordered = entries.sorted(by: SummaryEntryClusterKey.sortNewestFirst)
@@ -287,6 +297,19 @@ enum SummaryEntrySentence {
             return "\(t) — \(d)"
         }
         return d
+    }
+}
+
+/// Groups and sorts clusters for summary lists: status (active → resolved → inactive), then recency.
+enum SummaryEntryClusterOrdering {
+    static func statusSections(from clusters: [SummaryEntryCluster]) -> [(status: SummaryEntryClinicalStatus, clusters: [SummaryEntryCluster])] {
+        SummaryEntryClinicalStatus.summarySectionOrder.compactMap { status in
+            let matches = clusters
+                .filter { $0.clinicalStatus == status }
+                .sorted { $0.newestOccurrenceDate > $1.newestOccurrenceDate }
+            guard !matches.isEmpty else { return nil }
+            return (status, matches)
+        }
     }
 }
 

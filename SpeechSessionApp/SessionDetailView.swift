@@ -64,7 +64,14 @@ struct SessionDetailView: View {
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                if let payload = sharePayload {
+                if selectedTab == .summary, let item = sharePDFItem {
+                    ShareLink(
+                        item: item,
+                        preview: SharePreview(sharePreviewTitle, image: Image(systemName: "doc.richtext"))
+                    ) {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                } else if let payload = textSharePayload {
                     ShareLink(item: payload.text, subject: Text(payload.subject)) {
                         Image(systemName: "square.and.arrow.up")
                     }
@@ -255,8 +262,8 @@ struct SessionDetailView: View {
 
     // MARK: - Share
 
-    /// Returns the text and subject to hand to the share sheet, or nil when there is nothing ready to share.
-    private var sharePayload: (text: String, subject: String)? {
+    /// Plain-text export kept for fallback (transcript tab) — summary tab shares PDF via ``sharePDFItem``.
+    private var textSharePayload: (text: String, subject: String)? {
         let dateLabel = localSession.date.formatted(date: .abbreviated, time: .shortened)
         let sessionLabel = localSession.title ?? dateLabel
 
@@ -273,6 +280,40 @@ struct SessionDetailView: View {
             guard !summary.isEmpty else { return nil }
             return (text: summary, subject: "\(sessionLabel) — Medical Summary")
         }
+    }
+
+    private var sharePreviewTitle: String {
+        let dateLabel = localSession.date.formatted(date: .abbreviated, time: .shortened)
+        let sessionLabel = localSession.title ?? dateLabel
+        return "\(sessionLabel) — Medical Summary"
+    }
+
+    private var sharePDFItem: SummaryPDFShareItem? {
+        guard selectedTab == .summary else { return nil }
+        guard case .loaded = summaryState else { return nil }
+
+        let entries = activeSummaryEntries
+        var legacy: [(title: String, content: String)] = []
+        if entries.isEmpty, case .loaded(let markdown) = summaryState {
+            let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                legacy = [("Summary", trimmed)]
+            }
+        }
+
+        let dateLabel = localSession.date.formatted(date: .abbreviated, time: .shortened)
+        let sessionLabel = localSession.title ?? dateLabel
+
+        guard let document = SummaryPDFDocumentBuilder.build(
+            title: sessionLabel,
+            subtitle: "Medical Summary · \(dateLabel)",
+            overview: nil,
+            entries: entries,
+            legacySections: legacy,
+            timelineSessions: [localSession]
+        ) else { return nil }
+
+        return SummaryPDFShareItem(document: document)
     }
 
     private func atomicShareText() -> String {

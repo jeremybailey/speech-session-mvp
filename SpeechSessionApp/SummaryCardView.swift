@@ -361,19 +361,12 @@ private struct AtomicSummaryCategorySection: View {
     @State private var expandedStackIDs: Set<String> = []
     @State private var editingEntry: SummaryEntry?
 
-    private var entriesByBodySystem: [(system: BodySystem, entries: [SummaryEntry])] {
-        var buckets: [BodySystem: [SummaryEntry]] = [:]
-        for entry in entries {
-            buckets[BodySystem.resolved(for: entry), default: []].append(entry)
-        }
-        return BodySystem.allCases.compactMap { system in
-            guard let list = buckets[system], !list.isEmpty else { return nil }
-            return (system, list)
-        }
-    }
-
     private var categoryClusters: [SummaryEntryCluster] {
         SummaryEntryClusterBuilder.clusters(from: entries, category: category)
+    }
+
+    private var statusSections: [(status: SummaryEntryClinicalStatus, clusters: [SummaryEntryCluster])] {
+        SummaryEntryClusterOrdering.statusSections(from: categoryClusters)
     }
 
     var body: some View {
@@ -432,22 +425,16 @@ private struct AtomicSummaryCategorySection: View {
     }
 
     private var summaryEntryList: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if category == .chiefComplaint {
-                ForEach(entriesByBodySystem, id: \.system) { group in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(group.system.displayName)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-                            .kerning(0.4)
-                        clusterRowsView(
-                            SummaryEntryClusterBuilder.clusters(from: group.entries, category: category)
-                        )
-                    }
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(statusSections, id: \.status) { section in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(section.status.displayTitle)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .kerning(0.4)
+                    clusterRowsView(section.clusters)
                 }
-            } else {
-                clusterRowsView(categoryClusters)
             }
 
             Button {
@@ -492,7 +479,7 @@ private struct AtomicSummaryCategorySection: View {
         .buttonStyle(.plain)
 
         if isStackExpanded {
-            ForEach(cluster.entries) { entry in
+            ForEach(cluster.entriesNewestFirst) { entry in
                 entryRowView(entry, nested: true)
             }
         }
@@ -503,7 +490,7 @@ private struct AtomicSummaryCategorySection: View {
             .padding(.leading, nested ? 12 : 0)
             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .onTapGesture {
-                editingEntry = SummaryEntryDisplay.entryEnsuringPractitionerField(entry)
+                editingEntry = SummaryEntryPresentation.entryEnsuringPractitionerField(entry)
             }
             .contextMenu {
                 Button(role: .destructive) {
@@ -519,71 +506,29 @@ private struct AtomicSummaryCategorySection: View {
 
 // MARK: - Entry row display
 
-private enum SummaryEntryDisplay {
-    static func displayTitle(for entry: SummaryEntry) -> String {
-        let trimmed = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Untitled detail" : trimmed
-    }
+private struct SummaryEntryMetadataRow: View {
+    let dateText: String
+    let dateNeedsAttention: Bool
+    let practitionerText: String
+    let practitionerNeedsAttention: Bool
+    var trailingCaption: String?
 
-    static func uniqueDetails(for entry: SummaryEntry) -> String? {
-        let details = entry.details.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !details.isEmpty else { return nil }
-        let title = displayTitle(for: entry)
-        if details.caseInsensitiveCompare(title) == .orderedSame { return nil }
-        for sep in [" — ", " – ", " - "] {
-            if details.hasPrefix(title + sep) {
-                let rest = String(details.dropFirst(title.count + sep.count))
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if rest.isEmpty || rest.caseInsensitiveCompare(title) == .orderedSame {
-                    return nil
-                }
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(dateText)
+                .font(.caption)
+                .foregroundStyle(dateNeedsAttention ? BrandPalette.systemBlue : .secondary)
+            Text(practitionerText)
+                .font(.caption)
+                .foregroundStyle(practitionerNeedsAttention ? BrandPalette.systemBlue : .secondary)
+                .lineLimit(1)
+            if let trailingCaption {
+                Text(trailingCaption)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
+            Spacer(minLength: 0)
         }
-        return details
-    }
-
-    static func sentenceSummary(for entry: SummaryEntry) -> String {
-        SummaryEntrySentence.make(
-            title: displayTitle(for: entry),
-            details: uniqueDetails(for: entry) ?? entry.details
-        )
-    }
-
-    static func dateLineText(for entry: SummaryEntry) -> String {
-        guard let date = entry.relevantDate else {
-            return addLinkTitle("date")
-        }
-        return date.formatted(date: .abbreviated, time: .omitted)
-    }
-
-    static func addLinkTitle(_ phrase: String) -> String {
-        let titled = phrase
-            .split(whereSeparator: { $0.isWhitespace })
-            .map { word -> String in
-                guard let first = word.first else { return "" }
-                return String(first).uppercased() + word.dropFirst().lowercased()
-            }
-            .joined(separator: " ")
-        return "Add \(titled)"
-    }
-
-    static func entryEnsuringPractitionerField(_ entry: SummaryEntry) -> SummaryEntry {
-        guard entry.category != .practitionerContact else { return entry }
-        let isPractitionerField = { (field: SummaryEntryField) -> Bool in
-            let label = field.label.lowercased()
-            return label.contains("practitioner")
-                || label.contains("provider")
-                || label.contains("clinician")
-                || label.contains("session")
-        }
-        if entry.fields.contains(where: isPractitionerField) {
-            return entry
-        }
-        var updated = entry
-        updated.fields.append(
-            SummaryEntryField(label: "Practitioner", value: "", isMissing: true, needsReview: true)
-        )
-        return updated
     }
 }
 
@@ -593,19 +538,18 @@ private struct SummaryEntryRowContent: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(SummaryEntryDisplay.sentenceSummary(for: entry))
+                Text(SummaryEntryPresentation.sentenceSummary(for: entry))
                     .font(.subheadline)
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: 8) {
-                    Text(SummaryEntryDisplay.dateLineText(for: entry))
-                        .font(.caption)
-                        .foregroundStyle(entry.relevantDate == nil ? BrandPalette.systemBlue : .secondary)
-                    ClinicalStatusBadge(status: entry.clinicalStatus)
-                    Spacer(minLength: 0)
-                }
+                SummaryEntryMetadataRow(
+                    dateText: SummaryEntryPresentation.dateLineText(for: entry),
+                    dateNeedsAttention: entry.relevantDate == nil,
+                    practitionerText: SummaryEntryPresentation.practitionerLineText(for: entry),
+                    practitionerNeedsAttention: SummaryEntryPresentation.practitionerNeedsAttention(for: entry)
+                )
             }
             Spacer(minLength: 0)
         }
@@ -628,18 +572,13 @@ private struct SummaryEntryStackRowContent: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: 8) {
-                    if let range = cluster.dateRangeText {
-                        Text(range)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    ClinicalStatusBadge(status: cluster.clinicalStatus)
-                    Text("\(cluster.entries.count) sources")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                    Spacer(minLength: 0)
-                }
+                SummaryEntryMetadataRow(
+                    dateText: cluster.dateRangeText ?? SummaryEntryPresentation.addLinkTitle("date"),
+                    dateNeedsAttention: cluster.dateRangeText == nil,
+                    practitionerText: SummaryEntryPresentation.practitionerLineText(for: cluster),
+                    practitionerNeedsAttention: SummaryEntryPresentation.practitionerNeedsAttention(for: cluster),
+                    trailingCaption: "\(cluster.entries.count) sources"
+                )
             }
 
             Image(systemName: "chevron.right")
@@ -655,36 +594,6 @@ private struct SummaryEntryStackRowContent: View {
             "\(cluster.sentenceSummary), \(cluster.clinicalStatus.displayTitle), \(cluster.entries.count) sources"
         )
         .accessibilityHint(isExpanded ? "Collapses source list" : "Expands source list")
-    }
-}
-
-private struct ClinicalStatusBadge: View {
-    let status: SummaryEntryClinicalStatus
-
-    var body: some View {
-        Text(status.displayTitle)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(foregroundColor)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(backgroundColor))
-            .accessibilityLabel(status.displayTitle)
-    }
-
-    private var foregroundColor: Color {
-        switch status {
-        case .active: return BrandPalette.systemGreen
-        case .inactive: return BrandPalette.systemOrange
-        case .resolved: return .secondary
-        }
-    }
-
-    private var backgroundColor: Color {
-        switch status {
-        case .active: return BrandPalette.systemGreen.opacity(0.14)
-        case .inactive: return BrandPalette.systemOrange.opacity(0.14)
-        case .resolved: return Color.secondary.opacity(0.12)
-        }
     }
 }
 

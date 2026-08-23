@@ -64,8 +64,11 @@ struct ScopedHealthSummaryView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                if let payload = sharePayload {
-                    ShareLink(item: payload.text, subject: Text(payload.subject)) {
+                if let item = sharePDFItem {
+                    ShareLink(
+                        item: item,
+                        preview: SharePreview(sharePreviewTitle, image: Image(systemName: "doc.richtext"))
+                    ) {
                         Image(systemName: "square.and.arrow.up")
                     }
                 }
@@ -301,7 +304,8 @@ struct ScopedHealthSummaryView: View {
 
     // MARK: - Share
 
-    private var sharePayload: (text: String, subject: String)? {
+    /// Plain-text export kept for fallback / debugging — share sheet uses PDF (``sharePDFItem``).
+    private var textSharePayload: (text: String, subject: String)? {
         guard case .loaded(let payload) = summaryState else { return nil }
         guard !scopedSessions.isEmpty else { return nil }
 
@@ -369,6 +373,30 @@ struct ScopedHealthSummaryView: View {
         let count = scopedSessions.count
         let subject = "Health Summary — \(scopeShareLabel) (\(count) entr\(count == 1 ? "y" : "ies"))"
         return (text, subject)
+    }
+
+    private var sharePreviewTitle: String {
+        let count = scopedSessions.count
+        return "Health Summary — \(scopeShareLabel) (\(count) entr\(count == 1 ? "y" : "ies"))"
+    }
+
+    private var sharePDFItem: SummaryPDFShareItem? {
+        guard case .loaded(let payload) = summaryState else { return nil }
+        guard !scopedSessions.isEmpty else { return nil }
+
+        let entries = scopedAtomicEntries
+        let legacy = entries.isEmpty ? payload.nonemptyDisplaySections : []
+
+        guard let document = SummaryPDFDocumentBuilder.build(
+            title: "Health Summary",
+            subtitle: sharePreviewTitle,
+            overview: payload.overviewParagraph(),
+            entries: entries,
+            legacySections: legacy,
+            timelineSessions: scopedSessions.sorted { $0.date > $1.date }
+        ) else { return nil }
+
+        return SummaryPDFShareItem(document: document)
     }
 
     private var scopeShareLabel: String {

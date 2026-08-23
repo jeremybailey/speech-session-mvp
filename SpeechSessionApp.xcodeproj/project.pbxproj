@@ -43,6 +43,8 @@
 		BF31 /* BrandPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR34 /* BrandPalette.swift */; };
 		BF32 /* PractitionerContactsFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR35 /* PractitionerContactsFormatting.swift */; };
 		BF33 /* SummaryEntryClustering.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR36 /* SummaryEntryClustering.swift */; };
+		BF34 /* SummaryEntryPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR37 /* SummaryEntryPresentation.swift */; };
+		BF35 /* SummaryPDFExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR38 /* SummaryPDFExport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -106,6 +108,8 @@
 		FR34 /* BrandPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandPalette.swift; sourceTree = "<group>"; };
 		FR35 /* PractitionerContactsFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PractitionerContactsFormatting.swift; sourceTree = "<group>"; };
 		FR36 /* SummaryEntryClustering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryEntryClustering.swift; sourceTree = "<group>"; };
+		FR37 /* SummaryEntryPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryEntryPresentation.swift; sourceTree = "<group>"; };
+		FR38 /* SummaryPDFExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryPDFExport.swift; sourceTree = "<group>"; };
 		PR01 /* SpeechSessionApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpeechSessionApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		PR02 /* VoiceMemoShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VoiceMemoShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -160,6 +164,8 @@
 				FR33 /* GlobalSummaryMapReduceSupport.swift */,
 				FR35 /* PractitionerContactsFormatting.swift */,
 				FR36 /* SummaryEntryClustering.swift */,
+				FR37 /* SummaryEntryPresentation.swift */,
+				FR38 /* SummaryPDFExport.swift */,
 				FR11 /* SummaryCardView.swift */,
 				FR12 /* DocumentScannerView.swift */,
 				FR13 /* DocumentScanService.swift */,
@@ -328,6 +334,8 @@
 				BF30 /* GlobalSummaryMapReduceSupport.swift in Sources */,
 				BF32 /* PractitionerContactsFormatting.swift in Sources */,
 				BF33 /* SummaryEntryClustering.swift in Sources */,
+				BF34 /* SummaryEntryPresentation.swift in Sources */,
+				BF35 /* SummaryPDFExport.swift in Sources */,
 				BF11 /* SummaryCardView.swift in Sources */,
 				BF12 /* DocumentScannerView.swift in Sources */,
 				BF13 /* DocumentScanService.swift in Sources */,

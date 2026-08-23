@@ -99,6 +99,9 @@ public enum SummaryEntryClinicalStatus: String, Hashable, Sendable, CaseIterable
         }
     }
 
+    /// Section order for summary lists (active → resolved → inactive).
+    public static let summarySectionOrder: [SummaryEntryClinicalStatus] = [.active, .resolved, .inactive]
+
     /// Most current status wins when stacking multiple sources (active → inactive → resolved).
     public static func dominant(in statuses: some Sequence<SummaryEntryClinicalStatus>) -> SummaryEntryClinicalStatus {
         let set = Set(statuses)
