@@ -13,9 +13,14 @@ public final class AudioRecordingService: @unchecked Sendable {
     private var observersInstalled = false
     private var onBuffer: ((AVAudioPCMBuffer) -> Void)?
     private var notificationObservers: [NSObjectProtocol] = []
+    private var audioFile: AVAudioFile?
+    private var recordingFileURL: URL?
 
     /// Called on the main queue when interruptions or route changes occur.
     public var onSessionEvent: ((AudioSessionEvent) -> Void)?
+
+    /// URL of the file being written during the current recording, if any.
+    public var activeRecordingFileURL: URL? { recordingFileURL }
 
     public init(notificationCenter: NotificationCenter = .default) {
         self.notificationCenter = notificationCenter
@@ -39,7 +44,10 @@ public final class AudioRecordingService: @unchecked Sendable {
     // MARK: - Capture
 
     /// Installs the input tap and starts the engine. Stops any prior recording first.
-    public func startRecording(onBuffer handler: @escaping (AVAudioPCMBuffer) -> Void) throws {
+    public func startRecording(
+        outputFileURL: URL? = nil,
+        onBuffer handler: @escaping (AVAudioPCMBuffer) -> Void
+    ) throws {
         stopRecording()
 
         try session.setCategory(
@@ -53,8 +61,20 @@ public final class AudioRecordingService: @unchecked Sendable {
 
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
+
+        if let outputFileURL {
+            let directory = outputFileURL.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            audioFile = try AVAudioFile(forWriting: outputFileURL, settings: format.settings)
+            recordingFileURL = outputFileURL
+        }
+
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            self?.onBuffer?(buffer)
+            guard let self else { return }
+            self.onBuffer?(buffer)
+            if let audioFile = self.audioFile {
+                try? audioFile.write(from: buffer)
+            }
         }
         tapInstalled = true
 
@@ -73,7 +93,12 @@ public final class AudioRecordingService: @unchecked Sendable {
     }
 
     /// Removes the tap, stops the engine, and deactivates the session.
-    public func stopRecording() {
+    @discardableResult
+    public func stopRecording() -> URL? {
+        let savedURL = recordingFileURL
+        audioFile = nil
+        recordingFileURL = nil
+
         let input = engine.inputNode
         if tapInstalled {
             input.removeTap(onBus: 0)
@@ -84,6 +109,7 @@ public final class AudioRecordingService: @unchecked Sendable {
         }
         onBuffer = nil
         try? session.setActive(false, options: .notifyOthersOnDeactivation)
+        return savedURL
     }
 
     // MARK: - Notifications
@@ -159,12 +185,17 @@ public final class AudioRecordingService: @unchecked Sendable {
         false
     }
 
-    public func startRecording(onBuffer handler: @escaping (AVAudioPCMBuffer) -> Void) throws {
+    public func startRecording(
+        outputFileURL: URL? = nil,
+        onBuffer handler: @escaping (AVAudioPCMBuffer) -> Void
+    ) throws {
+        _ = outputFileURL
         _ = handler
         throw AudioRecordingError.unsupportedPlatform
     }
 
-    public func stopRecording() {}
+    @discardableResult
+    public func stopRecording() -> URL? { nil }
 }
 
 #endif

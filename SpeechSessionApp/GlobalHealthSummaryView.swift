@@ -22,6 +22,14 @@ struct ScopedHealthSummaryView: View {
     @AppStorage("speechSession.globalSummaryBackend") private var cachedGlobalBackendRaw = ""
 
     @State private var summaryState: ScopedSummaryState = .idle
+    @State private var storageDirectory: URL?
+    @State private var sourceSheetContext: SourceSheetContext?
+
+    private struct SourceSheetContext: Identifiable, Hashable {
+        let id = UUID()
+        let session: Session
+        let excerpt: String?
+    }
 
     private var scopedSessions: [Session] {
         switch scope {
@@ -83,11 +91,27 @@ struct ScopedHealthSummaryView: View {
             }
         }
         .task(id: cacheIdentityToken) {
+            storageDirectory = await store.storageDirectory
             await home.loadSessions()
             await restoreOrGenerate()
         }
         .onChange(of: selectedSummaryBackendRaw) { _, _ in
             Task { await clearScopeCacheAndRegenerate() }
+        }
+        .navigationDestination(item: $sourceSheetContext) { context in
+            Group {
+                if let storageDirectory {
+                    SessionSourceView(
+                        session: context.session,
+                        storageDirectory: storageDirectory,
+                        highlightedExcerpt: context.excerpt
+                    )
+                } else {
+                    ProgressView()
+                }
+            }
+            .navigationTitle("Source")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 
@@ -203,7 +227,8 @@ struct ScopedHealthSummaryView: View {
                 entries: atomicEntries,
                 onSave: { entry in Task { await saveScopedSummaryEntry(entry) } },
                 onDelete: { entry in Task { await deleteScopedSummaryEntry(entry) } },
-                onAdd: { category in Task { await addScopedSummaryEntry(category: category) } }
+                onAdd: { category in Task { await addScopedSummaryEntry(category: category) } },
+                onViewSource: { entry in presentSource(for: entry) }
             )
             .padding(.top, 4)
         }
@@ -218,6 +243,32 @@ struct ScopedHealthSummaryView: View {
                 return SummaryEntryFactory.legacyEntries(from: summary, session: session)
             }
             return []
+        }
+    }
+
+    private func presentSource(for entry: SummaryEntry) {
+        let resolvedSession: Session? = {
+            if let sourceID = entry.sourceSessionID,
+               let match = home.sessions.first(where: { $0.id == sourceID }) {
+                return match
+            }
+            return scopedSessions.first { session in
+                (session.summaryEntries ?? []).contains(where: { $0.id == entry.id })
+            }
+        }()
+
+        if let resolvedSession {
+            sourceSheetContext = SourceSheetContext(session: resolvedSession, excerpt: entry.sourceExcerpt)
+            return
+        }
+
+        guard let sourceID = entry.sourceSessionID else { return }
+        Task {
+            guard let sessions = try? await store.loadAll(),
+                  let session = sessions.first(where: { $0.id == sourceID }) else { return }
+            await MainActor.run {
+                sourceSheetContext = SourceSheetContext(session: session, excerpt: entry.sourceExcerpt)
+            }
         }
     }
 

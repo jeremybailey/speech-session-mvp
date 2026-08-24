@@ -25,10 +25,10 @@ public final class LiveRecordingSession: @unchecked Sendable {
     }
 
     /// Starts on-device streaming recognition, then microphone capture, forwarding PCM into the active recognition request.
-    public func start(locale: Locale = .current) throws {
+    public func start(outputFileURL: URL? = nil, locale: Locale = .current) throws {
         try transcription.beginStreaming(locale: locale)
         do {
-            try audio.startRecording { [transcription] buffer in
+            try audio.startRecording(outputFileURL: outputFileURL) { [transcription] buffer in
                 transcription.appendBuffer(buffer)
             }
         } catch {

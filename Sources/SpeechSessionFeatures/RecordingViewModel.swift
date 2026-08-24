@@ -16,6 +16,8 @@ public final class RecordingViewModel: ObservableObject {
     private var experimentalWhisperKitUnlocked = false
     private var pendingEntryIntent: SessionEntryIntent = .clinicalVisit
     private var pendingFolderID: UUID?
+    private var pendingRecordingSessionID: UUID?
+    private var pendingRecordingFileURL: URL?
 
     private var committedText = ""
     private var partialTail = ""
@@ -112,29 +114,47 @@ public final class RecordingViewModel: ObservableObject {
         updateLiveDisplay()
         recordingStartedAt = Date()
         elapsed = 0
+        pendingRecordingSessionID = UUID()
 
         pipeline = sessionPipeline
         subscribeToEvents(sessionPipeline)
         activeSessionUsesWhisper = pendingBackend == .openAIWhisper || pendingBackend == .onDeviceWhisperKit
 
         do {
-            try sessionPipeline.start(locale: locale)
+            let recordingURL: URL?
+            if let sessionID = pendingRecordingSessionID {
+                let storageDir = await store.storageDirectory
+                let sourceStore = SessionSourceStore(storageDirectory: storageDir)
+                let directory = sourceStore.sessionSourcesDirectory(sessionID: sessionID)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                recordingURL = directory.appendingPathComponent("recording.caf")
+                pendingRecordingFileURL = recordingURL
+            } else {
+                recordingURL = nil
+            }
+            try sessionPipeline.start(outputFileURL: recordingURL, locale: locale)
             isRecording = true
             startTimer()
         } catch let error as TranscriptionServiceError {
             isRecording = false
             activeSessionUsesWhisper = false
             pipeline = nil
+            pendingRecordingSessionID = nil
+            pendingRecordingFileURL = nil
             errorMessage = error.userFacingMessage
         } catch let error as AudioRecordingError {
             isRecording = false
             activeSessionUsesWhisper = false
             pipeline = nil
+            pendingRecordingSessionID = nil
+            pendingRecordingFileURL = nil
             errorMessage = error.userFacingMessage
         } catch {
             isRecording = false
             activeSessionUsesWhisper = false
             pipeline = nil
+            pendingRecordingSessionID = nil
+            pendingRecordingFileURL = nil
             errorMessage = error.localizedDescription
         }
     }
@@ -176,11 +196,28 @@ public final class RecordingViewModel: ObservableObject {
         isFinishingWhisper = false
 
         let transcript = fullTranscriptForSave()
+        let sessionID = pendingRecordingSessionID ?? UUID()
+        var sourceAssets: [SessionSourceAsset]?
+        if let recordingURL = pendingRecordingFileURL,
+           FileManager.default.fileExists(atPath: recordingURL.path) {
+            sourceAssets = [
+                SessionSourceAsset(
+                    kind: .audio,
+                    relativePath: recordingURL.lastPathComponent,
+                    displayName: "Recording"
+                ),
+            ]
+        }
+        pendingRecordingSessionID = nil
+        pendingRecordingFileURL = nil
+
         let session = Session(
+            id: sessionID,
             date: recordingStartedAt ?? Date(),
             transcript: transcript,
             entryIntent: pendingEntryIntent,
-            folderID: pendingFolderID
+            folderID: pendingFolderID,
+            sourceAssets: sourceAssets
         )
         recordingStartedAt = nil
 
@@ -283,7 +320,24 @@ public final class RecordingViewModel: ObservableObject {
                 return nil
             }
 
-            let session = Session(transcript: trimmed, inputType: .audio, entryIntent: entryIntent, folderID: defaultFolderID)
+            let sessionID = UUID()
+            let storageDir = await store.storageDirectory
+            let sourceStore = SessionSourceStore(storageDirectory: storageDir)
+            let asset = try sourceStore.copyFile(
+                from: fileURL,
+                sessionID: sessionID,
+                displayName: fileURL.lastPathComponent,
+                kind: .audio
+            )
+
+            let session = Session(
+                id: sessionID,
+                transcript: trimmed,
+                inputType: .audio,
+                entryIntent: entryIntent,
+                folderID: defaultFolderID,
+                sourceAssets: [asset]
+            )
             try await store.upsert(session)
             return session
         } catch {

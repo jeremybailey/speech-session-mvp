@@ -15,6 +15,9 @@ struct SessionDetailView: View {
 
     @State private var selectedTab: DetailTab = .summary
     @State private var summaryState: SummaryState = .idle
+    @State private var storageDirectory: URL?
+    @State private var sourceHighlightExcerpt: String?
+    @State private var sourceShareableURL: URL?
 
     init(session: Session, store: SessionStore, home: HomeViewModel) {
         self.store = store
@@ -26,7 +29,7 @@ struct SessionDetailView: View {
         VStack(spacing: 0) {
             Picker("View", selection: $selectedTab) {
                 Text("Summary").tag(DetailTab.summary)
-                Text("Transcription").tag(DetailTab.transcription)
+                Text("Source").tag(DetailTab.source)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)
@@ -37,8 +40,8 @@ struct SessionDetailView: View {
             switch selectedTab {
             case .summary:
                 summaryTab
-            case .transcription:
-                transcriptionTab
+            case .source:
+                sourceTab
             }
         }
         .background(BrandPalette.canvas.ignoresSafeArea())
@@ -71,6 +74,13 @@ struct SessionDetailView: View {
                     ) {
                         Image(systemName: "square.and.arrow.up")
                     }
+                } else if selectedTab == .source, let url = sourceShareableURL {
+                    ShareLink(
+                        item: url,
+                        preview: SharePreview(url.lastPathComponent, image: Image(systemName: "doc"))
+                    ) {
+                        Image(systemName: "square.and.arrow.up")
+                    }
                 } else if let payload = textSharePayload {
                     ShareLink(item: payload.text, subject: Text(payload.subject)) {
                         Image(systemName: "square.and.arrow.up")
@@ -82,6 +92,7 @@ struct SessionDetailView: View {
         // If a cached summary exists it returns instantly; otherwise it runs silently while
         // the user reads the transcript so there's no wait when they switch to the Summary tab.
         .task {
+            storageDirectory = await store.storageDirectory
             if let cached = localSession.summary {
                 await ensureAtomicEntriesFromLegacyIfNeeded(markdown: cached)
                 summaryState = .loaded(cached)
@@ -99,15 +110,20 @@ struct SessionDetailView: View {
         }
     }
 
-    // MARK: - Transcription Tab
+    // MARK: - Source Tab
 
-    private var transcriptionTab: some View {
-        ScrollView {
-            Text(localSession.transcript.isEmpty ? "(No transcript recorded)" : localSession.transcript)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .liquidGlassCard(cornerRadius: 14)
-                .padding()
+    @ViewBuilder
+    private var sourceTab: some View {
+        if let storageDirectory {
+            SessionSourceView(
+                session: localSession,
+                storageDirectory: storageDirectory,
+                highlightedExcerpt: sourceHighlightExcerpt,
+                shareableFileURL: $sourceShareableURL
+            )
+        } else {
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -142,7 +158,11 @@ struct SessionDetailView: View {
                             entries: activeSummaryEntries,
                             onSave: { entry in Task { await saveSummaryEntry(entry) } },
                             onDelete: { entry in Task { await deleteSummaryEntry(entry) } },
-                            onAdd: { category in Task { await addSummaryEntry(category: category) } }
+                            onAdd: { category in Task { await addSummaryEntry(category: category) } },
+                            onViewSource: { entry in
+                                sourceHighlightExcerpt = entry.sourceExcerpt
+                                selectedTab = .source
+                            }
                         )
                         .padding(.vertical)
                     } else {
@@ -262,16 +282,16 @@ struct SessionDetailView: View {
 
     // MARK: - Share
 
-    /// Plain-text export kept for fallback (transcript tab) — summary tab shares PDF via ``sharePDFItem``.
+    /// Plain-text export kept for fallback — summary tab shares PDF via ``sharePDFItem``.
     private var textSharePayload: (text: String, subject: String)? {
         let dateLabel = localSession.date.formatted(date: .abbreviated, time: .shortened)
         let sessionLabel = localSession.title ?? dateLabel
 
         switch selectedTab {
-        case .transcription:
+        case .source:
             let transcript = localSession.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !transcript.isEmpty else { return nil }
-            return (text: transcript, subject: "\(sessionLabel) — Transcript")
+            return (text: transcript, subject: "\(sessionLabel) — Source Text")
 
         case .summary:
             guard case .loaded(let text) = summaryState else { return nil }
@@ -556,7 +576,7 @@ struct SessionDetailView: View {
 // MARK: - Supporting Types
 
 private enum DetailTab: Hashable {
-    case transcription, summary
+    case source, summary
 }
 
 private enum SummaryState {

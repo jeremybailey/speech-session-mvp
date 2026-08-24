@@ -8,6 +8,42 @@ public enum SessionEntryIntent: String, Codable, Sendable, Hashable {
     case personalJournal
 }
 
+/// Kind of persisted source file attached to a session.
+public enum SessionSourceKind: String, Codable, Sendable, Hashable {
+    case audio
+    case pdf
+    case image
+    case plainText
+    case multiPageScan
+}
+
+/// One original file practitioners can open to verify extracted summary facts.
+public struct SessionSourceAsset: Codable, Equatable, Hashable, Identifiable, Sendable {
+    public var id: UUID
+    public var kind: SessionSourceKind
+    /// Path relative to `sources/{sessionID}/`.
+    public var relativePath: String
+    public var displayName: String
+    public var pageIndex: Int?
+    public var createdAt: Date
+
+    public init(
+        id: UUID = UUID(),
+        kind: SessionSourceKind,
+        relativePath: String,
+        displayName: String,
+        pageIndex: Int? = nil,
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.kind = kind
+        self.relativePath = relativePath
+        self.displayName = displayName
+        self.pageIndex = pageIndex
+        self.createdAt = createdAt
+    }
+}
+
 /// How the session transcript was captured.
 public enum SessionInputType: String, Codable, Sendable {
     case audio
@@ -277,9 +313,11 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var entryIntent: SessionEntryIntent
     /// Optional folder assignment; `nil` means the entry is only listed under “All entries.”
     public var folderID: UUID?
+    /// Original uploaded or recorded files; `nil`/empty for legacy transcript-only sessions.
+    public var sourceAssets: [SessionSourceAsset]?
 
     enum CodingKeys: String, CodingKey {
-        case id, date, transcript, title, summary, summaryEntries, inputType, entryIntent, folderID
+        case id, date, transcript, title, summary, summaryEntries, inputType, entryIntent, folderID, sourceAssets
     }
 
     public init(
@@ -291,7 +329,8 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
         summaryEntries: [SummaryEntry]? = nil,
         inputType: SessionInputType = .audio,
         entryIntent: SessionEntryIntent = .clinicalVisit,
-        folderID: UUID? = nil
+        folderID: UUID? = nil,
+        sourceAssets: [SessionSourceAsset]? = nil
     ) {
         self.id = id
         self.date = date
@@ -302,6 +341,7 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
         self.inputType = inputType
         self.entryIntent = entryIntent
         self.folderID = folderID
+        self.sourceAssets = sourceAssets
     }
 
     // Custom decoder so existing persisted sessions (without inputType) default to .audio.
@@ -316,5 +356,6 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
         inputType = try c.decodeIfPresent(SessionInputType.self, forKey: .inputType) ?? .audio
         entryIntent = try c.decodeIfPresent(SessionEntryIntent.self, forKey: .entryIntent) ?? .clinicalVisit
         folderID = try c.decodeIfPresent(UUID.self, forKey: .folderID)
+        sourceAssets = try c.decodeIfPresent([SessionSourceAsset].self, forKey: .sourceAssets)
     }
 }

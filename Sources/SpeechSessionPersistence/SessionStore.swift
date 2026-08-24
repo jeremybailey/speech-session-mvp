@@ -17,6 +17,9 @@ public actor SessionStore {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
+    /// Root directory containing `sessions.json` and `sources/`.
+    public var storageDirectory: URL { directoryURL }
+
     /// - Parameters:
     ///   - fileManager: inject for tests.
     ///   - storageDirectory: directory that will hold `sessions.json` (created if needed).
@@ -104,7 +107,7 @@ public actor SessionStore {
         try saveEnvelope(env)
     }
 
-    /// Removes the session with the given `id` and saves.
+    /// Removes the session with the given `id`, its source files, and saves.
     public func delete(id: UUID) throws {
         var env = try loadEnvelope()
         if let removed = env.sessions.first(where: { $0.id == id }) {
@@ -112,6 +115,8 @@ public actor SessionStore {
         }
         env.sessions.removeAll { $0.id == id }
         try saveEnvelope(env)
+        let sourceStore = SessionSourceStore(fileManager: fileManager, storageDirectory: directoryURL)
+        try sourceStore.deleteSources(for: id)
     }
 
     /// Merges `session` by `id` (insert or replace), sorts by `date` descending, then saves.

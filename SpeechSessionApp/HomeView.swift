@@ -641,13 +641,69 @@ struct HomeView: View {
         try? await WhisperKitModelSetup.downloadModel(whisperKitModel)
     }
 
+    private func makeSourceStore() async -> SessionSourceStore {
+        let directory = await store.storageDirectory
+        return SessionSourceStore(storageDirectory: directory)
+    }
+
+    private func persistSession(
+        id: UUID = UUID(),
+        transcript: String,
+        inputType: SessionInputType,
+        sourceAssets: [SessionSourceAsset]?,
+        entryIntent: SessionEntryIntent = .clinicalVisit
+    ) async throws {
+        let session = Session(
+            id: id,
+            transcript: transcript,
+            inputType: inputType,
+            entryIntent: entryIntent,
+            folderID: listScope.defaultFolderID,
+            sourceAssets: sourceAssets
+        )
+        try await store.upsert(session)
+        await home.loadSessions()
+    }
+
+    private func jpegData(from image: UIImage) -> Data? {
+        image.jpegData(compressionQuality: 0.85)
+    }
+
+    private func sourceAssetsForImages(_ images: [UIImage], sessionID: UUID, sourceStore: SessionSourceStore) throws -> [SessionSourceAsset] {
+        let pages = try images.enumerated().compactMap { index, image -> (data: Data, displayName: String)? in
+            guard let data = jpegData(from: image) else { return nil }
+            let title = images.count > 1 ? "Page \(index + 1)" : "Photo"
+            return (data, title)
+        }
+        guard !pages.isEmpty else { return [] }
+        if pages.count == 1 {
+            let asset = try sourceStore.saveData(
+                pages[0].data,
+                sessionID: sessionID,
+                fileName: "photo.jpg",
+                displayName: pages[0].displayName,
+                kind: .image
+            )
+            return [asset]
+        }
+        return try sourceStore.saveScanPages(pages, sessionID: sessionID)
+    }
+
     // MARK: - Document / photo OCR
 
     private func processDocumentScan(_ scan: VNDocumentCameraScan) async {
         defer { isScanningDocument = false }
         do {
-            let transcript = try await DocumentScanService().transcribe(scan: scan)
-            try await persistDocumentTranscript(transcript, inputType: .documentScan)
+            var images: [UIImage] = []
+            images.reserveCapacity(scan.pageCount)
+            for index in 0..<scan.pageCount {
+                images.append(scan.imageOfPage(at: index))
+            }
+            let sessionID = UUID()
+            let sourceStore = await makeSourceStore()
+            let assets = try sourceAssetsForImages(images, sessionID: sessionID, sourceStore: sourceStore)
+            let transcript = try await DocumentScanService().transcribe(images: images)
+            try await persistSession(id: sessionID, transcript: transcript, inputType: .documentScan, sourceAssets: assets)
         } catch {
             scanErrorMessage = error.localizedDescription
         }
@@ -677,17 +733,14 @@ struct HomeView: View {
             return
         }
         do {
+            let sessionID = UUID()
+            let sourceStore = await makeSourceStore()
+            let assets = try sourceAssetsForImages(images, sessionID: sessionID, sourceStore: sourceStore)
             let transcript = try await DocumentScanService().transcribe(images: images)
-            try await persistDocumentTranscript(transcript, inputType: .documentImage)
+            try await persistSession(id: sessionID, transcript: transcript, inputType: .documentImage, sourceAssets: assets)
         } catch {
             scanErrorMessage = error.localizedDescription
         }
-    }
-
-    private func persistDocumentTranscript(_ transcript: String, inputType: SessionInputType) async throws {
-        let session = Session(transcript: transcript, inputType: inputType, folderID: listScope.defaultFolderID)
-        try await store.upsert(session)
-        await home.loadSessions()
     }
 
     /// Plain-text files and PDFs from the Files sheet (same document entry path as OCR).
@@ -704,8 +757,23 @@ struct HomeView: View {
         }
 
         do {
+            let sessionID = UUID()
+            let sourceStore = await makeSourceStore()
+            let ext = url.pathExtension.lowercased()
+            let kind: SessionSourceKind = ext == "pdf" ? .pdf : .plainText
+            let asset = try sourceStore.copyFile(
+                from: url,
+                sessionID: sessionID,
+                displayName: url.lastPathComponent,
+                kind: kind
+            )
             let text = try await DocumentFileExtractService().extractText(from: url)
-            try await persistDocumentTranscript(text, inputType: .documentFile)
+            try await persistSession(
+                id: sessionID,
+                transcript: text,
+                inputType: .documentFile,
+                sourceAssets: [asset]
+            )
         } catch {
             scanErrorMessage = error.localizedDescription
         }
@@ -781,8 +849,11 @@ struct HomeView: View {
                 revertSharedImportClaimIfNeeded(claimedURL)
                 return
             }
+            let sessionID = UUID()
+            let sourceStore = await makeSourceStore()
+            let assets = try sourceAssetsForImages([uiImage], sessionID: sessionID, sourceStore: sourceStore)
             let transcript = try await DocumentScanService().transcribe(images: [uiImage])
-            try await persistDocumentTranscript(transcript, inputType: .documentImage)
+            try await persistSession(id: sessionID, transcript: transcript, inputType: .documentImage, sourceAssets: assets)
             removeSharedImportIfNeeded(claimedURL)
         } catch {
             scanErrorMessage = error.localizedDescription
@@ -804,8 +875,23 @@ struct HomeView: View {
         }
 
         do {
+            let sessionID = UUID()
+            let sourceStore = await makeSourceStore()
+            let ext = claimedURL.pathExtension.lowercased()
+            let kind: SessionSourceKind = ext == "pdf" ? .pdf : .plainText
+            let asset = try sourceStore.copyFile(
+                from: claimedURL,
+                sessionID: sessionID,
+                displayName: claimedURL.lastPathComponent,
+                kind: kind
+            )
             let text = try await DocumentFileExtractService().extractText(from: claimedURL)
-            try await persistDocumentTranscript(text, inputType: .documentFile)
+            try await persistSession(
+                id: sessionID,
+                transcript: text,
+                inputType: .documentFile,
+                sourceAssets: [asset]
+            )
             removeSharedImportIfNeeded(claimedURL)
         } catch {
             scanErrorMessage = error.localizedDescription
