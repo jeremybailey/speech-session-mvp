@@ -482,21 +482,28 @@ private struct AtomicSummaryCategorySection: View {
     private func stackRowsView(for cluster: SummaryEntryCluster) -> some View {
         let isStackExpanded = expandedStackIDs.contains(cluster.id)
 
-        Button {
-            withAnimation(.snappy) {
-                if isStackExpanded {
-                    expandedStackIDs.remove(cluster.id)
-                } else {
-                    expandedStackIDs.insert(cluster.id)
+        SummaryEntryStackRowContent(
+            cluster: cluster,
+            isExpanded: isStackExpanded,
+            onExpandToggle: {
+                withAnimation(.snappy) {
+                    if isStackExpanded {
+                        expandedStackIDs.remove(cluster.id)
+                    } else {
+                        expandedStackIDs.insert(cluster.id)
+                    }
+                }
+            },
+            onStatusChange: { newStatus in
+                withAnimation(.snappy) {
+                    for entry in cluster.entries {
+                        var updated = entry
+                        updated.clinicalStatus = newStatus
+                        onSave(updated)
+                    }
                 }
             }
-        } label: {
-            SummaryEntryStackRowContent(
-                cluster: cluster,
-                isExpanded: isStackExpanded
-            )
-        }
-        .buttonStyle(.plain)
+        )
 
         if isStackExpanded {
             ForEach(cluster.entriesNewestFirst) { entry in
@@ -506,12 +513,18 @@ private struct AtomicSummaryCategorySection: View {
     }
 
     private func entryRowView(_ entry: SummaryEntry, nested: Bool = false) -> some View {
-        SummaryEntryRowContent(entry: entry, onViewSource: onViewSource)
-            .padding(.leading, nested ? 12 : 0)
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .onTapGesture {
+        SummaryEntryRowContent(
+            entry: entry,
+            onEdit: {
                 editingEntry = SummaryEntryPresentation.entryEnsuringPractitionerField(entry)
+            },
+            onStatusChange: { updated in
+                withAnimation(.snappy) {
+                    onSave(updated)
+                }
             }
+        )
+            .padding(.leading, nested ? 12 : 0)
             .contextMenu {
                 if let onViewSource {
                     Button {
@@ -535,6 +548,31 @@ private struct AtomicSummaryCategorySection: View {
 }
 
 // MARK: - Entry row display
+
+private struct SummaryEntryStatusToggle: View {
+    let status: SummaryEntryClinicalStatus
+    let onChange: (SummaryEntryClinicalStatus) -> Void
+
+    var body: some View {
+        Button {
+            onChange(status == .current ? .past : .current)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: status == .current ? "checkmark.circle.fill" : "circle")
+                    .font(.caption2)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(status == .current ? .secondary : .tertiary)
+                Text("Current")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Current")
+        .accessibilityValue(status.displayTitle)
+        .accessibilityAddTraits(.isToggle)
+    }
+}
 
 private struct SummaryEntryMetadataRow: View {
     let dateText: String
@@ -564,10 +602,11 @@ private struct SummaryEntryMetadataRow: View {
 
 private struct SummaryEntryRowContent: View {
     let entry: SummaryEntry
-    var onViewSource: ((SummaryEntry) -> Void)? = nil
+    var onEdit: (() -> Void)? = nil
+    var onStatusChange: ((SummaryEntry) -> Void)? = nil
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(SummaryEntryPresentation.sentenceSummary(for: entry))
                     .font(.subheadline)
@@ -581,24 +620,20 @@ private struct SummaryEntryRowContent: View {
                     practitionerText: SummaryEntryPresentation.practitionerLineText(for: entry),
                     practitionerNeedsAttention: SummaryEntryPresentation.practitionerNeedsAttention(for: entry)
                 )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                onEdit?()
+            }
 
-                if let onViewSource,
-                   entry.sourceSessionID != nil || !entry.provenance.isEmpty,
-                   let citation = SummaryEntryPresentation.sourceCitationLabel(for: entry) {
-                    Button {
-                        onViewSource(entry)
-                    } label: {
-                        Label(citation, systemImage: "arrow.up.right.square")
-                            .font(.caption)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(BrandPalette.brand)
-                    .accessibilityHint("Opens the original source entry")
+            if let onStatusChange {
+                SummaryEntryStatusToggle(status: entry.clinicalStatus) { newStatus in
+                    var updated = entry
+                    updated.clinicalStatus = newStatus
+                    onStatusChange(updated)
                 }
             }
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -609,30 +644,44 @@ private struct SummaryEntryRowContent: View {
 private struct SummaryEntryStackRowContent: View {
     let cluster: SummaryEntryCluster
     let isExpanded: Bool
+    var onExpandToggle: (() -> Void)? = nil
+    var onStatusChange: ((SummaryEntryClinicalStatus) -> Void)? = nil
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(cluster.sentenceSummary)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                onExpandToggle?()
+            } label: {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .padding(.top, 4)
 
-                SummaryEntryMetadataRow(
-                    dateText: cluster.dateRangeText ?? SummaryEntryPresentation.addLinkTitle("date"),
-                    dateNeedsAttention: cluster.dateRangeText == nil,
-                    practitionerText: SummaryEntryPresentation.practitionerLineText(for: cluster),
-                    practitionerNeedsAttention: SummaryEntryPresentation.practitionerNeedsAttention(for: cluster),
-                    trailingCaption: "\(cluster.entries.count) sources"
-                )
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(cluster.sentenceSummary)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        SummaryEntryMetadataRow(
+                            dateText: cluster.dateRangeText ?? SummaryEntryPresentation.addLinkTitle("date"),
+                            dateNeedsAttention: cluster.dateRangeText == nil,
+                            practitionerText: SummaryEntryPresentation.practitionerLineText(for: cluster),
+                            practitionerNeedsAttention: SummaryEntryPresentation.practitionerNeedsAttention(for: cluster),
+                            trailingCaption: "\(cluster.entries.count) sources"
+                        )
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .buttonStyle(.plain)
 
-            Image(systemName: "chevron.right")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                .padding(.top, 4)
+            if let onStatusChange {
+                SummaryEntryStatusToggle(status: cluster.clinicalStatus, onChange: onStatusChange)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -689,15 +738,6 @@ private struct SummaryEntryEditor: View {
                     TextField("Title", text: $entry.title)
                     TextField("Details", text: $entry.details, axis: .vertical)
                         .lineLimit(3...8)
-                }
-
-                Section("Status") {
-                    Picker("Status", selection: $entry.clinicalStatus) {
-                        ForEach(SummaryEntryClinicalStatus.allCases, id: \.self) { status in
-                            Text(status.displayTitle).tag(status)
-                        }
-                    }
-                    .pickerStyle(.segmented)
                 }
 
                 Section("Relevant date") {

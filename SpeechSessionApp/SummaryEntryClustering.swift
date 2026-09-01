@@ -243,7 +243,7 @@ struct SummaryEntryCluster: Identifiable {
         return "\(oldest.formatted(fmt)) – \(newest.formatted(fmt))"
     }
 
-    /// Active if any source is active; else inactive if any source is inactive; else resolved.
+    /// Current if any source is current; otherwise past.
     var clinicalStatus: SummaryEntryClinicalStatus {
         SummaryEntryClinicalStatus.dominant(in: entries.map(\.clinicalStatus))
     }
@@ -300,7 +300,7 @@ enum SummaryEntrySentence {
     }
 }
 
-/// Groups and sorts clusters for summary lists: status (active → resolved → inactive), then recency.
+/// Groups and sorts clusters for summary lists: status (current → past), then recency.
 enum SummaryEntryClusterOrdering {
     static func statusSections(from clusters: [SummaryEntryCluster]) -> [(status: SummaryEntryClinicalStatus, clusters: [SummaryEntryCluster])] {
         SummaryEntryClinicalStatus.summarySectionOrder.compactMap { status in

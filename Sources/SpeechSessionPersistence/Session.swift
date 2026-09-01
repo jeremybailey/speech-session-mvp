@@ -121,29 +121,36 @@ public struct SummaryEntryField: Codable, Equatable, Hashable, Identifiable, Sen
     }
 }
 
-/// Whether a clinical fact is ongoing, inactive, or resolved.
+/// Whether a summary fact is ongoing or historical.
 public enum SummaryEntryClinicalStatus: String, Hashable, Sendable, CaseIterable {
-    case active
-    case inactive
-    case resolved
+    case current
+    case past
 
     public var displayTitle: String {
         switch self {
-        case .active: return "Active"
-        case .inactive: return "Inactive"
-        case .resolved: return "Resolved"
+        case .current: return "Current"
+        case .past: return "Past"
         }
     }
 
-    /// Section order for summary lists (active → resolved → inactive).
-    public static let summarySectionOrder: [SummaryEntryClinicalStatus] = [.active, .resolved, .inactive]
+    /// Section order for summary lists (current first, then past).
+    public static let summarySectionOrder: [SummaryEntryClinicalStatus] = [.current, .past]
 
-    /// Most current status wins when stacking multiple sources (active → inactive → resolved).
+    /// Current wins when stacking multiple sources.
     public static func dominant(in statuses: some Sequence<SummaryEntryClinicalStatus>) -> SummaryEntryClinicalStatus {
-        let set = Set(statuses)
-        if set.contains(.active) { return .active }
-        if set.contains(.inactive) { return .inactive }
-        return .resolved
+        statuses.contains(.current) ? .current : .past
+    }
+
+    /// Maps persisted values, including legacy active/inactive/resolved.
+    static func fromStored(_ raw: String) -> SummaryEntryClinicalStatus? {
+        switch raw {
+        case "current", "active":
+            return .current
+        case "past", "inactive", "resolved":
+            return .past
+        default:
+            return nil
+        }
     }
 }
 
@@ -151,19 +158,13 @@ extension SummaryEntryClinicalStatus: Codable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let raw = try container.decode(String.self)
-        switch raw {
-        case "active":
-            self = .active
-        case "inactive":
-            self = .inactive
-        case "resolved":
-            self = .resolved
-        default:
+        guard let status = Self.fromStored(raw) else {
             throw DecodingError.dataCorruptedError(
                 in: container,
                 debugDescription: "Unknown clinical status: \(raw)"
             )
         }
+        self = status
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -190,7 +191,7 @@ public struct SummaryEntry: Codable, Equatable, Hashable, Identifiable, Sendable
     public var reviewReason: String?
     public var isDeleted: Bool
     public var origin: SummaryEntryOrigin
-    /// Active, inactive, or resolved problem/item status. Defaults to `.active` for legacy entries.
+    /// Current or past item status. Defaults to inferred value for legacy entries.
     public var clinicalStatus: SummaryEntryClinicalStatus
     public var createdAt: Date
     public var updatedAt: Date
@@ -275,22 +276,17 @@ public struct SummaryEntry: Codable, Equatable, Hashable, Identifiable, Sendable
     /// Infer status from wording when the model or user did not set one explicitly.
     public static func inferredStatus(title: String, details: String) -> SummaryEntryClinicalStatus {
         let hay = "\(title) \(details)".lowercased()
-        let resolvedHints = [
+        let pastHints = [
             "resolved", "resolution", "cleared", "gone", "healed", "in remission",
             "has resolved", "was resolved", "fully resolved", "symptom-free", "symptom free",
             "no longer present", "completed course",
-        ]
-        if resolvedHints.contains(where: { hay.contains($0) }) {
-            return .resolved
-        }
-        let inactiveHints = [
             "inactive", "discontinued", "stopped taking", "no longer taking", "not currently",
-            "on hold", "paused", "held", "withdrawn", "off medication", "no longer on",
+            "on hold", "paused", "held", "withdrawn", "off medication", "no longer on", "former",
         ]
-        if inactiveHints.contains(where: { hay.contains($0) }) {
-            return .inactive
+        if pastHints.contains(where: { hay.contains($0) }) {
+            return .past
         }
-        return .active
+        return .current
     }
 }
 
