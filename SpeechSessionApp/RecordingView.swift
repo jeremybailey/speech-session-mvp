@@ -12,6 +12,7 @@ struct RecordingView: View {
     let onStopped: (Session?) -> Void
 
     @EnvironmentObject private var kindeAuth: KindeAuthManager
+    @Environment(\.scenePhase) private var scenePhase
 
     private enum Phase: Equatable {
         case recording
@@ -36,6 +37,9 @@ struct RecordingView: View {
         .navigationTitle(phase == .recording || phase == .transcribing ? "Recording" : "Saved")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
+        .onChange(of: scenePhase) { _, newPhase in
+            vm.setAppInBackground(newPhase != .active)
+        }
         .task {
             let creds = await kindeAuth.openAIWhisperCredentials(byokKey: openAIAPIKey)
             vm.prepareForRecording(
@@ -57,6 +61,13 @@ struct RecordingView: View {
                 .font(.title2.monospacedDigit())
                 .frame(maxWidth: .infinity, alignment: .center)
                 .contentTransition(.numericText())
+
+            if let status = vm.recordingStatusMessage {
+                Text(status)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
 
             ScrollView {
                 Text(livePlaceholder)

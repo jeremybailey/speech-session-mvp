@@ -45,6 +45,15 @@
 		BF33 /* SummaryEntryClustering.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR36 /* SummaryEntryClustering.swift */; };
 		BF34 /* SummaryEntryPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR37 /* SummaryEntryPresentation.swift */; };
 		BF35 /* SummaryPDFExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR38 /* SummaryPDFExport.swift */; };
+		BF36 /* RecordingLiveActivityExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = PR03 /* RecordingLiveActivityExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		BF37 /* RecordingActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR39 /* RecordingActivityAttributes.swift */; };
+		BF38 /* RecordingLiveActivityIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR40 /* RecordingLiveActivityIntents.swift */; };
+		BF39 /* RecordingLiveActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR41 /* RecordingLiveActivityController.swift */; };
+		BF40 /* RecordingActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR39 /* RecordingActivityAttributes.swift */; };
+		BF41 /* RecordingLiveActivityIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR40 /* RecordingLiveActivityIntents.swift */; };
+		BF42 /* RecordingLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR42 /* RecordingLiveActivityWidget.swift */; };
+		BF43 /* RecordingLiveActivityBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR43 /* RecordingLiveActivityBundle.swift */; };
+		BF44 /* LiveActivityBrand.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR46 /* LiveActivityBrand.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -54,6 +63,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = NT02;
 			remoteInfo = VoiceMemoShareExtension;
+		};
+		CP02 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = PJ01 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = NT03;
+			remoteInfo = RecordingLiveActivityExtension;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -65,6 +81,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				BF14 /* VoiceMemoShareExtension.appex in Embed Foundation Extensions */,
+				BF36 /* RecordingLiveActivityExtension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -110,8 +127,17 @@
 		FR36 /* SummaryEntryClustering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryEntryClustering.swift; sourceTree = "<group>"; };
 		FR37 /* SummaryEntryPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryEntryPresentation.swift; sourceTree = "<group>"; };
 		FR38 /* SummaryPDFExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryPDFExport.swift; sourceTree = "<group>"; };
+		FR39 /* RecordingActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingActivityAttributes.swift; sourceTree = "<group>"; };
+		FR40 /* RecordingLiveActivityIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingLiveActivityIntents.swift; sourceTree = "<group>"; };
+		FR41 /* RecordingLiveActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingLiveActivityController.swift; sourceTree = "<group>"; };
+		FR42 /* RecordingLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingLiveActivityWidget.swift; sourceTree = "<group>"; };
+		FR43 /* RecordingLiveActivityBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingLiveActivityBundle.swift; sourceTree = "<group>"; };
+		FR44 /* RecordingLiveActivityExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RecordingLiveActivityExtension.entitlements; sourceTree = "<group>"; };
+		FR45 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		FR46 /* LiveActivityBrand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityBrand.swift; sourceTree = "<group>"; };
 		PR01 /* SpeechSessionApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpeechSessionApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		PR02 /* VoiceMemoShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VoiceMemoShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		PR03 /* RecordingLiveActivityExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RecordingLiveActivityExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -132,6 +158,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		FW03 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -140,6 +173,8 @@
 			children = (
 				GR01 /* SpeechSessionApp */,
 				GR03 /* VoiceMemoShareExtension */,
+				GR04 /* Shared */,
+				GR05 /* RecordingLiveActivityExtension */,
 				GR02 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -178,6 +213,7 @@
 				FR27 /* kinde-auth.json */,
 				FR28 /* GlobalSummaryModels.swift */,
 				FR29 /* EntriesShelfView.swift */,
+				FR41 /* RecordingLiveActivityController.swift */,
 				FR22 /* LaunchScreen.storyboard */,
 				FR14 /* Info.plist */,
 				FR18 /* SpeechSessionApp.entitlements */,
@@ -190,6 +226,7 @@
 			children = (
 				PR01 /* SpeechSessionApp.app */,
 				PR02 /* VoiceMemoShareExtension.appex */,
+				PR03 /* RecordingLiveActivityExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -203,6 +240,27 @@
 				FR17 /* VoiceMemoShareExtension.entitlements */,
 			);
 			path = VoiceMemoShareExtension;
+			sourceTree = "<group>";
+		};
+		GR04 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				FR39 /* RecordingActivityAttributes.swift */,
+				FR40 /* RecordingLiveActivityIntents.swift */,
+				FR46 /* LiveActivityBrand.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		GR05 /* RecordingLiveActivityExtension */ = {
+			isa = PBXGroup;
+			children = (
+				FR42 /* RecordingLiveActivityWidget.swift */,
+				FR43 /* RecordingLiveActivityBundle.swift */,
+				FR45 /* Info.plist */,
+				FR44 /* RecordingLiveActivityExtension.entitlements */,
+			);
+			path = RecordingLiveActivityExtension;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -221,6 +279,7 @@
 			);
 			dependencies = (
 				TD01 /* PBXTargetDependency */,
+				TD02 /* PBXTargetDependency */,
 			);
 			name = SpeechSessionApp;
 			packageProductDependencies = (
@@ -251,6 +310,25 @@
 			productReference = PR02 /* VoiceMemoShareExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		NT03 /* RecordingLiveActivityExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BCL05 /* Build configuration list for PBXNativeTarget "RecordingLiveActivityExtension" */;
+			buildPhases = (
+				SRC03 /* Sources */,
+				FW03 /* Frameworks */,
+				RES03 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RecordingLiveActivityExtension;
+			packageProductDependencies = (
+			);
+			productName = RecordingLiveActivityExtension;
+			productReference = PR03 /* RecordingLiveActivityExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -265,6 +343,9 @@
 						CreatedOnToolsVersion = 15.0;
 					};
 					NT02 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					NT03 = {
 						CreatedOnToolsVersion = 15.0;
 					};
 				};
@@ -288,6 +369,7 @@
 			targets = (
 				NT01 /* SpeechSessionApp */,
 				NT02 /* VoiceMemoShareExtension */,
+				NT03 /* RecordingLiveActivityExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -308,6 +390,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				BF16 /* MainInterface.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		RES03 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -347,6 +436,9 @@
 				BF23 /* OpenAIRouting.swift in Sources */,
 				BF25 /* GlobalSummaryModels.swift in Sources */,
 				BF26 /* EntriesShelfView.swift in Sources */,
+				BF37 /* RecordingActivityAttributes.swift in Sources */,
+				BF38 /* RecordingLiveActivityIntents.swift in Sources */,
+				BF39 /* RecordingLiveActivityController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -358,6 +450,18 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		SRC03 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF40 /* RecordingActivityAttributes.swift in Sources */,
+				BF41 /* RecordingLiveActivityIntents.swift in Sources */,
+				BF42 /* RecordingLiveActivityWidget.swift in Sources */,
+				BF43 /* RecordingLiveActivityBundle.swift in Sources */,
+				BF44 /* LiveActivityBrand.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -365,6 +469,11 @@
 			isa = PBXTargetDependency;
 			target = NT02 /* VoiceMemoShareExtension */;
 			targetProxy = CP01 /* PBXContainerItemProxy */;
+		};
+		TD02 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = NT03 /* RecordingLiveActivityExtension */;
+			targetProxy = CP02 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -477,7 +586,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = SpeechSessionApp/SpeechSessionApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 17;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SpeechSessionApp/Info.plist;
@@ -487,7 +596,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.093;
+				MARKETING_VERSION = 1.095;
 				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -506,7 +615,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = SpeechSessionApp/SpeechSessionApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 17;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SpeechSessionApp/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
@@ -515,7 +624,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.093;
+				MARKETING_VERSION = 1.095;
 				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -580,6 +689,58 @@
 			};
 			name = Release;
 		};
+		BC15 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = RecordingLiveActivityExtension/RecordingLiveActivityExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 17;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = RecordingLiveActivityExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.095;
+				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot.RecordingLiveActivityExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		BC16 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = RecordingLiveActivityExtension/RecordingLiveActivityExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 17;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = RecordingLiveActivityExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.095;
+				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot.RecordingLiveActivityExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -606,6 +767,15 @@
 			buildConfigurations = (
 				BC13 /* Debug */,
 				BC14 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BCL05 /* Build configuration list for PBXNativeTarget "RecordingLiveActivityExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BC15 /* Debug */,
+				BC16 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

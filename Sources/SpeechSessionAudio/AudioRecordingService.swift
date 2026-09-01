@@ -5,12 +5,13 @@ import AVFoundation
 
 /// Captures microphone input via `AVAudioEngine` and forwards PCM buffers to a handler (e.g. speech recognition).
 public final class AudioRecordingService: @unchecked Sendable {
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
     private let session = AVAudioSession.sharedInstance()
     private let notificationCenter: NotificationCenter
 
     private var tapInstalled = false
     private var observersInstalled = false
+    private var captureActive = false
     private var onBuffer: ((AVAudioPCMBuffer) -> Void)?
     private var notificationObservers: [NSObjectProtocol] = []
     private var audioFile: AVAudioFile?
@@ -21,6 +22,9 @@ public final class AudioRecordingService: @unchecked Sendable {
 
     /// URL of the file being written during the current recording, if any.
     public var activeRecordingFileURL: URL? { recordingFileURL }
+
+    /// True while capture is active (including paused-for-interruption states).
+    public var isCaptureActive: Bool { captureActive }
 
     public init(notificationCenter: NotificationCenter = .default) {
         self.notificationCenter = notificationCenter
@@ -50,23 +54,66 @@ public final class AudioRecordingService: @unchecked Sendable {
     ) throws {
         stopRecording()
 
+        try configureSession()
+        self.onBuffer = handler
+        captureActive = true
+
+        if let outputFileURL {
+            let directory = outputFileURL.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            recordingFileURL = outputFileURL
+        }
+
+        try startEngineTapAndFileWriter()
+
+        installNotificationObserversIfNeeded()
+    }
+
+    /// Stops the engine tap but keeps the file open and handler wired for resume.
+    public func pauseCapture() {
+        guard captureActive else { return }
+        removeTapAndStopEngine()
+    }
+
+    /// Restarts the engine tap after an interruption or route change.
+    public func resumeCapture() throws {
+        guard captureActive, onBuffer != nil else { return }
+        try configureSession()
+        try startEngineTapAndFileWriter()
+    }
+
+    /// Removes the tap, stops the engine, and deactivates the session.
+    @discardableResult
+    public func stopRecording() -> URL? {
+        let savedURL = recordingFileURL
+        captureActive = false
+        audioFile = nil
+        recordingFileURL = nil
+        removeTapAndStopEngine()
+        onBuffer = nil
+        try? session.setActive(false, options: .notifyOthersOnDeactivation)
+        return savedURL
+    }
+
+    // MARK: - Engine
+
+    private func configureSession() throws {
         try session.setCategory(
             .playAndRecord,
             mode: .spokenAudio,
             options: [.defaultToSpeaker, .allowBluetoothHFP]
         )
         try session.setActive(true, options: [])
+    }
 
-        self.onBuffer = handler
+    private func startEngineTapAndFileWriter() throws {
+        removeTapAndStopEngine()
 
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
 
-        if let outputFileURL {
-            let directory = outputFileURL.deletingLastPathComponent()
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            audioFile = try AVAudioFile(forWriting: outputFileURL, settings: format.settings)
-            recordingFileURL = outputFileURL
+        if audioFile == nil, let recordingFileURL {
+            audioFile = try AVAudioFile(forWriting: recordingFileURL, settings: format.settings)
         }
 
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
@@ -84,21 +131,11 @@ public final class AudioRecordingService: @unchecked Sendable {
         } catch {
             input.removeTap(onBus: 0)
             tapInstalled = false
-            self.onBuffer = nil
-            try? session.setActive(false, options: .notifyOthersOnDeactivation)
             throw AudioRecordingError.engineStartFailed
         }
-
-        installNotificationObserversIfNeeded()
     }
 
-    /// Removes the tap, stops the engine, and deactivates the session.
-    @discardableResult
-    public func stopRecording() -> URL? {
-        let savedURL = recordingFileURL
-        audioFile = nil
-        recordingFileURL = nil
-
+    private func removeTapAndStopEngine() {
         let input = engine.inputNode
         if tapInstalled {
             input.removeTap(onBus: 0)
@@ -107,9 +144,16 @@ public final class AudioRecordingService: @unchecked Sendable {
         if engine.isRunning {
             engine.stop()
         }
-        onBuffer = nil
-        try? session.setActive(false, options: .notifyOthersOnDeactivation)
-        return savedURL
+    }
+
+    private func rebuildEngineAndResume() {
+        removeTapAndStopEngine()
+        engine = AVAudioEngine()
+        do {
+            try resumeCapture()
+        } catch {
+            onSessionEvent?(.interruptionBegan)
+        }
     }
 
     // MARK: - Notifications
@@ -135,8 +179,20 @@ public final class AudioRecordingService: @unchecked Sendable {
                 forName: AVAudioSession.routeChangeNotification,
                 object: session,
                 queue: mainQueue
+            ) { [weak self] notification in
+                self?.handleRouteChange(notification)
+            }
+        )
+
+        notificationObservers.append(
+            notificationCenter.addObserver(
+                forName: AVAudioSession.mediaServicesWereResetNotification,
+                object: session,
+                queue: mainQueue
             ) { [weak self] _ in
-                self?.onSessionEvent?(.routeChanged)
+                guard let self, self.captureActive else { return }
+                self.onSessionEvent?(.mediaServicesReset)
+                self.rebuildEngineAndResume()
             }
         )
     }
@@ -149,6 +205,30 @@ public final class AudioRecordingService: @unchecked Sendable {
         observersInstalled = false
     }
 
+    private func handleRouteChange(_ notification: Notification) {
+        guard captureActive else { return }
+
+        let reason: AVAudioSession.RouteChangeReason? = {
+            guard
+                let reasonValue = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+            else { return nil }
+            return AVAudioSession.RouteChangeReason(rawValue: reasonValue)
+        }()
+
+        switch reason {
+        case .oldDeviceUnavailable, .newDeviceAvailable, .wakeFromSleep:
+            onSessionEvent?(.routeChanged)
+            rebuildEngineAndResume()
+        case .categoryChange, .override, .routeConfigurationChange, .noSuitableRouteForCategory, .unknown:
+            // Category/route updates happen during normal session setup — do not restart capture.
+            break
+        case nil:
+            onSessionEvent?(.routeChanged)
+        @unknown default:
+            onSessionEvent?(.routeChanged)
+        }
+    }
+
     private func handleInterruption(_ notification: Notification) {
         guard
             let info = notification.userInfo,
@@ -158,11 +238,16 @@ public final class AudioRecordingService: @unchecked Sendable {
 
         switch type {
         case .began:
+            pauseCapture()
             onSessionEvent?(.interruptionBegan)
         case .ended:
             let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
             let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
-            onSessionEvent?(.interruptionEnded(shouldResume: options.contains(.shouldResume)))
+            let shouldResume = options.contains(.shouldResume)
+            onSessionEvent?(.interruptionEnded(shouldResume: shouldResume))
+            if shouldResume, captureActive {
+                rebuildEngineAndResume()
+            }
         @unknown default:
             break
         }
@@ -176,6 +261,8 @@ import AVFoundation
 /// Stub: real capture is implemented for iOS only; macOS builds use this for package compatibility.
 public final class AudioRecordingService: @unchecked Sendable {
     public var onSessionEvent: ((AudioSessionEvent) -> Void)?
+    public var activeRecordingFileURL: URL? { nil }
+    public var isCaptureActive: Bool { false }
 
     public init(notificationCenter: NotificationCenter = .default) {
         _ = notificationCenter
@@ -191,6 +278,12 @@ public final class AudioRecordingService: @unchecked Sendable {
     ) throws {
         _ = outputFileURL
         _ = handler
+        throw AudioRecordingError.unsupportedPlatform
+    }
+
+    public func pauseCapture() {}
+
+    public func resumeCapture() throws {
         throw AudioRecordingError.unsupportedPlatform
     }
 

@@ -1,5 +1,37 @@
 # CollectiveCare Release Notes
 
+## Version 1.095
+
+### Lock screen Live Activity while recording
+
+Record and transcribe with controls visible on the lock screen and Dynamic Island.
+
+- **Live Activity** appears while capturing or finishing transcription — plum branding with heart icon and live timer
+- **Stop from lock screen** ends capture without unlocking the phone
+- **Compact Dynamic Island** layout — heart + timer in the pill; expanded view stays tight
+- Duplicate-save bug fixed when stopping from the Live Activity
+
+### Background session recording
+
+Recording continues when the app is backgrounded or the device sleeps (Granola-style continuous capture).
+
+- **Background audio mode** keeps the mic pipeline alive during visits and journal entries
+- **Interruption recovery** after calls, route changes, and media resets
+- **File-first transcription** on Stop for Whisper backends; Apple Speech falls back to the saved CAF when live text is empty
+- **Status in UI** — “Recording in background” and “Paused — call or system audio”
+
+See `BACKGROUND_RECORDING.md` for a device test checklist.
+
+### Traceable summary sources
+
+Summary facts link back to the original entry they came from.
+
+- **Source citation** on each summary card row — tap to open the original entry’s Source tab with excerpt highlight
+- **Health summary** navigates to full entry detail (not just the file viewer) so context is preserved
+- **Provenance** in the card editor is tappable when a source entry exists
+
+---
+
 ## Version 1.093
 
 ### Source verification for summary entries
@@ -30,7 +62,15 @@ Practitioners can now open the original material behind any summarized fact.
 
 ---
 
-## Testing checklist
+## Testing checklist (1.095)
+
+- [ ] Start recording → lock phone 2+ min → unlock → Stop → full transcript and Source audio saved
+- [ ] Live Activity shows on lock screen with timer; Stop saves exactly one entry
+- [ ] Summary card source link opens original entry Source tab with excerpt
+- [ ] Health summary source link opens entry detail on Source tab
+- [ ] Background / interrupted status strings appear when applicable
+
+## Testing checklist (1.093)
 
 - [ ] Import a PDF and confirm Source tab shows the original document
 - [ ] Take a photo or document scan and verify image pages appear in Source

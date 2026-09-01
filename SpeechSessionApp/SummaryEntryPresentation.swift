@@ -109,6 +109,24 @@ enum SummaryEntryPresentation {
         return "Add \(titled)"
     }
 
+    /// Short label for the source entry a summary fact came from.
+    static func sourceCitationLabel(for entry: SummaryEntry) -> String? {
+        if let title = entry.sourceTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+            return title
+        }
+        let provenance = entry.provenance.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !provenance.isEmpty {
+            return provenance
+        }
+        if entry.sourceSessionID != nil {
+            if let date = entry.sourceDate {
+                return date.formatted(date: .abbreviated, time: .shortened)
+            }
+            return "Source entry"
+        }
+        return nil
+    }
+
     static func entryEnsuringPractitionerField(_ entry: SummaryEntry) -> SummaryEntry {
         guard entry.category != .practitionerContact else { return entry }
         let isPractitionerField = { (field: SummaryEntryField) -> Bool in

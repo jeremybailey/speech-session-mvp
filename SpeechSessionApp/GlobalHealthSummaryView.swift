@@ -23,9 +23,9 @@ struct ScopedHealthSummaryView: View {
 
     @State private var summaryState: ScopedSummaryState = .idle
     @State private var storageDirectory: URL?
-    @State private var sourceSheetContext: SourceSheetContext?
+    @State private var sourceSheetContext: LinkedEntryContext?
 
-    private struct SourceSheetContext: Identifiable, Hashable {
+    struct LinkedEntryContext: Identifiable, Hashable {
         let id = UUID()
         let session: Session
         let excerpt: String?
@@ -99,19 +99,13 @@ struct ScopedHealthSummaryView: View {
             Task { await clearScopeCacheAndRegenerate() }
         }
         .navigationDestination(item: $sourceSheetContext) { context in
-            Group {
-                if let storageDirectory {
-                    SessionSourceView(
-                        session: context.session,
-                        storageDirectory: storageDirectory,
-                        highlightedExcerpt: context.excerpt
-                    )
-                } else {
-                    ProgressView()
-                }
-            }
-            .navigationTitle("Source")
-            .navigationBarTitleDisplayMode(.inline)
+            SessionDetailView(
+                session: context.session,
+                store: store,
+                home: home,
+                initialTab: .source,
+                sourceHighlightExcerpt: context.excerpt
+            )
         }
     }
 
@@ -258,7 +252,7 @@ struct ScopedHealthSummaryView: View {
         }()
 
         if let resolvedSession {
-            sourceSheetContext = SourceSheetContext(session: resolvedSession, excerpt: entry.sourceExcerpt)
+            sourceSheetContext = LinkedEntryContext(session: resolvedSession, excerpt: entry.sourceExcerpt)
             return
         }
 
@@ -267,7 +261,7 @@ struct ScopedHealthSummaryView: View {
             guard let sessions = try? await store.loadAll(),
                   let session = sessions.first(where: { $0.id == sourceID }) else { return }
             await MainActor.run {
-                sourceSheetContext = SourceSheetContext(session: session, excerpt: entry.sourceExcerpt)
+                sourceSheetContext = LinkedEntryContext(session: session, excerpt: entry.sourceExcerpt)
             }
         }
     }

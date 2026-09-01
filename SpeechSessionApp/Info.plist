@@ -49,6 +49,12 @@
 	<string>Record appointment audio so CollectiveCare can create a transcript for your visit notes.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Transcribe appointment audio into visit notes using Apple&apos;s speech recognition when selected.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

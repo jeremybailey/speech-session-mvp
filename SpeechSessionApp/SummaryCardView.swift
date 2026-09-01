@@ -506,7 +506,7 @@ private struct AtomicSummaryCategorySection: View {
     }
 
     private func entryRowView(_ entry: SummaryEntry, nested: Bool = false) -> some View {
-        SummaryEntryRowContent(entry: entry)
+        SummaryEntryRowContent(entry: entry, onViewSource: onViewSource)
             .padding(.leading, nested ? 12 : 0)
             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .onTapGesture {
@@ -517,7 +517,7 @@ private struct AtomicSummaryCategorySection: View {
                     Button {
                         onViewSource(entry)
                     } label: {
-                        Label("View source", systemImage: "doc.text.magnifyingglass")
+                        Label("View source entry", systemImage: "doc.text.magnifyingglass")
                     }
                 }
                 Button(role: .destructive) {
@@ -528,7 +528,7 @@ private struct AtomicSummaryCategorySection: View {
                     Label("Delete", systemImage: "trash")
                 }
             }
-            .accessibilityAction(named: "View source") {
+            .accessibilityAction(named: "View source entry") {
                 onViewSource?(entry)
             }
     }
@@ -564,6 +564,7 @@ private struct SummaryEntryMetadataRow: View {
 
 private struct SummaryEntryRowContent: View {
     let entry: SummaryEntry
+    var onViewSource: ((SummaryEntry) -> Void)? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -580,6 +581,22 @@ private struct SummaryEntryRowContent: View {
                     practitionerText: SummaryEntryPresentation.practitionerLineText(for: entry),
                     practitionerNeedsAttention: SummaryEntryPresentation.practitionerNeedsAttention(for: entry)
                 )
+
+                if let onViewSource,
+                   entry.sourceSessionID != nil || !entry.provenance.isEmpty,
+                   let citation = SummaryEntryPresentation.sourceCitationLabel(for: entry) {
+                    Button {
+                        onViewSource(entry)
+                    } label: {
+                        Label(citation, systemImage: "arrow.up.right.square")
+                            .font(.caption)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(BrandPalette.brand)
+                    .accessibilityHint("Opens the original source entry")
+                }
             }
             Spacer(minLength: 0)
         }
@@ -717,7 +734,17 @@ private struct SummaryEntryEditor: View {
                 if !entry.provenance.isEmpty || entry.sourceExcerpt != nil || onViewSource != nil {
                     Section("Provenance") {
                         if !entry.provenance.isEmpty {
-                            Text(entry.provenance)
+                            if let onViewSource, entry.sourceSessionID != nil || entry.sourceExcerpt != nil {
+                                Button {
+                                    let snapshot = entry
+                                    dismiss()
+                                    onViewSource(snapshot)
+                                } label: {
+                                    Label(entry.provenance, systemImage: "arrow.up.right.square")
+                                }
+                            } else {
+                                Text(entry.provenance)
+                            }
                         }
                         if let excerpt = entry.sourceExcerpt {
                             Text(excerpt)
@@ -729,7 +756,7 @@ private struct SummaryEntryEditor: View {
                                 dismiss()
                                 onViewSource(snapshot)
                             } label: {
-                                Label("View source", systemImage: "doc.text.magnifyingglass")
+                                Label("View source entry", systemImage: "doc.text.magnifyingglass")
                             }
                         }
                     }

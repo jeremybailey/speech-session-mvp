@@ -32,6 +32,8 @@ public final class RecordingViewModel: ObservableObject {
     private var recordingStartedAt: Date?
     private var eventTask: Task<Void, Never>?
     private var timerTask: Task<Void, Never>?
+    private var totalPausedDuration: TimeInterval = 0
+    private var pauseBeganAt: Date?
 
     @Published public private(set) var liveTranscript: String = ""
     @Published public private(set) var isRecording = false
@@ -43,8 +45,52 @@ public final class RecordingViewModel: ObservableObject {
     @Published public private(set) var isFinishingWhisper = false
     /// True while transcribing a user-selected audio file.
     @Published public private(set) var isTranscribingFile = false
+    /// True when system audio interrupted capture (call, Siri, etc.).
+    @Published public private(set) var isCaptureInterrupted = false
+    /// True when the app is not in the foreground while recording continues.
+    @Published public private(set) var isAppInBackground = false
     /// Set to true by the event task when the transcription stream closes.
     private var transcriptionStreamFinished = false
+    private var stopInProgress = false
+
+    /// User-facing status for background or interrupted recording.
+    public var recordingStatusMessage: String? {
+        if isCaptureInterrupted {
+            return "Paused — call or system audio"
+        }
+        if isAppInBackground, isRecording {
+            return "Recording in background"
+        }
+        return nil
+    }
+
+    public func setAppInBackground(_ inBackground: Bool) {
+        isAppInBackground = inBackground
+    }
+
+    /// Snapshot for lock-screen Live Activity updates.
+    public var liveActivitySnapshot: RecordingLiveActivitySnapshot {
+        let active = isRecording || isFinishingWhisper || isTranscribingFile
+        let phase: RecordingLiveActivitySnapshot.Phase = {
+            if isFinishingWhisper || isTranscribingFile { return .transcribing }
+            if isCaptureInterrupted { return .paused }
+            if isRecording { return .recording }
+            return .recording
+        }()
+
+        var pausedNow: TimeInterval = 0
+        if isCaptureInterrupted, let pauseBeganAt {
+            pausedNow = Date().timeIntervalSince(pauseBeganAt)
+        }
+
+        return RecordingLiveActivitySnapshot(
+            isActive: active,
+            phase: phase,
+            startedAt: recordingStartedAt,
+            displayElapsed: elapsed,
+            accumulatedPausedSeconds: totalPausedDuration + pausedNow
+        )
+    }
 
     public init(store: SessionStore) {
         self.store = store
@@ -114,9 +160,18 @@ public final class RecordingViewModel: ObservableObject {
         updateLiveDisplay()
         recordingStartedAt = Date()
         elapsed = 0
+        totalPausedDuration = 0
+        pauseBeganAt = nil
+        isCaptureInterrupted = false
+        isAppInBackground = false
         pendingRecordingSessionID = UUID()
 
         pipeline = sessionPipeline
+        sessionPipeline.onAudioSessionEvent = { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.handleAudioSessionEvent(event)
+            }
+        }
         subscribeToEvents(sessionPipeline)
         activeSessionUsesWhisper = pendingBackend == .openAIWhisper || pendingBackend == .onDeviceWhisperKit
 
@@ -162,40 +217,45 @@ public final class RecordingViewModel: ObservableObject {
     /// Stops the recording and returns the saved entry, or `nil` if saving failed.
     @discardableResult
     public func stop() async -> Session? {
+        guard isRecording else { return nil }
+        guard !stopInProgress else { return nil }
+        stopInProgress = true
+        defer { stopInProgress = false }
+
+        let backend = pendingBackend
         let wasWhisper = activeSessionUsesWhisper
-        isFinishingWhisper = wasWhisper
-        if wasWhisper {
-            errorMessage = nil
-        }
+        let recordingURL = pendingRecordingFileURL
+
         timerTask?.cancel()
         timerTask = nil
-        pipeline?.stop()
 
         if wasWhisper {
-            // Wait until the batch backend yields a result/error, the stream closes,
-            // or we hit the safety timeout — whichever comes first.
-            let deadline = Date().addingTimeInterval(120)
-            while Date() < deadline {
-                if let e = errorMessage, !e.isEmpty { break }
-                if !liveTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { break }
-                if transcriptionStreamFinished { break }
-                try? await Task.sleep(nanoseconds: 100_000_000)
-            }
-            if errorMessage == nil,
-               liveTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            {
-                errorMessage = "Transcription did not return a result."
-            }
+            isFinishingWhisper = true
+            errorMessage = nil
         }
+
+        pipeline?.stop()
+
+        let transcript = await resolveFinalTranscript(
+            recordingFileURL: recordingURL,
+            backend: backend,
+            wasWhisper: wasWhisper
+        )
 
         eventTask?.cancel()
         eventTask = nil
         pipeline = nil
+
         isRecording = false
+        isCaptureInterrupted = false
+        isAppInBackground = false
         activeSessionUsesWhisper = false
         isFinishingWhisper = false
 
-        let transcript = fullTranscriptForSave()
+        if transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            errorMessage = "Transcription did not return a result."
+        }
+
         let sessionID = pendingRecordingSessionID ?? UUID()
         var sourceAssets: [SessionSourceAsset]?
         if let recordingURL = pendingRecordingFileURL,
@@ -382,6 +442,100 @@ public final class RecordingViewModel: ObservableObject {
             }
             // Stream closed — unblock the stop() wait loop.
             self.transcriptionStreamFinished = true
+        }
+    }
+
+    private func handleAudioSessionEvent(_ event: AudioSessionEvent) {
+        switch event {
+        case .interruptionBegan:
+            isCaptureInterrupted = true
+            if pauseBeganAt == nil {
+                pauseBeganAt = Date()
+            }
+        case .interruptionEnded:
+            resumeElapsedAfterPause()
+            isCaptureInterrupted = false
+        case .routeChanged, .mediaServicesReset:
+            resumeElapsedAfterPause()
+            isCaptureInterrupted = false
+        }
+    }
+
+    private func resumeElapsedAfterPause() {
+        if let pauseBeganAt {
+            totalPausedDuration += Date().timeIntervalSince(pauseBeganAt)
+            self.pauseBeganAt = nil
+        }
+    }
+
+    private func resolveFinalTranscript(
+        recordingFileURL: URL?,
+        backend: TranscriptionBackend,
+        wasWhisper: Bool
+    ) async -> String {
+        let live = fullTranscriptForSave()
+
+        if wasWhisper,
+           let recordingFileURL,
+           FileManager.default.fileExists(atPath: recordingFileURL.path),
+           let fileText = try? await transcribeStoredRecordingFile(recordingFileURL),
+           !fileText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            return fileText
+        }
+
+        if wasWhisper {
+            let deadline = Date().addingTimeInterval(120)
+            while Date() < deadline {
+                if let message = errorMessage, !message.isEmpty { break }
+                let current = fullTranscriptForSave()
+                if !current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { break }
+                if transcriptionStreamFinished { break }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            return fullTranscriptForSave()
+        }
+
+        if backend == .onDeviceApple,
+           !live.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            return live
+        }
+
+        if let recordingFileURL,
+           FileManager.default.fileExists(atPath: recordingFileURL.path),
+           let fileText = try? await transcribeStoredRecordingFile(recordingFileURL),
+           !fileText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            return fileText
+        }
+
+        return live
+    }
+
+    private func transcribeStoredRecordingFile(_ fileURL: URL) async throws -> String {
+        switch pendingBackend {
+        case .onDeviceApple:
+            return try await AudioFileTranscriptionService.transcribeWithAppleSpeech(
+                fileURL: fileURL,
+                locale: .current
+            )
+        case .openAIWhisper:
+            if let creds = pendingOpenAIWhisperCredentials {
+                return try await AudioFileTranscriptionService.transcribeWithOpenAIWhisper(
+                    fileURL: fileURL,
+                    credentials: creds
+                )
+            }
+            return try await AudioFileTranscriptionService.transcribeWithOpenAIWhisper(
+                fileURL: fileURL,
+                apiKey: pendingOpenAIKey
+            )
+        case .onDeviceWhisperKit:
+            return try await AudioFileTranscriptionService.transcribeWithWhisperKit(
+                fileURL: fileURL,
+                modelName: pendingWhisperKitModel
+            )
         }
     }
 
@@ -604,7 +758,11 @@ public final class RecordingViewModel: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 guard let self, self.isRecording else { break }
-                self.elapsed = Date().timeIntervalSince(start)
+                var pausedNow: TimeInterval = 0
+                if self.isCaptureInterrupted, let pauseBeganAt = self.pauseBeganAt {
+                    pausedNow = Date().timeIntervalSince(pauseBeganAt)
+                }
+                self.elapsed = Date().timeIntervalSince(start) - self.totalPausedDuration - pausedNow
             }
         }
     }

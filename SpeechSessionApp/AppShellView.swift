@@ -6,6 +6,7 @@ struct AppShellView: View {
     @ObservedObject var appModel: AppModel
     @ObservedObject var kindeAuth: KindeAuthManager
 
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("speechSession.skippedSignInGate") private var skippedSignInGate = false
 
     private var mayUseMainApp: Bool {
@@ -23,7 +24,37 @@ struct AppShellView: View {
         .environmentObject(kindeAuth)
         .onOpenURL { url in
             guard !KindeAuthManager.isKindeOAuthCallbackURL(url) else { return }
+            if url.scheme == "collectivecare", url.host == "record-start" {
+                NotificationCenter.default.post(name: .liveActivityStartRecording, object: nil)
+                return
+            }
             SharedImportURLInbox.shared.enqueue(url)
+        }
+        .task {
+            await appModel.syncRecordingLiveActivity()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            Task {
+                await appModel.handleLiveActivityStopIfNeeded()
+                appModel.handleLiveActivityStartIfNeeded()
+                await appModel.syncRecordingLiveActivity()
+            }
+        }
+        .onChange(of: appModel.recording.isRecording) { _, isRecording in
+            if isRecording {
+                RecordingLiveActivityBridge.clearPendingCommands()
+            }
+            Task { await appModel.syncRecordingLiveActivity() }
+        }
+        .onChange(of: appModel.recording.isFinishingWhisper) { _, _ in
+            Task { await appModel.syncRecordingLiveActivity() }
+        }
+        .onChange(of: appModel.recording.isTranscribingFile) { _, _ in
+            Task { await appModel.syncRecordingLiveActivity() }
+        }
+        .onChange(of: appModel.recording.isCaptureInterrupted) { _, _ in
+            Task { await appModel.syncRecordingLiveActivity() }
         }
     }
 }

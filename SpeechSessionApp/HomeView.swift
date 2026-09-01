@@ -22,6 +22,7 @@ struct HomeView: View {
     var advanceSharedImportQueue: () -> Void = {}
 
     @EnvironmentObject private var kindeAuth: KindeAuthManager
+    @Environment(\.scenePhase) private var scenePhase
 
     @AppStorage("speechSession.transcriptionBackend") private var backendRaw = TranscriptionBackend.onDeviceWhisperKit.rawValue
     @AppStorage("speechSession.openaiAPIKey") private var openAIAPIKey = ""
@@ -313,6 +314,10 @@ struct HomeView: View {
             await home.loadSessions()
             await consumePendingSharedImportIfNeeded()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .liveActivityStartRecording)) { _ in
+            guard !recording.isRecording, !recording.isFinishingWhisper, !recording.isTranscribingFile else { return }
+            startLiveRecording(intent: .clinicalVisit)
+        }
         .task(id: "\(backendRaw)|\(whisperKitModel)|\(whisperKitExperimentalUnlock)") {
             normalizeTranscriptionStorageForDevice()
             await prefetchWhisperKitModelIfNeeded()
@@ -343,6 +348,9 @@ struct HomeView: View {
                 fileErrorMessage = nil
             }
         }
+        .onChange(of: scenePhase) { _, newPhase in
+            recording.setAppInBackground(newPhase != .active)
+        }
     }
 
     // MARK: - Bottom + button & active-state pills
@@ -356,6 +364,11 @@ struct HomeView: View {
                     .padding(.top, 4)
                     .padding(.bottom, 10)
             } else {
+                if phase == .recording, let status = recording.recordingStatusMessage {
+                    Text(status)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 activePhasePill
                     .padding(.bottom, 16)
             }

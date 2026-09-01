@@ -19,10 +19,12 @@ struct SessionDetailView: View {
     @State private var sourceHighlightExcerpt: String?
     @State private var sourceShareableURL: URL?
 
-    init(session: Session, store: SessionStore, home: HomeViewModel) {
+    init(session: Session, store: SessionStore, home: HomeViewModel, initialTab: DetailTab = .summary, sourceHighlightExcerpt: String? = nil) {
         self.store = store
         self.home = home
         _localSession = State(initialValue: session)
+        _selectedTab = State(initialValue: initialTab)
+        _sourceHighlightExcerpt = State(initialValue: sourceHighlightExcerpt)
     }
 
     var body: some View {
@@ -30,6 +32,7 @@ struct SessionDetailView: View {
             Picker("View", selection: $selectedTab) {
                 Text("Summary").tag(DetailTab.summary)
                 Text("Source").tag(DetailTab.source)
+                Text("Transcript").tag(DetailTab.transcript)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)
@@ -42,6 +45,8 @@ struct SessionDetailView: View {
                 summaryTab
             case .source:
                 sourceTab
+            case .transcript:
+                transcriptTab
             }
         }
         .background(BrandPalette.canvas.ignoresSafeArea())
@@ -107,6 +112,18 @@ struct SessionDetailView: View {
                 summaryState = .loaded(cached)
             }
             // If already loading or loaded, the existing summaryState drives the UI — no action needed.
+        }
+    }
+
+    // MARK: - Transcript Tab
+
+    private var transcriptTab: some View {
+        ScrollView {
+            Text(localSession.transcript.isEmpty ? "(No transcript recorded)" : localSession.transcript)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .liquidGlassCard(cornerRadius: 14)
+                .padding()
         }
     }
 
@@ -289,9 +306,12 @@ struct SessionDetailView: View {
 
         switch selectedTab {
         case .source:
+            return nil
+
+        case .transcript:
             let transcript = localSession.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !transcript.isEmpty else { return nil }
-            return (text: transcript, subject: "\(sessionLabel) — Source Text")
+            return (text: transcript, subject: "\(sessionLabel) — Transcript")
 
         case .summary:
             guard case .loaded(let text) = summaryState else { return nil }
@@ -575,8 +595,8 @@ struct SessionDetailView: View {
 
 // MARK: - Supporting Types
 
-private enum DetailTab: Hashable {
-    case source, summary
+enum DetailTab: Hashable {
+    case summary, source, transcript
 }
 
 private enum SummaryState {

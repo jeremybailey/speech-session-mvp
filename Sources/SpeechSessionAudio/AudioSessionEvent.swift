@@ -5,4 +5,5 @@ public enum AudioSessionEvent: Sendable, Equatable {
     case interruptionBegan
     case interruptionEnded(shouldResume: Bool)
     case routeChanged
+    case mediaServicesReset
 }

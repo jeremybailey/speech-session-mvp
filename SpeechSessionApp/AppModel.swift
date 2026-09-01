@@ -6,6 +6,8 @@ import SpeechSessionPersistence
 extension Notification.Name {
     /// Posted when a queued App Group URL (audio, photo, document share handoffs, or opener URL) is ready to consume.
     static let sharedImportURLReceived = Notification.Name("SpeechSessionSharedImportURLReceived")
+    /// Posted when the recording Live Activity requests starting a visit capture.
+    static let liveActivityStartRecording = Notification.Name("SpeechSessionLiveActivityStartRecording")
 }
 
 /// Drains queued files from `SharedAudioImports`, `SharedPhotoImports`, and `SharedDocumentImports` in the App Group (newest first).
@@ -119,6 +121,8 @@ final class AppModel: ObservableObject {
     let home: HomeViewModel
     let recording: RecordingViewModel
     private var sharedImportURLObserver: NSObjectProtocol?
+    private var liveActivityCommandObserverToken: UnsafeMutableRawPointer?
+    private var isHandlingLiveActivityStop = false
 
     /// Shared handoff queue (Voice Memos / Photos share extensions → App Group paths).
     @Published var pendingSharedImportURL: URL?
@@ -137,6 +141,7 @@ final class AppModel: ObservableObject {
                 self?.enqueueSharedImportURL(url)
             }
         }
+        installLiveActivityCommandObserver()
         let drainedURLs = SharedImportURLInbox.shared.drain()
         if let url = drainedURLs.last {
             pendingSharedImportURL = url
@@ -148,6 +153,70 @@ final class AppModel: ObservableObject {
         if let sharedImportURLObserver {
             NotificationCenter.default.removeObserver(sharedImportURLObserver)
         }
+        if let liveActivityCommandObserverToken {
+            CFNotificationCenterRemoveObserver(
+                CFNotificationCenterGetDarwinNotifyCenter(),
+                liveActivityCommandObserverToken,
+                nil,
+                nil
+            )
+        }
+    }
+
+    func syncRecordingLiveActivity() async {
+        await RecordingLiveActivityController.shared.sync(with: recording)
+    }
+
+    func handleLiveActivityStopIfNeeded() async {
+        guard !isHandlingLiveActivityStop else { return }
+        guard RecordingLiveActivityBridge.consumeStopRequest() else { return }
+        guard recording.isRecording else { return }
+
+        isHandlingLiveActivityStop = true
+        defer { isHandlingLiveActivityStop = false }
+
+        _ = await recording.stop()
+        await home.loadSessions()
+        await syncRecordingLiveActivity()
+    }
+
+    func handleLiveActivityStartIfNeeded() {
+        guard RecordingLiveActivityBridge.consumeStartRequest() else { return }
+        NotificationCenter.default.post(name: .liveActivityStartRecording, object: nil)
+    }
+
+    private func installLiveActivityCommandObserver() {
+        let token = Unmanaged.passUnretained(self).toOpaque()
+        liveActivityCommandObserverToken = token
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        CFNotificationCenterAddObserver(
+            center,
+            token,
+            { _, observer, _, _, _ in
+                guard let observer else { return }
+                let model = Unmanaged<AppModel>.fromOpaque(observer).takeUnretainedValue()
+                Task { @MainActor in
+                    await model.handleLiveActivityStopIfNeeded()
+                }
+            },
+            RecordingLiveActivityBridge.stopNotificationName,
+            nil,
+            .deliverImmediately
+        )
+        CFNotificationCenterAddObserver(
+            center,
+            token,
+            { _, observer, _, _, _ in
+                guard let observer else { return }
+                let model = Unmanaged<AppModel>.fromOpaque(observer).takeUnretainedValue()
+                Task { @MainActor in
+                    model.handleLiveActivityStartIfNeeded()
+                }
+            },
+            RecordingLiveActivityBridge.startNotificationName,
+            nil,
+            .deliverImmediately
+        )
     }
 
     func enqueueSharedImportURL(_ url: URL) {

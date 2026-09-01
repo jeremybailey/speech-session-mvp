@@ -24,6 +24,21 @@ public final class LiveRecordingSession: @unchecked Sendable {
         set { audio.onSessionEvent = newValue }
     }
 
+    /// URL of the continuous recording file written during capture, if any.
+    public var activeRecordingFileURL: URL? {
+        audio.activeRecordingFileURL
+    }
+
+    /// Pauses microphone capture without closing the recording file.
+    public func pauseCapture() {
+        audio.pauseCapture()
+    }
+
+    /// Resumes microphone capture after an interruption or route change.
+    public func resumeCapture() throws {
+        try audio.resumeCapture()
+    }
+
     /// Starts on-device streaming recognition, then microphone capture, forwarding PCM into the active recognition request.
     public func start(outputFileURL: URL? = nil, locale: Locale = .current) throws {
         try transcription.beginStreaming(locale: locale)
