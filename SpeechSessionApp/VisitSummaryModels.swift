@@ -227,6 +227,20 @@ enum BodySystem: String, CaseIterable, Hashable, Identifiable, Sendable {
 
 // MARK: - Shared field aggregation (OpenAI decode + on-device structured output → markdown)
 
+/// One prompted visit fact (object form) before it becomes a `SummaryEntry` card.
+struct VisitSummaryFact {
+    var title: String
+    var details: String
+    var bodySystem: BodySystem?
+    var clinicalStatus: SummaryEntryClinicalStatus?
+    var factKey: String?
+
+    var markdownLine: String {
+        if details.isEmpty { return "- \(title)" }
+        return "- \(title) — \(details)"
+    }
+}
+
 /// Optional section fields for a single-visit summary. Used to build markdown with fixed ## headers only.
 struct VisitSummaryFields {
     var title: String?
@@ -246,6 +260,8 @@ struct VisitSummaryFields {
     var followUp: String?
     /// Information that matters but does not fit any other section; do not duplicate structured fields.
     var otherNotes: String?
+    /// Object-form facts (clinicalStatus + factKey) when the model returned structured items.
+    var factsByCategory: [SummaryEntryCategory: [VisitSummaryFact]] = [:]
 
     /// Ordered (heading, body) pairs — must match prompts and section headers in SummaryCategoryCard heuristics.
     private static let sectionSpecs: [(heading: String, keyPath: KeyPath<VisitSummaryFields, String?>)] = [
@@ -265,10 +281,30 @@ struct VisitSummaryFields {
     /// Markdown with only non-empty sections; no extra ## headers.
     func markdownFromStructuredSections() -> String {
         Self.sectionSpecs.compactMap { spec -> String? in
-            guard let raw = self[keyPath: spec.keyPath]?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !raw.isEmpty else { return nil }
+            let fromFacts = factsByCategory[Self.category(forSectionHeading: spec.heading)].flatMap { facts -> String? in
+                let joined = facts.map(\.markdownLine).joined(separator: "\n")
+                return joined.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : joined
+            }
+            let raw = fromFacts ?? self[keyPath: spec.keyPath]?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let raw, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
             return "## \(spec.heading)\n\(raw)"
         }.joined(separator: "\n\n")
+    }
+
+    private static func category(forSectionHeading heading: String) -> SummaryEntryCategory {
+        switch heading {
+        case "Chief Complaint": return .chiefComplaint
+        case "Symptoms": return .symptoms
+        case "Findings": return .findings
+        case "Medications": return .medications
+        case "Treatment Plan": return .carePlan
+        case "Care team & contacts": return .practitionerContact
+        case "Vaccinations": return .vaccinations
+        case "Allergies": return .allergies
+        case "Tests & Labs Ordered": return .testsAndLabs
+        case "Follow-up": return .followUp
+        default: return .otherNotes
+        }
     }
 
     /// Prefer structured sections; fall back to legacy markdown if present.
@@ -309,7 +345,24 @@ enum SummaryEntryFactory {
         ]
 
         return specs.flatMap { spec in
-            entries(
+            if let facts = fields.factsByCategory[spec.category], !facts.isEmpty {
+                return facts.map { fact in
+                    makeEntry(
+                        category: spec.category,
+                        line: fact.markdownLine.hasPrefix("- ")
+                            ? String(fact.markdownLine.dropFirst(2))
+                            : fact.title,
+                        titleOverride: fact.title,
+                        detailsOverride: fact.details,
+                        bodySystem: fact.bodySystem,
+                        clinicalStatus: fact.clinicalStatus,
+                        factKey: fact.factKey,
+                        session: session,
+                        origin: origin
+                    )
+                }
+            }
+            return entries(
                 category: spec.category,
                 rawContent: spec.content,
                 session: session,
@@ -381,13 +434,18 @@ enum SummaryEntryFactory {
     private static func makeEntry(
         category: SummaryEntryCategory,
         line: String,
+        titleOverride: String? = nil,
+        detailsOverride: String? = nil,
         bodySystem: BodySystem?,
+        clinicalStatus: SummaryEntryClinicalStatus? = nil,
+        factKey: String? = nil,
         session: Session,
         origin: SummaryEntryOrigin
     ) -> SummaryEntry {
         let split = splitPrimaryAndDetail(from: line)
-        let title = split.primary
-        let details = split.detail ?? ""
+        let overrideTitle = titleOverride?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = (overrideTitle?.isEmpty == false ? overrideTitle : nil) ?? split.primary
+        let details = detailsOverride ?? split.detail ?? ""
         let contactFields = category == .practitionerContact
             ? PractitionerContactsFormatting.editableFields(from: line)
             : []
@@ -401,10 +459,7 @@ enum SummaryEntryFactory {
                 at: 0
             )
         }
-        let needsDateReview = true
-        let reviewReason = needsDateReview
-            ? "Confirm the actual relevant date for this information."
-            : nil
+        let fieldsNeedReview = baseFields.contains(where: { $0.needsReview || $0.isMissing })
 
         return SummaryEntry(
             category: category,
@@ -412,19 +467,21 @@ enum SummaryEntryFactory {
             details: details,
             fields: baseFields,
             relevantDate: session.date,
-            dateNeedsReview: needsDateReview,
+            dateNeedsReview: false,
             sourceSessionID: session.id,
             sourceTitle: session.title,
             sourceDate: session.date,
             sourceExcerpt: sourceExcerpt(for: line, in: session.transcript),
             provenance: provenanceLabel(for: session),
-            needsReview: needsDateReview || baseFields.contains(where: { $0.needsReview || $0.isMissing }),
-            reviewReason: reviewReason,
-            origin: origin
+            needsReview: fieldsNeedReview,
+            reviewReason: fieldsNeedReview ? "Add missing details for this card." : nil,
+            origin: origin,
+            clinicalStatus: clinicalStatus,
+            factKey: factKey ?? SummaryEntry.normalizedFactKey(title)
         )
     }
 
-    private static func normalizedLines(from raw: String?) -> [String] {
+    fileprivate static func normalizedLines(from raw: String?) -> [String] {
         guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return [] }
         let split = raw.components(separatedBy: "\n")
             .map(stripLeadingListMarker)
@@ -432,7 +489,7 @@ enum SummaryEntryFactory {
         return split.isEmpty ? [raw] : split
     }
 
-    private static func stripLeadingListMarker(_ line: String) -> String {
+    fileprivate static func stripLeadingListMarker(_ line: String) -> String {
         var s = line.replacingOccurrences(of: "**", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if s.hasPrefix("- ") || s.hasPrefix("• ") || s.hasPrefix("* ") {
@@ -443,7 +500,7 @@ enum SummaryEntryFactory {
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func splitPrimaryAndDetail(from line: String) -> (primary: String, detail: String?) {
+    fileprivate static func splitPrimaryAndDetail(from line: String) -> (primary: String, detail: String?) {
         for sep in [" — ", " – ", " - "] {
             if let range = line.range(of: sep) {
                 let primary = line[..<range.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
@@ -590,11 +647,15 @@ enum VisitSummaryJSONParser {
 
         let dec = JSONDecoder()
         dec.keyDecodingStrategy = .convertFromSnakeCase
+        var fields: VisitSummaryFields?
         if let typed = try? dec.decode(VisitSummaryOpenAIResponse.self, from: data) {
-            return mergeAlternateMedicationKeys(into: typed.fields, rawObjectData: data)
+            fields = mergeAlternateMedicationKeys(into: typed.fields, rawObjectData: data)
+        } else if let merged = flexibleFields(fromJSONObjectData: data) {
+            fields = mergeAlternateMedicationKeys(into: merged, rawObjectData: data)
         }
-        guard let merged = flexibleFields(fromJSONObjectData: data) else { return nil }
-        return mergeAlternateMedicationKeys(into: merged, rawObjectData: data)
+        guard var fields else { return nil }
+        ingestFacts(into: &fields, rawObjectData: data)
+        return fields
     }
 
     /// If the model prefixed JSON with commentary, isolate `{ ... }` for parsing.
@@ -829,6 +890,142 @@ enum VisitSummaryJSONParser {
         let t = String(describing: value).trimmingCharacters(in: .whitespacesAndNewlines)
         return t.isEmpty ? nil : t
     }
+
+    private static let factSectionKeys: [(category: SummaryEntryCategory, synonyms: Set<String>)] = [
+        (.chiefComplaint, ["chiefcomplaint", "chief_complaint", "reason_for_visit"]),
+        (.symptoms, ["symptoms", "symptom"]),
+        (.findings, ["findings", "diagnoses", "diagnosis"]),
+        (.medications, [
+            "medications", "medication", "medicationitems", "medication_items",
+            "medicationlist", "med_list", "meds", "drugs", "prescriptions", "rx",
+        ]),
+        (.carePlan, ["treatmentplan", "treatment_plan", "plan_of_care", "care_plan"]),
+        (.practitionerContact, [
+            "practitionercontacts", "practitioner_contacts", "careteamcontacts",
+            "providercontacts", "cliniciancontacts",
+        ]),
+        (.vaccinations, ["vaccinations", "vaccination"]),
+        (.allergies, ["allergies", "allergy"]),
+        (.testsAndLabs, ["testsandlabs", "tests_and_labs", "labs", "tests", "imaging"]),
+        (.followUp, ["followup", "follow_up", "follow-up"]),
+        (.otherNotes, ["othernotes", "other_notes", "additionalnotes", "misc"]),
+    ]
+
+    /// Pull object-form facts (`title`/`clinicalStatus`/`factKey`) out of the raw JSON object.
+    private static func ingestFacts(into fields: inout VisitSummaryFields, rawObjectData data: Data) {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        var bucket: [SummaryEntryCategory: [VisitSummaryFact]] = fields.factsByCategory
+        for spec in factSectionKeys {
+            let value = obj.first { factSectionKeysMatch($0.key, spec.synonyms) }?.value
+            let facts = parseFacts(from: value)
+            guard !facts.isEmpty else { continue }
+            bucket[spec.category] = facts
+            let markdown = facts.map(\.markdownLine).joined(separator: "\n")
+            switch spec.category {
+            case .chiefComplaint: if fields.chiefComplaint?.isEmpty != false { fields.chiefComplaint = markdown }
+            case .symptoms: if fields.symptoms?.isEmpty != false { fields.symptoms = markdown }
+            case .findings: if fields.findings?.isEmpty != false { fields.findings = markdown }
+            case .medications: if fields.medications?.isEmpty != false { fields.medications = markdown }
+            case .carePlan: if fields.treatmentPlan?.isEmpty != false { fields.treatmentPlan = markdown }
+            case .practitionerContact: if fields.practitionerContacts?.isEmpty != false { fields.practitionerContacts = markdown }
+            case .vaccinations: if fields.vaccinations?.isEmpty != false { fields.vaccinations = markdown }
+            case .allergies: if fields.allergies?.isEmpty != false { fields.allergies = markdown }
+            case .testsAndLabs: if fields.testsAndLabs?.isEmpty != false { fields.testsAndLabs = markdown }
+            case .followUp: if fields.followUp?.isEmpty != false { fields.followUp = markdown }
+            case .otherNotes: if fields.otherNotes?.isEmpty != false { fields.otherNotes = markdown }
+            default: break
+            }
+        }
+        fields.factsByCategory = bucket
+    }
+
+    private static func factSectionKeysMatch(_ key: String, _ synonyms: Set<String>) -> Bool {
+        let n = normalizeJSONKey(key)
+        return synonyms.contains(where: { normalizeJSONKey($0) == n })
+    }
+
+    private static func parseFacts(from value: Any?) -> [VisitSummaryFact] {
+        guard let value else { return [] }
+        if let dict = value as? [String: Any], let fact = parseFact(from: dict) {
+            return [fact]
+        }
+        if let arr = value as? [Any] {
+            return arr.compactMap { el -> VisitSummaryFact? in
+                if let dict = el as? [String: Any] {
+                    return parseFact(from: dict)
+                }
+                if let s = el as? String {
+                    return parseFact(fromLine: s)
+                }
+                return nil
+            }
+        }
+        if let s = value as? String {
+            return SummaryEntryFactory.normalizedLines(from: s).compactMap { parseFact(fromLine: $0) }
+        }
+        return []
+    }
+
+    private static func parseFact(fromLine line: String) -> VisitSummaryFact? {
+        let trimmed = SummaryEntryFactory.stripLeadingListMarker(line)
+        guard !trimmed.isEmpty else { return nil }
+        let split = SummaryEntryFactory.splitPrimaryAndDetail(from: trimmed)
+        return VisitSummaryFact(
+            title: split.primary,
+            details: split.detail ?? "",
+            bodySystem: nil,
+            clinicalStatus: SummaryEntry.inferredStatus(title: split.primary, details: split.detail ?? ""),
+            factKey: SummaryEntry.normalizedFactKey(split.primary)
+        )
+    }
+
+    private static func parseFact(from dict: [String: Any]) -> VisitSummaryFact? {
+        func string(for keys: [String]) -> String? {
+            let want = Set(keys.map { normalizeJSONKey($0) })
+            for (rawKey, rawVal) in dict {
+                guard want.contains(normalizeJSONKey(rawKey)) else { continue }
+                if let s = coerceOpenAIJSONValue(rawVal)?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
+                    return s
+                }
+            }
+            return nil
+        }
+
+        let title = string(for: ["title", "name", "drug", "medication", "med", "drug_name"])
+            ?? string(for: ["heading", "label"])
+        guard let title, !title.isEmpty else { return nil }
+
+        var details = string(for: ["details", "detail", "description", "notes"]) ?? ""
+        if details.isEmpty, looksLikeMedicationItem(dict) {
+            details = medicationDetailString(from: dict, excludingTitle: title) ?? ""
+        }
+
+        let status = SummaryEntryClinicalStatus.parse(
+            string(for: ["clinicalStatus", "clinical_status", "status"])
+        )
+        let factKey = SummaryEntry.normalizedFactKey(
+            string(for: ["factKey", "fact_key", "key"])
+        ) ?? SummaryEntry.normalizedFactKey(title)
+        let bodySystem = BodySystem.parse(string(for: ["bodySystem", "body_system", "system"]))
+
+        return VisitSummaryFact(
+            title: title,
+            details: details,
+            bodySystem: bodySystem,
+            clinicalStatus: status,
+            factKey: factKey
+        )
+    }
+
+    private static func medicationDetailString(from dict: [String: Any], excludingTitle title: String) -> String? {
+        guard let line = coerceMedicationItemDict(dict) else { return nil }
+        let unmarked = SummaryEntryFactory.stripLeadingListMarker(line)
+        let split = SummaryEntryFactory.splitPrimaryAndDetail(from: unmarked)
+        if split.primary.caseInsensitiveCompare(title) == .orderedSame {
+            return split.detail
+        }
+        return split.detail ?? unmarked
+    }
 }
 
 // MARK: - Prompt text (shared wording for visit-level instructions)
@@ -872,13 +1069,17 @@ enum VisitSummaryPromptGuidance {
         Always include the key "otherNotes" when there is substantive information that does not fit any other allowed field; \
         otherwise omit "otherNotes" entirely. Never duplicate the same fact in otherNotes and another field. \
         Do not invent clinical facts. Copy strengths and doses verbatim from the source when given.
-        Each value MUST be a JSON string OR a JSON array of strings unless this spec says otherwise for a specific key.
-        A legacy "summary" markdown field is acceptable ONLY when every other section key would be empty.
-        Every item in each field must describe one distinct source, event, provider, medication, or care-plan entry. \
+        Prefer each section as a JSON array of objects with keys: \
+        title (required; short stable name), details (optional), \
+        clinicalStatus ("current" or "past"), \
+        factKey (lowercase hyphenated slug that stays stable across visits, e.g. "migraine" or "metformin"). \
+        For chiefComplaint objects also include bodySystem from (\(BodySystem.promptAllowedList)). \
+        clinicalStatus is "current" unless the source clearly states the item resolved, stopped, completed, or is historical. \
+        String values or arrays of strings are still accepted if objects are not possible. \
+        A legacy "summary" markdown field is acceptable ONLY when every other section key would be empty. \
+        Every item must describe one distinct source, event, provider, medication, or care-plan entry. \
         Include dates only when explicitly stated; otherwise do not invent dates. \
-        For chiefComplaint, group bullets under body-system headings (\(BodySystem.promptAllowedList)); omit empty systems. \
-        For chiefComplaint and symptoms, prefer short stable titles (e.g. "Migraine") with severity/triggers/course after an em dash. \
-        For practitionerContacts: one contact per line or array item; include name, org, role, phone, email, and address only when explicitly tied to that contact in the same source block. \
+        For practitionerContacts: one contact per object or line; include name, org, role, phone, email, and address only when explicitly tied to that contact in the same source block. \
         Never merge names with contact details from a different document or section.
         """
 
@@ -889,7 +1090,8 @@ enum VisitSummaryPromptGuidance {
 
             Allowed optional keys for visit dialogue/encounters (omit when empty): \
             chiefComplaint, symptoms, findings, medications, treatmentPlan, practitionerContacts, vaccinations, allergies, testsAndLabs, followUp, otherNotes.
-            For medications use a string or array of strings; each line must stay tied to the drug it describes (no shared trailing class for unrelated drugs).
+            For medications use an array of objects (name required; optional strength, frequency, route, duration, instructions, classOrCategory, clinicalStatus, factKey); \
+            each object must stay tied to the drug it describes (no shared trailing class for unrelated drugs).
             """
 
         case .carePlanEducation:
@@ -909,7 +1111,8 @@ enum VisitSummaryPromptGuidance {
             Required: "title" (3–6 words summarizing the list or document).
             Required when any drug appears: "medications" as a JSON array of objects—one object per drug—with ONLY these properties on each object \
             (omit a property rather than guessing): \
-            name (required), strength, frequency, route, duration, instructions, classOrCategory.
+            name (required), strength, frequency, route, duration, instructions, classOrCategory, \
+            clinicalStatus ("current" or "past"), factKey (lowercase hyphenated slug, usually the drug name).
             For classOrCategory: include ONLY if the source explicitly states a class, category, or indication for THAT same drug line. \
             Never infer pharmacologic class from the drug name (e.g. do not label drugs by textbook classification unless written in the source).
             Allowed optional top-level keys (omit when empty): allergies, treatmentPlan, practitionerContacts, testsAndLabs, vaccinations, followUp, chiefComplaint, symptoms, findings, otherNotes.

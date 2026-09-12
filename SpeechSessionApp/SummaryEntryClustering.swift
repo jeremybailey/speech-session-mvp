@@ -7,6 +7,9 @@ import SpeechSessionPersistence
 enum SummaryEntryClusterKey {
     /// Normalized key used to group entries. Empty titles do not stack together.
     static func key(for entry: SummaryEntry) -> String? {
+        if let factKey = SummaryEntry.normalizedFactKey(entry.factKey) {
+            return "\(entry.category.rawValue)|fact:\(factKey)"
+        }
         let titleKey = clusterStem(from: entry.title, category: entry.category)
         guard !titleKey.isEmpty else { return nil }
         // Chief complaints also partition by body system so Neurological vs Other "pain" stay apart.

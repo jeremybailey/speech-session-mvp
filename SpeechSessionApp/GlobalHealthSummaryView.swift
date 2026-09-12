@@ -20,6 +20,7 @@ struct ScopedHealthSummaryView: View {
     @AppStorage("speechSession.summaryBackend") private var summaryBackendRaw = "openai"
     @AppStorage("speechSession.globalSummaryJSON") private var cachedGlobalJSON = ""
     @AppStorage("speechSession.globalSummaryBackend") private var cachedGlobalBackendRaw = ""
+    @AppStorage("speechSession.globalSummaryFingerprint") private var cachedGlobalFingerprint = ""
 
     @State private var summaryState: ScopedSummaryState = .idle
     @State private var storageDirectory: URL?
@@ -49,11 +50,25 @@ struct ScopedHealthSummaryView: View {
     private var cacheIdentityToken: String {
         switch scope {
         case .all:
-            return "all|\(cachedGlobalBackendRaw)|\(cachedGlobalJSON.count)"
+            return "all|\(cachedGlobalBackendRaw)|\(cachedGlobalJSON.count)|\(cachedGlobalFingerprint)"
         case .folder(let id):
             let f = home.folders.first { $0.id == id }
             return "folder|\(id.uuidString)|\(f?.cachedSummaryBackend ?? "")|\(f?.cachedSummaryJSON?.count ?? 0)"
         }
+    }
+
+    /// Stable stamp of scoped visit cards/summaries so Overview regenerates when entries change.
+    private var scopedContentFingerprint: String {
+        scopedSessions
+            .sorted { $0.id.uuidString < $1.id.uuidString }
+            .map { session in
+                let live = (session.summaryEntries ?? []).filter { !$0.isDeleted }
+                let stamp = live
+                    .map { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970):\($0.clinicalStatus.rawValue)" }
+                    .joined(separator: ",")
+                return "\(session.id.uuidString):\(session.summary?.count ?? 0):\(stamp)"
+            }
+            .joined(separator: "|")
     }
 
     var body: some View {
@@ -206,6 +221,8 @@ struct ScopedHealthSummaryView: View {
         .summaryGlassCard(cornerRadius: 14)
     }
 
+    /// Health Summary cards stay visit-stacked. The longitudinal LLM only writes Overview;
+    /// category sections from older cached payloads are a fallback when a session has no cards yet.
     @ViewBuilder
     private func summaryCards(for payload: GlobalSummaryPayload) -> some View {
         let atomicEntries = scopedAtomicEntries
@@ -474,6 +491,7 @@ struct ScopedHealthSummaryView: View {
     private func clearGlobalAppStorageCache() {
         cachedGlobalJSON = ""
         cachedGlobalBackendRaw = ""
+        cachedGlobalFingerprint = ""
     }
 
     private func restoreOrGenerate() async {
@@ -485,11 +503,13 @@ struct ScopedHealthSummaryView: View {
         switch scope {
         case .all:
             if cachedGlobalBackendRaw == selectedSummaryBackendRaw,
+               cachedGlobalFingerprint == scopedContentFingerprint,
                !cachedGlobalJSON.isEmpty,
                let data = cachedGlobalJSON.data(using: .utf8),
                let cached = try? JSONDecoder().decode(GlobalSummaryPayload.self, from: data) {
                 summaryState = .loaded(cached)
             } else {
+                summaryState = .idle
                 await generateSummary()
             }
         case .folder(let id):
@@ -499,6 +519,7 @@ struct ScopedHealthSummaryView: View {
                   let data = json.data(using: .utf8),
                   let cached = try? JSONDecoder().decode(GlobalSummaryPayload.self, from: data)
             else {
+                summaryState = .idle
                 await generateSummary()
                 return
             }
@@ -536,7 +557,7 @@ struct ScopedHealthSummaryView: View {
         guard case .idle = summaryState else { return }
         guard !scopedSessions.isEmpty else { return }
 
-        let totalWords = scopedSessions.reduce(0) { $0 + $1.transcript.split(separator: " ").count }
+        let totalWords = scopedSessions.reduce(0) { $0 + sourceWordCount(for: $1) }
         guard totalWords >= Self.minimumTotalWords else {
             summaryState = .failed(tooShortMessage())
             return
@@ -556,13 +577,24 @@ struct ScopedHealthSummaryView: View {
         await generateSummaryOpenAI()
     }
 
+    private func sourceWordCount(for session: Session) -> Int {
+        let live = (session.summaryEntries ?? []).filter { !$0.isDeleted }
+        if !live.isEmpty {
+            return live.reduce(0) { $0 + "\($1.title) \($1.details)".split(separator: " ").count }
+        }
+        if let summary = session.summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return summary.split(separator: " ").count
+        }
+        return session.transcript.split(separator: " ").count
+    }
+
     private func rollupScopeIntro(totalAppointments: Int) -> String {
         switch scope {
         case .all:
-            return "You are a medical scribe synthesizing a longitudinal health profile across \(totalAppointments) appointment\(totalAppointments == 1 ? "" : "s")."
+            return "You are a medical scribe writing a short longitudinal OVERVIEW across \(totalAppointments) appointment\(totalAppointments == 1 ? "" : "s")."
         case .folder:
             let name = folderRecord?.name ?? "this folder"
-            return "You are a medical scribe synthesizing a longitudinal health profile for the folder \"\(name)\" across \(totalAppointments) appointment\(totalAppointments == 1 ? "" : "s")."
+            return "You are a medical scribe writing a short longitudinal OVERVIEW for the folder \"\(name)\" across \(totalAppointments) appointment\(totalAppointments == 1 ? "" : "s")."
         }
     }
 
@@ -571,9 +603,8 @@ struct ScopedHealthSummaryView: View {
         if totalBatches == 1 {
             return """
             \(intro)
-            Review all provided entry data and create a comprehensive cross-visit health overview.
+            Review the provided visit cards or entry data and write the overview paragraph. \
             Only include information explicitly stated — do not infer or invent clinical details.
-            Omit any JSON field where there is no relevant information across the entries.
 
             \(GlobalSummaryLongitudinalPrompts.categoryRulesAndJSONSchema)
             """
@@ -581,9 +612,8 @@ struct ScopedHealthSummaryView: View {
         return """
         \(intro)
         You are working on time-window batch \(batchIndex) of \(totalBatches) (entries are ordered oldest to newest across the full record). \
-        Only include facts explicitly stated in the entry data in this message—not from other batches. \
-        Produce a partial longitudinal JSON summary for ONLY these visits, using the same schema as the final merged summary. \
-        Omit JSON keys with no relevant content in this batch.
+        Only include facts explicitly stated in this message—not from other batches. \
+        Produce a partial JSON object with the same overview schema. \
 
         \(GlobalSummaryLongitudinalPrompts.categoryRulesAndJSONSchema)
         """
@@ -593,9 +623,9 @@ struct ScopedHealthSummaryView: View {
         let intro = rollupScopeIntro(totalAppointments: totalAppointments)
         return """
         \(intro)
-        You are merging \(totalBatches) partial JSON summar\(totalBatches == 1 ? "y" : "ies") into ONE consolidated longitudinal health overview. Each input is valid JSON with the same schema you must output. \
-        Inputs are given in time order (oldest partial first). Merge them: deduplicate overlapping facts; when timelines conflict, prefer the most recent clinical information. \
-        Only include information present in the partials—do not invent details. Omit empty JSON fields.
+        You are merging \(totalBatches) partial overview JSON object\(totalBatches == 1 ? "" : "s") into ONE overview. \
+        Inputs are in time order (oldest partial first). Deduplicate overlapping themes; when timelines conflict, prefer the most recent clinical information. \
+        Only include information present in the partials—do not invent details.
 
         \(GlobalSummaryLongitudinalPrompts.categoryRulesAndJSONSchema)
         """
@@ -650,7 +680,7 @@ struct ScopedHealthSummaryView: View {
             transport: transport,
             system: reduceSys,
             user: reduceUser,
-            maxTokens: 3500
+            maxTokens: 600
         )
     }
 
@@ -686,7 +716,7 @@ struct ScopedHealthSummaryView: View {
                     totalAppointments: total
                 )
                 let user = """
-                Synthesize a health summary from these appointment entries (batch \(bIdx + 1) of \(batches.count)):
+                Write an overview paragraph from these appointment entries (batch \(bIdx + 1) of \(batches.count)):
 
                 \(blocks)
                 """
@@ -694,7 +724,7 @@ struct ScopedHealthSummaryView: View {
                     transport: transport,
                     system: sys,
                     user: user,
-                    maxTokens: 2000
+                    maxTokens: 400
                 )
                 partialJSONStrings.append(content)
             }
@@ -724,7 +754,9 @@ struct ScopedHealthSummaryView: View {
                 return
             }
             var hydrated = payload
-            hydrated.hydrateMedicationsIfNeeded(from: contentData)
+            if payload.overviewParagraph() == nil {
+                hydrated.hydrateMedicationsIfNeeded(from: contentData)
+            }
 
             await persistCache(hydrated)
             summaryState = .loaded(hydrated)
@@ -752,10 +784,10 @@ struct ScopedHealthSummaryView: View {
         let baseScopeLine: String
         switch scope {
         case .all:
-            baseScopeLine = "Create a longitudinal health summary across \(count) appointment\(count == 1 ? "" : "s")."
+            baseScopeLine = "Write a 2–4 sentence longitudinal overview across \(count) appointment\(count == 1 ? "" : "s")."
         case .folder:
             let name = folderRecord?.name ?? "this folder"
-            baseScopeLine = "Create a longitudinal health summary for folder \"\(name)\" across \(count) appointment\(count == 1 ? "" : "s")."
+            baseScopeLine = "Write a 2–4 sentence longitudinal overview for folder \"\(name)\" across \(count) appointment\(count == 1 ? "" : "s")."
         }
 
         let mapLimits = RollupMapLimits.onDevice
@@ -844,8 +876,9 @@ struct ScopedHealthSummaryView: View {
         let newerJSON = String(data: newerData, encoding: .utf8) ?? "{}"
 
         let reducePrompt = """
-        Merge two partial JSON longitudinal summaries into ONE profile. Partial 1 is the older time window; Partial 2 is newer. \
-        Deduplicate overlapping items. When timelines conflict, prefer Partial 2. Only use facts present in the JSON below.
+        Merge two partial JSON overviews into ONE overview paragraph. Partial 1 is the older time window; Partial 2 is newer. \
+        Deduplicate overlapping themes. When timelines conflict, prefer Partial 2. Only use facts present in the JSON below. \
+        Return JSON with only the "overview" field.
 
         Partial 1 (older):
         \(olderJSON)
@@ -865,6 +898,7 @@ struct ScopedHealthSummaryView: View {
         case .all:
             cachedGlobalJSON = json
             cachedGlobalBackendRaw = selectedSummaryBackendRaw
+            cachedGlobalFingerprint = scopedContentFingerprint
         case .folder(let id):
             guard var folder = home.folders.first(where: { $0.id == id }) else { return }
             folder.cachedSummaryJSON = json

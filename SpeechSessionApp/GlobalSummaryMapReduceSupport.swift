@@ -12,16 +12,16 @@ struct RollupMapLimits: Sendable {
     let entryTailCharacters: Int
 
     static let openAI = RollupMapLimits(
-        maxEntriesPerBatch: 2,
+        maxEntriesPerBatch: 6,
         maxCharsPerBatch: 16_000,
         maxEntryBodyCharacters: 10_000,
         entryHeadCharacters: 6_500,
         entryTailCharacters: 3_000
     )
 
-    /// Tight limits: one entry per map call so session instructions + user prompt fit the on-device window.
+    /// Tight limits: few card digests per map call so session instructions + user prompt fit the on-device window.
     static let onDevice = RollupMapLimits(
-        maxEntriesPerBatch: 1,
+        maxEntriesPerBatch: 3,
         maxCharsPerBatch: 4_800,
         maxEntryBodyCharacters: 3_200,
         entryHeadCharacters: 2_200,
@@ -36,10 +36,28 @@ enum GlobalSummaryRollupBatching {
         sessions.sorted { $0.date < $1.date }
     }
 
-    /// Raw transcript when present, else cached summary — clipped for rollup prompts.
+    /// Prefer visit cards (user-corrected), then cached visit markdown, then transcript — clipped for rollup prompts.
     static func clippedEntryBody(transcript: String, summary: String?, limits: RollupMapLimits) -> String {
-        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        let raw = trimmed.isEmpty ? (summary ?? "") : trimmed
+        let trimmedSummary = summary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let trimmedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = trimmedSummary.isEmpty ? trimmedTranscript : trimmedSummary
+        return clip(raw, limits: limits)
+    }
+
+    /// Compact Health Summary map input: stacked visit cards when present, else summary/transcript.
+    static func overviewSourceBody(session: Session, limits: RollupMapLimits) -> String {
+        let liveCards = (session.summaryEntries ?? []).filter { !$0.isDeleted }
+        if !liveCards.isEmpty {
+            let digest = liveCards.map { entry in
+                let line = [entry.title, entry.details].filter { !$0.isEmpty }.joined(separator: " — ")
+                return "- [\(entry.category.displayTitle)] \(line) (\(entry.clinicalStatus.rawValue))"
+            }.joined(separator: "\n")
+            return clip(digest, limits: limits)
+        }
+        return clippedEntryBody(transcript: session.transcript, summary: session.summary, limits: limits)
+    }
+
+    private static func clip(_ raw: String, limits: RollupMapLimits) -> String {
         let maxBody = limits.maxEntryBodyCharacters
         let headN = limits.entryHeadCharacters
         let tailN = limits.entryTailCharacters
@@ -59,8 +77,7 @@ enum GlobalSummaryRollupBatching {
     static func entryBlock(session: Session, displayIndex: Int, limits: RollupMapLimits) -> String {
         let dateLabel = session.date.formatted(date: .abbreviated, time: .shortened)
         let heading = session.title.map { "\($0) — \(dateLabel)" } ?? dateLabel
-        let transcript = session.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        let body = clippedEntryBody(transcript: transcript, summary: session.summary, limits: limits)
+        let body = overviewSourceBody(session: session, limits: limits)
         return "=== Entry \(displayIndex): \(heading) ===\n\(body)"
     }
 
@@ -103,45 +120,14 @@ enum GlobalSummaryRollupBatching {
 // MARK: - Shared prompt fragments (OpenAI + human-readable reduce input)
 
 enum GlobalSummaryLongitudinalPrompts {
-    /// Category rules + JSON field list (matches prior `systemPromptForOpenAI` body).
+    /// Overview-only JSON (Health Summary cards stay visit-stacked; this payload is the paragraph).
     static let categoryRulesAndJSONSchema = """
-    LONGITUDINAL CATEGORY RULES:
-    - carePlans: Consolidate ALL clinician-directed treatment and planning (medication changes/initiation, \
-    referrals, procedures, therapies, devices, clinical lifestyle/diet instructions from the care team, patient \
-    education, care coordination). Prefer carePlans over biopsychosocialContext for any actionable clinical plan.
-    - followUp: Scheduling and return logistics only (when to return, call-backs)—not the substantive treatment plan.
-    - biopsychosocialContext: ONLY non-clinical psychosocial / life context (stress, bereavement, housing, finances, \
-    support systems, broad mental health themes). Never place referrals, medication plans, procedures, or clinician \
-    orders here; those belong in carePlans, medications, or testsAndLabs.
-    - practitionerContacts: one contact per line or array item. Include a person/organization name plus role, phone, fax, email, URL, \
-    or address ONLY when that detail is explicitly tied to the same printed/source block. Do not attach contact text from one printed block \
-    to a person or org named in another entry or section (e.g. never pair a **psychologist** named in therapy content with a **pharmacy address** from an Rx in a different entry). \
-    Omit first-name-only dialogue mentions and missing details.
-
-    Return a JSON object with only the fields that have content:
+    Return a JSON object with a single field:
     - "overview": ONE short plain-English paragraph (about 2–4 sentences) that sets clinical context for this patient— \
     who they are in care terms and the main ongoing themes. Not a category dump, not bullet lists, not first-person spoken script. \
-    Facts only from the entries. Details belong in the other fields.
-    - "chiefComplaint": presenting concerns grouped by body system. Use `###` headings from \
-    \(BodySystem.promptAllowedList), then one bullet per distinct complaint. Prefer short stable titles \
-    (e.g. "Migraine") with severity, triggers, course, or treatment response after an em dash. No narrative paragraph.
-    - "symptoms": consolidated current and historical symptoms across all visits. Prefer short stable titles \
-    with detail after an em dash (severity, triggers, course) so the same symptom can be compared across visits.
-    - "diagnoses": findings from diagnosed conditions, confirmed medical history, and clinically relevant observations. Prefer short stable titles with detail after an em dash.
-    - "medications": current medication list (prioritise most recent entry data). Prefer drug name as the title; dose/frequency/notes after an em dash or in structured objects.
-    - "carePlans": ongoing treatment and care plans mentioned across visits (see rules above). Prefer short stable plan titles with detail after an em dash.
-    - "practitionerContacts": one contact per line or array item. Preserve explicitly tied contact fields from the same source block; do not invent missing fields.
-    - "vaccinations": vaccination history explicitly mentioned
-    - "allergies": known allergies and adverse reactions
-    - "testsAndLabs": ordered, pending, or completed tests and labs. Prefer short stable test names with detail after an em dash.
-    - "followUp": scheduling/return actions (see rules above)
-    - "biopsychosocialContext": ONLY psychosocial life context (see rules above)
-    - "otherNotes": important details that never fit the categories above (omit if empty; do not duplicate other fields)
+    Facts only from the entries. Do not invent clinical details. Do not repeat every card; synthesize.
 
-    Format each string field as one item per distinct source, event, provider, medication, or care-plan entry. Use markdown bullets. \
-    For "overview", keep a single continuous paragraph. For "chiefComplaint", bullets must sit under body-system headings. \
-    Prefer short repeatable titles across visits so identical facts can stack.
-    For "medications", prefer a JSON array of objects with keys name (required), strength, frequency, route, duration, instructions, classOrCategory—use classOrCategory only when explicitly stated for that drug in the entries.
+    Omit any other keys. Prefer current/ongoing themes; mention resolved items only when they still shape care.
     """
 }
 

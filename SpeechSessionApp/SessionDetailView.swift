@@ -444,24 +444,36 @@ struct SessionDetailView: View {
                 contentKind = .mixedOther
             }
         }
-            let (title, summary) = try await service.generate(
+            let fields = try await service.generateFields(
                 transcript: localSession.transcript,
                 contentKind: contentKind
             )
-            guard !summary.isEmpty else {
+            let defaultTitle = localSession.date.formatted(date: .abbreviated, time: .shortened)
+            guard applyGeneratedFields(fields, defaultTitle: defaultTitle) else {
                 summaryState = .failed("The model returned an empty summary. Try again.")
                 return
             }
-            localSession.summary = summary
-            if !title.isEmpty { localSession.title = title }
-            localSession.summaryEntries = SummaryEntryFactory.legacyEntries(from: summary, session: localSession)
             let sessionToSave = localSession
             try? await store.upsert(sessionToSave)
             await home.loadSessions()
-            summaryState = .loaded(summary)
+            summaryState = .loaded(localSession.summary ?? "")
         } catch {
             summaryState = error is CancellationError ? .idle : .failed(error.localizedDescription)
         }
+    }
+
+    private func applyGeneratedFields(_ fields: VisitSummaryFields, defaultTitle: String) -> Bool {
+        guard let (titleText, summaryText) = fields.resolved(defaultTitle: defaultTitle) else {
+            return false
+        }
+        localSession.summary = summaryText
+        if !titleText.isEmpty { localSession.title = titleText }
+        let generated = SummaryEntryFactory.entries(from: fields, session: localSession)
+        localSession.summaryEntries = SummaryEntryMerge.merging(
+            generated: generated,
+            existing: localSession.summaryEntries
+        )
+        return true
     }
 
     private var isOnDeviceSummaryAvailable: Bool {
@@ -567,25 +579,21 @@ struct SessionDetailView: View {
                 return
             }
 
-            let defaultTitle = localSession.date.formatted(date: .abbreviated, time: .shortened)
             guard let fields = VisitSummaryJSONParser.fields(fromAssistantContent: content) else {
                 summaryState = .failed("Could not parse summary JSON. Try again.")
                 return
             }
-            guard let (titleText, summaryText) = fields.resolved(defaultTitle: defaultTitle) else {
+            let defaultTitle = localSession.date.formatted(date: .abbreviated, time: .shortened)
+            guard applyGeneratedFields(fields, defaultTitle: defaultTitle) else {
                 summaryState = .failed("The model returned an empty summary. Try again.")
                 return
             }
 
-            // Persist title and summary so they never need to be regenerated.
-            localSession.summary = summaryText
-            if !titleText.isEmpty { localSession.title = titleText }
-            localSession.summaryEntries = SummaryEntryFactory.entries(from: fields, session: localSession)
             let sessionToSave = localSession
             try? await store.upsert(sessionToSave)
             await home.loadSessions()
 
-            summaryState = .loaded(summaryText)
+            summaryState = .loaded(localSession.summary ?? "")
 
         } catch {
             summaryState = error is CancellationError ? .idle : .failed(error.localizedDescription)

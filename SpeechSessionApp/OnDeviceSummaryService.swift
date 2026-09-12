@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import SpeechSessionPersistence
 
 /// On-device medical summary generation via Apple's Foundation Models framework.
 /// Requires iOS 18.1+ with Apple Intelligence enabled (iPhone 15 Pro+, iPhone 16, M1 iPad+).
@@ -34,6 +35,24 @@ struct OnDeviceSummaryService {
     // MARK: - Structured Output
 
     @Generable
+    struct VisitFactRow {
+        @Guide(description: "Short stable title (e.g. Migraine, Metformin).")
+        var title: String
+
+        @Guide(description: "Severity, course, dose, or other detail. Empty if the title is enough.")
+        var details: String?
+
+        @Guide(description: "current if ongoing; past if resolved, stopped, completed, or historical.")
+        var clinicalStatus: String?
+
+        @Guide(description: "Lowercase hyphenated slug for this fact across visits, e.g. migraine or metformin.")
+        var factKey: String?
+
+        @Guide(description: "Body system for chief complaints only (e.g. Neurological). Empty otherwise.")
+        var bodySystem: String?
+    }
+
+    @Generable
     struct MedicationItemRow {
         @Guide(description: "Drug name exactly as stated in the source.")
         var name: String
@@ -58,6 +77,12 @@ struct OnDeviceSummaryService {
         Leave empty if absent or uncertain—never infer from the drug name alone.
         """)
         var classOrCategoryIfStated: String?
+
+        @Guide(description: "Lowercase hyphenated slug, usually the drug name (e.g. metformin).")
+        var factKey: String?
+
+        @Guide(description: "current if still taking; past if stopped, completed, or historical.")
+        var clinicalStatus: String?
     }
 
     /// Structured summary for medication lists and prescription printouts (on-device).
@@ -110,56 +135,49 @@ struct OnDeviceSummaryService {
         @Guide(description: "Short appointment title, 3–6 words (e.g. Back pain follow-up, Annual physical exam).")
         var title: String
 
-        @Guide(description: """
-        Chief complaint / reason for visit, grouped by body system when possible. Use ### headings \
-        (Neurological, Digestive, Immune, Lymphatic, Nervous, Urinary, Musculoskeletal, etc.) and one bullet per concern. \
-        Prefer short stable titles (e.g. Migraine) with severity, triggers, course after an em dash.
-        """)
-        var chiefComplaint: String?
+        @Guide(description: "One fact per distinct complaint. Include clinicalStatus (current/past) and factKey.")
+        var chiefComplaint: [VisitFactRow]
 
-        @Guide(description: """
-        Current symptoms and concerns explicitly mentioned. One line per symptom; prefer a short stable title \
-        with severity, triggers, or course after an em dash (e.g. Nausea — worse in morning).
-        """)
-        var symptoms: String?
+        @Guide(description: "One fact per distinct symptom. Include clinicalStatus (current/past) and factKey.")
+        var symptoms: [VisitFactRow]
 
         @Guide(description: "Examination findings, diagnoses, impressions—NOT the treatment plan itself.")
-        var findings: String?
+        var findings: [VisitFactRow]
 
-        @Guide(description: "Medications named, doses, changes, adherence. If a new drug is STARTED today, mention it here AND describe the prescribing intent again under Treatment Plan.")
-        var medications: String?
+        @Guide(description: "Medications named, doses, changes, adherence. Include clinicalStatus and factKey.")
+        var medications: [VisitFactRow]
 
         @Guide(description: """
         REQUIRED bucket for clinician-directed ACTIONS: referrals, procedures, imaging/therapy orders, \
         medication initiation/taper/adjustment discussed as today's plan, device instructions, PT/OT/home exercise, \
         diet/lifestyle advice from clinician, patient education—anything 'we should / start / continue / refer / order'.
         """ )
-        var treatmentPlan: String?
+        var treatmentPlan: [VisitFactRow]
 
         @Guide(description: """
-        One contact per line. Include a person or clinic/org name plus role, phone, email, and address only when explicitly tied to that \
+        One contact per item. Include a person or clinic/org name plus role, phone, email, and address only when explicitly tied to that \
         same source block. Never associate a provider mentioned in dialogue with Rx/pharmacy address from a different block or entry. \
         Omit first-name-only speech and missing details.
         """)
-        var practitionerContacts: String?
+        var practitionerContacts: [VisitFactRow]
 
         @Guide(description: "Vaccination history mentioned in this visit.")
-        var vaccinations: String?
+        var vaccinations: [VisitFactRow]
 
         @Guide(description: "Allergies or adverse reactions mentioned.")
-        var allergies: String?
+        var allergies: [VisitFactRow]
 
         @Guide(description: "Tests, labs, or imaging discussed (ordered/pending/results).")
-        var testsAndLabs: String?
+        var testsAndLabs: [VisitFactRow]
 
         @Guide(description: "ONLY scheduling logistics: when to return, call backs, booking next visit—not the full therapeutic plan.")
-        var followUp: String?
+        var followUp: [VisitFactRow]
 
         @Guide(description: """
         Important information that does not fit any other field. Leave empty if everything maps cleanly elsewhere; \
         do not duplicate other sections.
         """)
-        var otherNotes: String?
+        var otherNotes: [VisitFactRow]
     }
 
     @Generable
@@ -180,61 +198,6 @@ struct OnDeviceSummaryService {
         main ongoing themes and care situation. Not bullets, not category headings, not a first-person spoken script. Facts only.
         """)
         var overview: String?
-
-        @Guide(description: """
-        Presenting concerns grouped by body system. Use ### headings (Neurological, Nervous, Digestive, Immune, Lymphatic, \
-        Urinary, Musculoskeletal, and other body systems as needed) and one bullet per complaint. Prefer short stable titles \
-        with severity/triggers/course after an em dash. No narrative paragraph.
-        """)
-        var chiefComplaint: String?
-
-        @Guide(description: """
-        Current and historical symptoms explicitly mentioned across all visits. Prefer short stable titles with \
-        severity, triggers, or course after an em dash so the same symptom can be compared across visits.
-        """)
-        var symptoms: String?
-
-        @Guide(description: "Findings from diagnosed conditions, confirmed medical history, and clinically relevant observations.")
-        var diagnoses: String?
-
-        @Guide(description: "Current medications and explicitly stated medication changes, prioritizing recent entry data.")
-        var medications: String?
-
-        @Guide(description: """
-        Consolidate ALL ongoing clinician-directed treatment and planning across visits: medication changes/initiation, \
-        referrals, surgeries/procedures discussed, therapies, devices, clinical lifestyle/diet instructions, education, \
-        care coordination. Do NOT park clinical plans only in biopsychosocialContext or followUp.
-        """)
-        var carePlans: String?
-
-        @Guide(description: """
-        One contact per line across entries. Include name, organization, role, phone, email, and address only when explicitly tied to that \
-        same source entry or printed block. Never combine names from one entry with address or Rx/pharmacy text from another. \
-        Omit first-name-only transcript mentions. Deduplicate identical contacts across visits.
-        """)
-        var practitionerContacts: String?
-
-        @Guide(description: "Vaccination history explicitly mentioned.")
-        var vaccinations: String?
-
-        @Guide(description: "Known allergies and adverse reactions explicitly mentioned.")
-        var allergies: String?
-
-        @Guide(description: "Ordered, pending, or completed tests and labs.")
-        var testsAndLabs: String?
-
-        @Guide(description: "ONLY scheduling/return-visit logistics across entries (when to come back, call-backs). Not the full treatment plan.")
-        var followUp: String?
-
-        @Guide(description: """
-        ONLY non-clinical psychosocial / life context (work stress, bereavement, housing, social support, financial strain, \
-        mental health themes without a specific clinical order). Never place referrals, medication plans, procedures, or \
-        clinician instructions here—those belong in carePlans, medications, or testsAndLabs.
-        """)
-        var biopsychosocialContext: String?
-
-        @Guide(description: "Important longitudinal details with no natural home in other fields; omit if empty. No duplication.")
-        var otherNotes: String?
     }
 
     // MARK: - Classification (on-device)
@@ -264,12 +227,23 @@ struct OnDeviceSummaryService {
 
     // MARK: - Generation (single entry)
 
-    func generate(transcript: String, contentKind: SummaryContentKind) async throws -> (title: String, summary: String) {
+    func generateFields(transcript: String, contentKind: SummaryContentKind) async throws -> VisitSummaryFields {
         let instructions = SummaryPromptAssembly.onDeviceSessionInstructions(contentKind: contentKind)
         let session = LanguageModelSession(instructions: instructions)
         let lead = SummaryPromptAssembly.onDeviceUserPromptLead(contentKind: contentKind)
         let prompt = lead + transcript
 
+        switch contentKind {
+        case .medicationReference:
+            let response = try await session.respond(to: prompt, generating: MedicationRefStructuredSummary.self)
+            return Self.visitSummaryFields(from: response.content)
+        default:
+            let response = try await session.respond(to: prompt, generating: StructuredVisitSummary.self)
+            return Self.visitSummaryFields(from: response.content)
+        }
+    }
+
+    func generate(transcript: String, contentKind: SummaryContentKind) async throws -> (title: String, summary: String) {
         let defaultTitle: String
         switch contentKind {
         case .visitEncounter:
@@ -280,31 +254,7 @@ struct OnDeviceSummaryService {
             defaultTitle = "Health document"
         }
 
-        let fields: VisitSummaryFields
-        switch contentKind {
-        case .medicationReference:
-            let response = try await session.respond(to: prompt, generating: MedicationRefStructuredSummary.self)
-            fields = Self.visitSummaryFields(from: response.content)
-        default:
-            let response = try await session.respond(to: prompt, generating: StructuredVisitSummary.self)
-            let output = response.content
-            fields = VisitSummaryFields(
-                title: output.title,
-                legacyMarkdownSummary: nil,
-                chiefComplaint: output.chiefComplaint,
-                symptoms: output.symptoms,
-                findings: output.findings,
-                medications: output.medications,
-                treatmentPlan: output.treatmentPlan,
-                practitionerContacts: output.practitionerContacts,
-                vaccinations: output.vaccinations,
-                allergies: output.allergies,
-                testsAndLabs: output.testsAndLabs,
-                followUp: output.followUp,
-                otherNotes: output.otherNotes
-            )
-        }
-
+        let fields = try await generateFields(transcript: transcript, contentKind: contentKind)
         guard let (titleText, markdown) = fields.resolved(defaultTitle: defaultTitle), !markdown.isEmpty else {
             throw OnDeviceVisitSummaryEmptyError.noStructuredContent
         }
@@ -319,70 +269,81 @@ struct OnDeviceSummaryService {
 
     func generateGlobalSummary(prompt: String) async throws -> GlobalSummaryPayload {
         let session = LanguageModelSession(instructions: """
-        You are a medical scribe synthesizing a longitudinal health profile. \
+        You are a medical scribe writing a short longitudinal OVERVIEW. \
         Extract only clinically relevant information explicitly stated in the provided entry data. \
         Do not infer, assume, or invent any clinical details. \
-        Omit fields that have no relevant content. \
-        Be concise; use markdown bullets in string fields except overview (one continuous paragraph). \
-        Prefer short stable titles with detail after an em dash so the same fact can stack across visits. \
-        chiefComplaint must be grouped under body-system headings.
-
-        Longitudinal CATEGORY RULES: \
-        Always include overview as a short contextual paragraph (2–4 sentences) about the patient's care themes—not a bullet digest and not first-person spoken script. \
-        Put actionable clinician-directed plans (medication changes/referrals/therapies/procedures/education/coordination) in carePlans—not in biopsychosocialContext or followUp alone. \
-        practitionerContacts: one contact per line; include contact details only when tied to the same source block; never merge unrelated entries (e.g. psychologist name + Rx pharmacy address). Omit first-name-only dialogue. \
-        followUp is for scheduling/return logistics across visits. \
-        biopsychosocialContext is ONLY psychosocial or life-context without a clinical order.
+        Return only an overview paragraph (2–4 sentences) about the patient's care themes—not a bullet digest and not first-person spoken script.
         """)
 
         let response = try await session.respond(to: prompt, generating: GlobalSummaryOutput.self)
-        let output = response.content
-        return GlobalSummaryPayload(
-            overview: output.overview?.trimmedNilIfEmpty,
-            chiefComplaint: output.chiefComplaint?.trimmedNilIfEmpty,
-            symptoms: output.symptoms?.trimmedNilIfEmpty,
-            diagnoses: output.diagnoses?.trimmedNilIfEmpty,
-            medications: output.medications?.trimmedNilIfEmpty,
-            carePlans: output.carePlans?.trimmedNilIfEmpty,
-            practitionerContacts: output.practitionerContacts?.trimmedNilIfEmpty,
-            vaccinations: output.vaccinations?.trimmedNilIfEmpty,
-            allergies: output.allergies?.trimmedNilIfEmpty,
-            testsAndLabs: output.testsAndLabs?.trimmedNilIfEmpty,
-            followUp: output.followUp?.trimmedNilIfEmpty,
-            biopsychosocialContext: output.biopsychosocialContext?.trimmedNilIfEmpty,
-            otherNotes: output.otherNotes?.trimmedNilIfEmpty
+        return GlobalSummaryPayload(overview: response.content.overview?.trimmedNilIfEmpty)
+    }
+
+    private static func visitSummaryFields(from output: StructuredVisitSummary) -> VisitSummaryFields {
+        var fields = VisitSummaryFields(
+            title: output.title,
+            legacyMarkdownSummary: nil
         )
+        fields.factsByCategory = [
+            .chiefComplaint: facts(from: output.chiefComplaint, chiefComplaint: true),
+            .symptoms: facts(from: output.symptoms),
+            .findings: facts(from: output.findings),
+            .medications: facts(from: output.medications),
+            .carePlan: facts(from: output.treatmentPlan),
+            .practitionerContact: facts(from: output.practitionerContacts),
+            .vaccinations: facts(from: output.vaccinations),
+            .allergies: facts(from: output.allergies),
+            .testsAndLabs: facts(from: output.testsAndLabs),
+            .followUp: facts(from: output.followUp),
+            .otherNotes: facts(from: output.otherNotes),
+        ]
+        return fields
+    }
+
+    private static func facts(from rows: [VisitFactRow], chiefComplaint: Bool = false) -> [VisitSummaryFact] {
+        rows.compactMap { row in
+            let title = row.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { return nil }
+            let details = row.details?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return VisitSummaryFact(
+                title: title,
+                details: details,
+                bodySystem: chiefComplaint ? BodySystem.parse(row.bodySystem) : nil,
+                clinicalStatus: SummaryEntryClinicalStatus.parse(row.clinicalStatus),
+                factKey: SummaryEntry.normalizedFactKey(row.factKey) ?? SummaryEntry.normalizedFactKey(title)
+            )
+        }
     }
 
     private static func visitSummaryFields(from med: MedicationRefStructuredSummary) -> VisitSummaryFields {
-        let medBody: String
-        if med.medicationItems.isEmpty {
-            medBody = ""
-        } else {
-            medBody = med.medicationItems.map { row in
-                var parts: [String] = []
-                if let s = row.strength?.trimmedNilIfEmpty { parts.append(s) }
-                if let s = row.frequency?.trimmedNilIfEmpty { parts.append(s) }
-                if let s = row.route?.trimmedNilIfEmpty { parts.append(s) }
-                if let s = row.duration?.trimmedNilIfEmpty { parts.append(s) }
-                if let s = row.instructions?.trimmedNilIfEmpty { parts.append(s) }
-                if let s = row.classOrCategoryIfStated?.trimmedNilIfEmpty {
-                    parts.append("Class (per source): \(s)")
-                }
-                let tail = parts.joined(separator: "; ")
-                let name = row.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                if tail.isEmpty { return "- \(name)" }
-                return "- \(name) — \(tail)"
-            }.joined(separator: "\n")
+        let medFacts: [VisitSummaryFact] = med.medicationItems.compactMap { row in
+            let name = row.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return nil }
+            var parts: [String] = []
+            if let s = row.strength?.trimmedNilIfEmpty { parts.append(s) }
+            if let s = row.frequency?.trimmedNilIfEmpty { parts.append(s) }
+            if let s = row.route?.trimmedNilIfEmpty { parts.append(s) }
+            if let s = row.duration?.trimmedNilIfEmpty { parts.append(s) }
+            if let s = row.instructions?.trimmedNilIfEmpty { parts.append(s) }
+            if let s = row.classOrCategoryIfStated?.trimmedNilIfEmpty {
+                parts.append("Class (per source): \(s)")
+            }
+            return VisitSummaryFact(
+                title: name,
+                details: parts.joined(separator: "; "),
+                bodySystem: nil,
+                clinicalStatus: SummaryEntryClinicalStatus.parse(row.clinicalStatus),
+                factKey: SummaryEntry.normalizedFactKey(row.factKey) ?? SummaryEntry.normalizedFactKey(name)
+            )
         }
 
-        return VisitSummaryFields(
+        var fields = VisitSummaryFields(
             title: med.title,
             legacyMarkdownSummary: nil,
             chiefComplaint: med.chiefComplaint,
             symptoms: med.symptoms,
             findings: med.findings,
-            medications: medBody.isEmpty ? nil : medBody,
+            medications: nil,
             treatmentPlan: med.treatmentPlan,
             practitionerContacts: med.practitionerContacts,
             vaccinations: med.vaccinations,
@@ -391,6 +352,10 @@ struct OnDeviceSummaryService {
             followUp: med.followUp,
             otherNotes: med.otherNotes
         )
+        if !medFacts.isEmpty {
+            fields.factsByCategory[.medications] = medFacts
+        }
+        return fields
     }
 }
 

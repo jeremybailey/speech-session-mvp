@@ -152,6 +152,13 @@ public enum SummaryEntryClinicalStatus: String, Hashable, Sendable, CaseIterable
             return nil
         }
     }
+
+    /// Parse model or UI wording (`current`/`past`, plus legacy active/resolved).
+    public static func parse(_ raw: String?) -> SummaryEntryClinicalStatus? {
+        guard let raw else { return nil }
+        let n = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return fromStored(n)
+    }
 }
 
 extension SummaryEntryClinicalStatus: Codable {
@@ -193,6 +200,8 @@ public struct SummaryEntry: Codable, Equatable, Hashable, Identifiable, Sendable
     public var origin: SummaryEntryOrigin
     /// Current or past item status. Defaults to inferred value for legacy entries.
     public var clinicalStatus: SummaryEntryClinicalStatus
+    /// Stable slug for stacking the same clinical fact across visits (e.g. `migraine`).
+    public var factKey: String?
     public var createdAt: Date
     public var updatedAt: Date
 
@@ -201,7 +210,7 @@ public struct SummaryEntry: Codable, Equatable, Hashable, Identifiable, Sendable
         case relevantDate, dateNeedsReview
         case sourceSessionID, sourceTitle, sourceDate, sourceExcerpt
         case provenance, needsReview, reviewReason, isDeleted, origin
-        case clinicalStatus, createdAt, updatedAt
+        case clinicalStatus, factKey, createdAt, updatedAt
     }
 
     public init(
@@ -222,6 +231,7 @@ public struct SummaryEntry: Codable, Equatable, Hashable, Identifiable, Sendable
         isDeleted: Bool = false,
         origin: SummaryEntryOrigin = .generated,
         clinicalStatus: SummaryEntryClinicalStatus? = nil,
+        factKey: String? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -242,6 +252,7 @@ public struct SummaryEntry: Codable, Equatable, Hashable, Identifiable, Sendable
         self.isDeleted = isDeleted
         self.origin = origin
         self.clinicalStatus = clinicalStatus ?? Self.inferredStatus(title: title, details: details)
+        self.factKey = Self.normalizedFactKey(factKey)
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -271,6 +282,19 @@ public struct SummaryEntry: Codable, Equatable, Hashable, Identifiable, Sendable
         } else {
             clinicalStatus = Self.inferredStatus(title: title, details: details)
         }
+        factKey = Self.normalizedFactKey(try c.decodeIfPresent(String.self, forKey: .factKey))
+    }
+
+    /// Lowercase hyphenated slug used to stack the same fact across visits.
+    public static func normalizedFactKey(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let collapsed = raw.lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"[\s_]+"#, with: "-", options: .regularExpression)
+            .replacingOccurrences(of: #"[^a-z0-9-]"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"-+"#, with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return collapsed.isEmpty ? nil : collapsed
     }
 
     /// Infer status from wording when the model or user did not set one explicitly.

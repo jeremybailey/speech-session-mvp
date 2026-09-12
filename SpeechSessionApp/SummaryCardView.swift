@@ -499,6 +499,8 @@ private struct AtomicSummaryCategorySection: View {
                     for entry in cluster.entries {
                         var updated = entry
                         updated.clinicalStatus = newStatus
+                        updated.origin = updated.origin == .userAdded ? .userAdded : .userEdited
+                        updated.updatedAt = Date()
                         onSave(updated)
                     }
                 }
@@ -631,6 +633,8 @@ private struct SummaryEntryRowContent: View {
                 SummaryEntryStatusToggle(status: entry.clinicalStatus) { newStatus in
                     var updated = entry
                     updated.clinicalStatus = newStatus
+                    updated.origin = updated.origin == .userAdded ? .userAdded : .userEdited
+                    updated.updatedAt = Date()
                     onStatusChange(updated)
                 }
             }
