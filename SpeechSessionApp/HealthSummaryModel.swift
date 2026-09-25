@@ -478,6 +478,9 @@ actor RecordSummaryProcessor {
     /// Classification outages preserve extraction; completeness is not an admission requirement.
     private func classifyForStory(_ entries: [SummaryEntry], source: String,
                                   transport: OpenAIChatTransport?, onDevice: Bool) async throws -> [SummaryEntry] {
+        let concernContext = entries.filter { [.chiefComplaint, .symptoms, .findings].contains($0.category) }
+            .map { ["title": $0.title, "details": String($0.details.prefix(400))] }
+        let existingConditions = Array(Set(entries.flatMap { $0.evidence?.topicNames ?? [] })).sorted()
         let size = onDevice ? 1 : 12
         let batches = stride(from: 0, to: entries.count, by: size).map { Array(entries.dropFirst($0).prefix(size)) }
         let results = try await SummaryParallelWork.map(batches, limit: onDevice ? 1 : 3) { batch in
@@ -487,7 +490,7 @@ actor RecordSummaryProcessor {
                      "details": entry.details,
                      "fields": entry.fields.map { ["label": $0.label, "value": $0.value] }]
                 }
-                let data = try JSONSerialization.data(withJSONObject: ["source": source, "entries": rows])
+                let data = try JSONSerialization.data(withJSONObject: ["source": source, "entries": rows, "concernContext": concernContext, "existingConditions": existingConditions])
                 let raw = try await self.request(system: SummaryCategoryClassification.instruction,
                     user: String(decoding: data, as: UTF8.self), transport: transport, onDevice: onDevice)
                 return try SummaryCategoryClassification.apply(raw, to: batch)
@@ -776,7 +779,10 @@ actor RecordSummaryProcessor {
         Your task is to express their existing information as a readable narrative, not to re-verify them,
         request original sources, assess their completeness or add new clinical conclusions.
         Return JSON {"text":"The complete readable overview."}. Do not include identifiers or citations.
-        Aim for 120–200 words when sufficient information exists, maximum 10 sentences; shorter for sparse records.
+        Aim for 60–100 words in one short paragraph, usually 3–5 sentences; shorter for sparse records.
+        This is a compact introduction for a small phone screen. Prioritize the main concern, one or two
+        important developments, and the present situation or care plan. Leave secondary concerns and routine
+        results in the sections below. Do not add a generic concluding sentence or repeat the same point.
         Lead with the most relevant documented chief complaint: the problem that brought this person to care.
         If none is established, lead with their documented concerns without inventing a primary complaint.
         Never lead with prescriptions when a complaint or symptoms are available. Then tell the relevant

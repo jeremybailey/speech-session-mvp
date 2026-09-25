@@ -44,6 +44,9 @@ public struct ClinicalEvidence: Codable, Equatable, Hashable, Sendable {
     public var practitioner: String?
     public var assessmentMethod: String?
     public var topicNames: [String]?
+    /// Organizational association, not a diagnosis or a replacement for source text.
+    public var conditionGroup: String?
+    public var conditionGroupReason: String?
     public var bodySystem: String?
     public var dose: String?
     public var frequency: String?

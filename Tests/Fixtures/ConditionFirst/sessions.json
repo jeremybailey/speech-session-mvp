@@ -1,0 +1,1440 @@
+{
+  "version": 4,
+  "sessions": [
+    {
+      "id": "00cfcfbb-64b6-4d4f-97c3-582efdca423a",
+      "date": "2025-01-01T12:00:00Z",
+      "title": "Dr. Example A \u2014 2025-01-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "060170fc-3777-4c99-8729-92ce3957ae4e",
+          "category": "symptoms",
+          "title": "Migraines",
+          "details": "Migraines",
+          "origin": "userAdded",
+          "sourceSessionID": "00cfcfbb-64b6-4d4f-97c3-582efdca423a",
+          "createdAt": "2025-01-01T12:00:00Z",
+          "updatedAt": "2025-01-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2025-01-01",
+            "excerpt": "Migraines",
+            "practitioner": "Dr. Example A",
+            "statusExplicit": true
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "6489c2ca-6c34-4767-b903-d02ea0dcd4c2",
+      "date": "2026-09-01T12:00:00Z",
+      "title": "Dr. Example B \u2014 2026-09-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "fb62b17c-227a-41fa-9adf-fb14369cfe09",
+          "category": "chiefComplaint",
+          "title": "Migraine",
+          "details": "Migraine",
+          "origin": "userAdded",
+          "sourceSessionID": "6489c2ca-6c34-4767-b903-d02ea0dcd4c2",
+          "createdAt": "2026-09-01T12:00:00Z",
+          "updatedAt": "2026-09-01T12:00:00Z",
+          "clinicalStatus": "current",
+          "evidence": {
+            "eventDate": "2026-09-01",
+            "excerpt": "Migraine",
+            "practitioner": "Dr. Example B",
+            "statusExplicit": true
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "173ccad5-c7a7-4665-9087-5695bdf17d12",
+      "date": "2026-09-01T12:00:00Z",
+      "title": "Dr. Example B \u2014 2026-09-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "6383e96a-21e2-4322-84d1-9459e155c1e8",
+          "category": "carePlan",
+          "title": "Keep a symptom diary",
+          "details": "For Migraine: Keep a symptom diary",
+          "origin": "userAdded",
+          "sourceSessionID": "173ccad5-c7a7-4665-9087-5695bdf17d12",
+          "createdAt": "2026-09-01T12:00:00Z",
+          "updatedAt": "2026-09-01T12:00:00Z",
+          "clinicalStatus": "current",
+          "evidence": {
+            "eventDate": "2026-09-01",
+            "excerpt": "For Migraine: Keep a symptom diary",
+            "practitioner": "Dr. Example B",
+            "statusExplicit": true,
+            "topicNames": [
+              "Migraine"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "b98816ee-312c-4a71-97f5-54e4d02d4236",
+      "date": "2020-09-01T12:00:00Z",
+      "title": "Dr. Example A \u2014 2020-09-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "7385d7df-1d3b-4833-9380-7eff4ef37176",
+          "category": "carePlan",
+          "title": "Previous recommendation",
+          "details": "For Migraine: Previous recommendation",
+          "origin": "userAdded",
+          "sourceSessionID": "b98816ee-312c-4a71-97f5-54e4d02d4236",
+          "createdAt": "2020-09-01T12:00:00Z",
+          "updatedAt": "2020-09-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2020-09-01",
+            "excerpt": "For Migraine: Previous recommendation",
+            "practitioner": "Dr. Example A",
+            "statusExplicit": true,
+            "topicNames": [
+              "Migraine"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "33fb709f-e8c8-4033-9ace-74320607beaf",
+      "date": "2020-09-01T12:00:00Z",
+      "title": "Dr. Example A \u2014 2020-09-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "c671d6bd-b164-43f3-9b60-0dff011be22d",
+          "category": "medications",
+          "title": "Example medication 5 mg",
+          "details": "For Migraine: Example medication 5 mg",
+          "origin": "userAdded",
+          "sourceSessionID": "33fb709f-e8c8-4033-9ace-74320607beaf",
+          "createdAt": "2020-09-01T12:00:00Z",
+          "updatedAt": "2020-09-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2020-09-01",
+            "excerpt": "For Migraine: Example medication 5 mg",
+            "practitioner": "Dr. Example A",
+            "statusExplicit": true,
+            "topicNames": [
+              "Migraine"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "9650c6d3-e229-494f-87c7-aaa624f2697b",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "20dfa8a0-41f1-46bc-aefa-b3ca0103cfe7",
+          "category": "testsAndLabs",
+          "title": "Panel result 1",
+          "details": "For Hormone testing: Panel result 1",
+          "origin": "userAdded",
+          "sourceSessionID": "9650c6d3-e229-494f-87c7-aaa624f2697b",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 1",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "e9d6f9b8-e3e0-4ccf-abf4-c8edcdcbeb5e",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "7a0f0fe8-08f9-4644-b658-fe90d39db87d",
+          "category": "testsAndLabs",
+          "title": "Panel result 2",
+          "details": "For Hormone testing: Panel result 2",
+          "origin": "userAdded",
+          "sourceSessionID": "e9d6f9b8-e3e0-4ccf-abf4-c8edcdcbeb5e",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 2",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "34e4244f-88cc-4260-874d-022b3a16296c",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "c1d30d2f-b754-4611-aad5-93856fbd8f52",
+          "category": "testsAndLabs",
+          "title": "Panel result 3",
+          "details": "For Hormone testing: Panel result 3",
+          "origin": "userAdded",
+          "sourceSessionID": "34e4244f-88cc-4260-874d-022b3a16296c",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 3",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "bbe78d77-1546-41fc-a6be-741bfba512c0",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "d79eb059-7076-4a15-9e6d-4ecedc3e526e",
+          "category": "testsAndLabs",
+          "title": "Panel result 4",
+          "details": "For Hormone testing: Panel result 4",
+          "origin": "userAdded",
+          "sourceSessionID": "bbe78d77-1546-41fc-a6be-741bfba512c0",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 4",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "8d002169-64ac-4282-9f1f-143154c366c2",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "5c4149f1-9349-48a8-9268-9fae38b0a2d0",
+          "category": "testsAndLabs",
+          "title": "Panel result 5",
+          "details": "For Hormone testing: Panel result 5",
+          "origin": "userAdded",
+          "sourceSessionID": "8d002169-64ac-4282-9f1f-143154c366c2",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 5",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "ae036881-b0b5-4c88-b902-f80e80276808",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "a4d64095-e72b-4cf5-b3bf-bc16caafd4ae",
+          "category": "testsAndLabs",
+          "title": "Panel result 6",
+          "details": "For Hormone testing: Panel result 6",
+          "origin": "userAdded",
+          "sourceSessionID": "ae036881-b0b5-4c88-b902-f80e80276808",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 6",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "f8712ced-eba8-4dc1-b8c3-006d1dcbbfa7",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "8bdd3a65-41b0-4c1c-aa61-6d44cf9b38c3",
+          "category": "testsAndLabs",
+          "title": "Panel result 7",
+          "details": "For Hormone testing: Panel result 7",
+          "origin": "userAdded",
+          "sourceSessionID": "f8712ced-eba8-4dc1-b8c3-006d1dcbbfa7",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 7",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "398ac6c5-be76-43fa-bef5-e3a07e1928f7",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "6c923383-a888-4cc4-8a7e-a5f120571448",
+          "category": "testsAndLabs",
+          "title": "Panel result 8",
+          "details": "For Hormone testing: Panel result 8",
+          "origin": "userAdded",
+          "sourceSessionID": "398ac6c5-be76-43fa-bef5-e3a07e1928f7",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 8",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "bf6ba573-af03-4a1e-8a09-8dd25355f235",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "0ca8bd78-cf2b-4d73-ba69-e12102eca2b2",
+          "category": "testsAndLabs",
+          "title": "Panel result 9",
+          "details": "For Hormone testing: Panel result 9",
+          "origin": "userAdded",
+          "sourceSessionID": "bf6ba573-af03-4a1e-8a09-8dd25355f235",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 9",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "44141066-b3f2-4e06-9974-9a89d84b444c",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "7107bc34-0e7f-4977-9350-7a33c3166b15",
+          "category": "testsAndLabs",
+          "title": "Panel result 10",
+          "details": "For Hormone testing: Panel result 10",
+          "origin": "userAdded",
+          "sourceSessionID": "44141066-b3f2-4e06-9974-9a89d84b444c",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 10",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "87c50c94-700c-4ec5-b536-371e36ef9d4a",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "839c036e-9849-4b07-9627-d2c9b1388aa0",
+          "category": "testsAndLabs",
+          "title": "Panel result 11",
+          "details": "For Hormone testing: Panel result 11",
+          "origin": "userAdded",
+          "sourceSessionID": "87c50c94-700c-4ec5-b536-371e36ef9d4a",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 11",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "a1a7660d-c255-41bf-99dc-97c989b54082",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "409d47ee-f2a5-409c-99ce-2ab3988eb519",
+          "category": "testsAndLabs",
+          "title": "Panel result 12",
+          "details": "For Hormone testing: Panel result 12",
+          "origin": "userAdded",
+          "sourceSessionID": "a1a7660d-c255-41bf-99dc-97c989b54082",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 12",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "caf24d0e-8723-460a-843d-cfcfcd10ccc9",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "fc0a0769-1d2e-47d3-ba06-e590a0b9fb1b",
+          "category": "testsAndLabs",
+          "title": "Panel result 13",
+          "details": "For Hormone testing: Panel result 13",
+          "origin": "userAdded",
+          "sourceSessionID": "caf24d0e-8723-460a-843d-cfcfcd10ccc9",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 13",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "850ada19-faaa-4a49-b969-178b346ae920",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "11f561f8-b0a4-49d5-bd9f-3616bfc5fdb5",
+          "category": "testsAndLabs",
+          "title": "Panel result 14",
+          "details": "For Hormone testing: Panel result 14",
+          "origin": "userAdded",
+          "sourceSessionID": "850ada19-faaa-4a49-b969-178b346ae920",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 14",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "71a0d666-5e86-4cda-a475-1b19fb85dc14",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "115a02d2-85ff-4d90-ab4e-21bbfc48f8fd",
+          "category": "testsAndLabs",
+          "title": "Panel result 15",
+          "details": "For Hormone testing: Panel result 15",
+          "origin": "userAdded",
+          "sourceSessionID": "71a0d666-5e86-4cda-a475-1b19fb85dc14",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 15",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "2a77566e-4de2-447d-97a9-49af89b7208e",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "9a661063-b2c9-4b78-a7e2-0683080cfe9f",
+          "category": "testsAndLabs",
+          "title": "Panel result 16",
+          "details": "For Hormone testing: Panel result 16",
+          "origin": "userAdded",
+          "sourceSessionID": "2a77566e-4de2-447d-97a9-49af89b7208e",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 16",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "d35278b9-e33b-415b-84ee-3b1c120e793c",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "4f8e5b1b-4785-4f33-a6a4-b311f9e7debc",
+          "category": "testsAndLabs",
+          "title": "Panel result 17",
+          "details": "For Hormone testing: Panel result 17",
+          "origin": "userAdded",
+          "sourceSessionID": "d35278b9-e33b-415b-84ee-3b1c120e793c",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 17",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "473039f9-f741-43dd-9c9a-1fe5766dee24",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "1fafa1f6-fc55-4778-9a02-3b5e475b4646",
+          "category": "testsAndLabs",
+          "title": "Panel result 18",
+          "details": "For Hormone testing: Panel result 18",
+          "origin": "userAdded",
+          "sourceSessionID": "473039f9-f741-43dd-9c9a-1fe5766dee24",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 18",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "98c45a76-f678-4386-b5b7-2d9f4623c85f",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "e4db7635-4fa8-40e1-9008-663283e74e45",
+          "category": "testsAndLabs",
+          "title": "Panel result 19",
+          "details": "For Hormone testing: Panel result 19",
+          "origin": "userAdded",
+          "sourceSessionID": "98c45a76-f678-4386-b5b7-2d9f4623c85f",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 19",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "06182326-9eea-4f6f-b1fa-3d71836486fe",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "82424fdd-2c14-4bbc-8c5b-44d02746f17c",
+          "category": "testsAndLabs",
+          "title": "Panel result 20",
+          "details": "For Hormone testing: Panel result 20",
+          "origin": "userAdded",
+          "sourceSessionID": "06182326-9eea-4f6f-b1fa-3d71836486fe",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 20",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "3da2a74f-880f-49e9-8e27-3ce8dbf71544",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "98f2c820-907d-43b6-b7e2-1d729a9cbbb7",
+          "category": "testsAndLabs",
+          "title": "Panel result 21",
+          "details": "For Hormone testing: Panel result 21",
+          "origin": "userAdded",
+          "sourceSessionID": "3da2a74f-880f-49e9-8e27-3ce8dbf71544",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 21",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "0c59d4b1-16d7-4afe-a6c9-aa0d6b22d35f",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "8c07c405-619c-4f38-94e5-5a1ac9f5a322",
+          "category": "testsAndLabs",
+          "title": "Panel result 22",
+          "details": "For Hormone testing: Panel result 22",
+          "origin": "userAdded",
+          "sourceSessionID": "0c59d4b1-16d7-4afe-a6c9-aa0d6b22d35f",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 22",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "fb56c0f5-673a-4f14-b74b-89ebdbc6da16",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "28db0a40-3122-4b2f-a702-f10a2d58963d",
+          "category": "testsAndLabs",
+          "title": "Panel result 23",
+          "details": "For Hormone testing: Panel result 23",
+          "origin": "userAdded",
+          "sourceSessionID": "fb56c0f5-673a-4f14-b74b-89ebdbc6da16",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 23",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "54d4f999-d7c0-453c-a2bb-e108961a2fcc",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "1543547a-d6b7-4000-b317-d6f0291ad2a9",
+          "category": "testsAndLabs",
+          "title": "Panel result 24",
+          "details": "For Hormone testing: Panel result 24",
+          "origin": "userAdded",
+          "sourceSessionID": "54d4f999-d7c0-453c-a2bb-e108961a2fcc",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 24",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "3f9f16cd-7177-4956-9cea-9593cece8f5b",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "c5e756ad-cda3-4e46-ad6a-6c46f60e7edf",
+          "category": "testsAndLabs",
+          "title": "Panel result 25",
+          "details": "For Hormone testing: Panel result 25",
+          "origin": "userAdded",
+          "sourceSessionID": "3f9f16cd-7177-4956-9cea-9593cece8f5b",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 25",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "52fc00f2-f0fb-4a03-a82b-1fae38ab946f",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "39cf97a4-7c31-4a8b-89d4-3cfd479629a1",
+          "category": "testsAndLabs",
+          "title": "Panel result 26",
+          "details": "For Hormone testing: Panel result 26",
+          "origin": "userAdded",
+          "sourceSessionID": "52fc00f2-f0fb-4a03-a82b-1fae38ab946f",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 26",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "d50a8eb2-ce49-4290-8cd8-bd26a5c514bc",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "aaaf8037-917d-435f-939c-e0d6dadf655a",
+          "category": "testsAndLabs",
+          "title": "Panel result 27",
+          "details": "For Hormone testing: Panel result 27",
+          "origin": "userAdded",
+          "sourceSessionID": "d50a8eb2-ce49-4290-8cd8-bd26a5c514bc",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 27",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "f0dceb4e-27da-4851-a819-4ee555cc71ff",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "69a1b36d-e507-4344-bebd-b1a274dbd12c",
+          "category": "testsAndLabs",
+          "title": "Panel result 28",
+          "details": "For Hormone testing: Panel result 28",
+          "origin": "userAdded",
+          "sourceSessionID": "f0dceb4e-27da-4851-a819-4ee555cc71ff",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 28",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "50670eb9-3e7d-4e20-9d83-a4dd1f6f1a34",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "a606a6cb-6b92-46d2-b7ef-812d9d868dda",
+          "category": "testsAndLabs",
+          "title": "Panel result 29",
+          "details": "For Hormone testing: Panel result 29",
+          "origin": "userAdded",
+          "sourceSessionID": "50670eb9-3e7d-4e20-9d83-a4dd1f6f1a34",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 29",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "5c1828a3-4030-4bee-b267-60d334680b98",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "885fe9f3-496a-4997-b47f-eaab07954f28",
+          "category": "testsAndLabs",
+          "title": "Panel result 30",
+          "details": "For Hormone testing: Panel result 30",
+          "origin": "userAdded",
+          "sourceSessionID": "5c1828a3-4030-4bee-b267-60d334680b98",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 30",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "09883057-2866-4193-af3b-413738e0dcb4",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "39cde6c3-d41c-4f39-bd5d-7842f15a0fcd",
+          "category": "testsAndLabs",
+          "title": "Panel result 31",
+          "details": "For Hormone testing: Panel result 31",
+          "origin": "userAdded",
+          "sourceSessionID": "09883057-2866-4193-af3b-413738e0dcb4",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 31",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "057f0f1b-108a-48b8-8721-f8bf7c7f5107",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "100f1a6a-b767-4385-9633-a68b8b94f813",
+          "category": "testsAndLabs",
+          "title": "Panel result 32",
+          "details": "For Hormone testing: Panel result 32",
+          "origin": "userAdded",
+          "sourceSessionID": "057f0f1b-108a-48b8-8721-f8bf7c7f5107",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 32",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "d207bc6f-7f1b-4e11-a502-5481ac5dd16d",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "e3ee1791-e4e7-4ce4-a02e-a83db9fb2cea",
+          "category": "testsAndLabs",
+          "title": "Panel result 33",
+          "details": "For Hormone testing: Panel result 33",
+          "origin": "userAdded",
+          "sourceSessionID": "d207bc6f-7f1b-4e11-a502-5481ac5dd16d",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 33",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "07099762-af24-41fe-8e6b-782660e5258b",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "385c4b37-155c-4dae-93ee-012b91be5421",
+          "category": "testsAndLabs",
+          "title": "Panel result 34",
+          "details": "For Hormone testing: Panel result 34",
+          "origin": "userAdded",
+          "sourceSessionID": "07099762-af24-41fe-8e6b-782660e5258b",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 34",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "bf8cfb53-83f9-4dfd-8627-52b609b79d44",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "b1efc4b5-479c-4f20-8443-92e829e40521",
+          "category": "testsAndLabs",
+          "title": "Panel result 35",
+          "details": "For Hormone testing: Panel result 35",
+          "origin": "userAdded",
+          "sourceSessionID": "bf8cfb53-83f9-4dfd-8627-52b609b79d44",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 35",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "c66fcca9-721c-496a-9dcf-2e4f85e143aa",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "0d61202c-6d3b-4b25-8035-ffe1957bd69e",
+          "category": "testsAndLabs",
+          "title": "Panel result 36",
+          "details": "For Hormone testing: Panel result 36",
+          "origin": "userAdded",
+          "sourceSessionID": "c66fcca9-721c-496a-9dcf-2e4f85e143aa",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 36",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "a301fba0-c0cf-4fd4-afab-042d15420c82",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "9f56f56e-a67d-48eb-9df8-55b8aa829e55",
+          "category": "testsAndLabs",
+          "title": "Panel result 37",
+          "details": "For Hormone testing: Panel result 37",
+          "origin": "userAdded",
+          "sourceSessionID": "a301fba0-c0cf-4fd4-afab-042d15420c82",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 37",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "10689d94-7258-4eaa-af24-8393523f140a",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "2d206772-61ca-4a34-a27e-6e0179c3c302",
+          "category": "testsAndLabs",
+          "title": "Panel result 38",
+          "details": "For Hormone testing: Panel result 38",
+          "origin": "userAdded",
+          "sourceSessionID": "10689d94-7258-4eaa-af24-8393523f140a",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 38",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "2536d9b1-a562-4f99-83dc-4adc91685cc9",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "55753e70-4800-4653-950a-3db075fcdbec",
+          "category": "testsAndLabs",
+          "title": "Panel result 39",
+          "details": "For Hormone testing: Panel result 39",
+          "origin": "userAdded",
+          "sourceSessionID": "2536d9b1-a562-4f99-83dc-4adc91685cc9",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 39",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "4504109f-e85e-4805-9c81-a4f3546ac1a0",
+      "date": "2026-05-01T12:00:00Z",
+      "title": "Dr. Example C \u2014 2026-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "255c87b7-3adb-47f0-8a9b-123527f713bd",
+          "category": "testsAndLabs",
+          "title": "Panel result 40",
+          "details": "For Hormone testing: Panel result 40",
+          "origin": "userAdded",
+          "sourceSessionID": "4504109f-e85e-4805-9c81-a4f3546ac1a0",
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2026-05-01",
+            "excerpt": "For Hormone testing: Panel result 40",
+            "practitioner": "Dr. Example C",
+            "statusExplicit": true,
+            "topicNames": [
+              "Hormone testing"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "0242dd9c-83cf-4b04-b7e4-f0b2a2676c04",
+      "date": "2024-05-01T12:00:00Z",
+      "title": "Dr. Example D \u2014 2024-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "5020e82a-6433-49b6-8bea-24b6db6ef9d0",
+          "category": "findings",
+          "title": "Fetal position",
+          "details": "For Pregnancy-related care: Fetal position",
+          "origin": "userAdded",
+          "sourceSessionID": "0242dd9c-83cf-4b04-b7e4-f0b2a2676c04",
+          "createdAt": "2024-05-01T12:00:00Z",
+          "updatedAt": "2024-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2024-05-01",
+            "excerpt": "For Pregnancy-related care: Fetal position",
+            "practitioner": "Dr. Example D",
+            "statusExplicit": true,
+            "topicNames": [
+              "Pregnancy-related care"
+            ]
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "a27ff506-7dcc-4a03-8cf6-9cce8963613a",
+      "date": "2025-05-01T12:00:00Z",
+      "title": "Dr. Example E \u2014 2025-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "ff7d0aed-0e2e-4863-a887-c636d66ecac1",
+          "category": "symptoms",
+          "title": "Right knee pain",
+          "details": "Right knee pain",
+          "origin": "userAdded",
+          "sourceSessionID": "a27ff506-7dcc-4a03-8cf6-9cce8963613a",
+          "createdAt": "2025-05-01T12:00:00Z",
+          "updatedAt": "2025-05-01T12:00:00Z",
+          "clinicalStatus": "current",
+          "evidence": {
+            "eventDate": "2025-05-01",
+            "excerpt": "Right knee pain",
+            "practitioner": "Dr. Example E",
+            "statusExplicit": true
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    },
+    {
+      "id": "337aefc4-8c38-49b9-a4ca-8d262e6d69f6",
+      "date": "2022-05-01T12:00:00Z",
+      "title": "Dr. Example A \u2014 2022-05-01",
+      "transcript": "",
+      "summaryEntries": [
+        {
+          "id": "55096230-49d3-4fb5-8ea8-dc4aad4af37b",
+          "category": "findings",
+          "title": "Unassigned finding",
+          "details": "Unassigned finding",
+          "origin": "userAdded",
+          "sourceSessionID": "337aefc4-8c38-49b9-a4ca-8d262e6d69f6",
+          "createdAt": "2022-05-01T12:00:00Z",
+          "updatedAt": "2022-05-01T12:00:00Z",
+          "clinicalStatus": "past",
+          "evidence": {
+            "eventDate": "2022-05-01",
+            "excerpt": "Unassigned finding",
+            "practitioner": "Dr. Example A",
+            "statusExplicit": true
+          }
+        }
+      ],
+      "inputType": "documentFile",
+      "processingState": "ready"
+    }
+  ],
+  "folders": [],
+  "topics": [],
+  "preferences": [],
+  "profile": {
+    "personalHealthNumber": "",
+    "completedIntroduction": true
+  }
+}

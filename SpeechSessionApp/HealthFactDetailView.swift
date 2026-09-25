@@ -102,6 +102,25 @@ private struct HealthFactEditor: View {
                     }
                 }
             }
+            if fact.category != .practitionerContact {
+                Section("Status") {
+                    if fact.isAction {
+                        Picker("Status", selection: $actionStatus) {
+                            Text("Unknown").tag(Optional<CareActionStatus>.none)
+                            Text("Current").tag(Optional(CareActionStatus.current))
+                            Text("Not current").tag(Optional(CareActionStatus.past))
+                            Text("Completed").tag(Optional(CareActionStatus.completed))
+                            Text("Paused").tag(Optional(CareActionStatus.paused))
+                        }
+                    } else {
+                        Picker("Status", selection: $status) {
+                            Text("Unknown").tag(Optional<SummaryEntryClinicalStatus>.none)
+                            Text("Current").tag(Optional(SummaryEntryClinicalStatus.current))
+                            Text("Not current").tag(Optional(SummaryEntryClinicalStatus.past))
+                        }
+                    }
+                }
+            }
             if fact.isAction && actionStatus == .current {
                 Section {
                     Toggle("Remind me", isOn: $reminder)

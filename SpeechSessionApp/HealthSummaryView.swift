@@ -12,6 +12,8 @@ struct HealthSummaryView: View {
     @AppStorage("speechSession.summaryBackend") private var backend = "openai"
     @AppStorage("speechSession.openaiAPIKey") private var apiKey = ""
     @AppStorage("collectivecare.cloudSummaryConsent") private var cloudConsent = false
+    @State private var allExpanded = false
+    @State private var expandedConditions = Set<String>()
     @State private var expanded: Set<String> = []
     #if DEBUG
     @State private var didOpenCareQA = false
@@ -97,8 +99,10 @@ struct HealthSummaryView: View {
                     }
                 }
             }
+            conditionSections
             if !categories.isEmpty {
                 Section {
+                    DisclosureGroup(isExpanded: $allExpanded) {
                     ForEach(categories, id: \.self) { category in
                         let facts = categoryFacts[category] ?? []
                         let members = category == .practitionerContact ? model.snapshot.careTeam : []
@@ -120,7 +124,10 @@ struct HealthSummaryView: View {
                             categoryLabel(category.displayTitle, count: facts.count + members.count)
                         }.id(category.rawValue)
                     }
-
+                    } label: {
+                        Label("All", systemImage: "square.grid.2x2.fill")
+                            .font(.headline).foregroundStyle(.primary).padding(.vertical, 8)
+                    }
                 }
             }
             Section {
@@ -179,6 +186,9 @@ struct HealthSummaryView: View {
         .task(id: home.revision) {
             await model.refresh()
             #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--condition-qa") {
+                expandedConditions = ["migraine|"]
+            }
             if ProcessInfo.processInfo.arguments.contains("--summary-error-qa") {
                 model.showProcessingFailureForQA()
                 return
@@ -218,6 +228,7 @@ struct HealthSummaryView: View {
                 HealthManualEntryView(model: model, home: home, store: store, topicID: nil, initialCategory: category)
             case .contact(let member): CareTeamEditor(member: member, model: model)
             case .share: HealthShareView(model: model)
+            case .condition(let id): ConditionAssignmentSheet(factID: id, model: model)
             case .combine(let id): FactDuplicateSheet(factID: id, model: model)
             case .combineContact(let id): ContactDuplicateSheet(memberID: id, model: model)
             }
@@ -241,6 +252,101 @@ struct HealthSummaryView: View {
         }
     }
 
+    @ViewBuilder private var conditionSections: some View {
+        let conditions = ConditionSummaryProjection.groups(facts: model.facts, topics: model.snapshot.topics)
+        if conditions.isEmpty {
+            Section { Text("Add records to start organizing your health story by condition.").foregroundStyle(.secondary) }
+        }
+        Section {
+        ForEach(conditions.filter { !$0.isUncategorized }) { condition in
+            let visible = condition.facts
+            if !visible.isEmpty {
+                    DisclosureGroup(isExpanded: Binding(
+                        get: { expandedConditions.contains(condition.id) },
+                        set: { if $0 { expandedConditions.insert(condition.id) } else { expandedConditions.remove(condition.id) } }
+                    )) {
+                        // Recommendations lead; category headings are inline, not another navigation level.
+                        let order: [SummaryEntryCategory] = [.carePlan, .followUp, .symptoms, .findings, .medications,
+                            .testsAndLabs, .vaccinations, .allergies, .biopsychosocialContext, .practitionerContact, .otherNotes]
+                        ForEach(order, id: \.self) { category in
+                            let rows = visible.filter { $0.category == category || (category == .symptoms && $0.category == .chiefComplaint) }
+                            if !rows.isEmpty {
+                                DisclosureGroup {
+                                if category == .symptoms {
+                                    // Same concern gets one heading, with individual mentions available beneath it.
+                                    let names = Dictionary(grouping: rows, by: { ConditionSummaryProjection.normalized($0.title) })
+                                    ForEach(names.keys.sorted(), id: \.self) { name in
+                                        let mentions = names[name] ?? []
+                                        if mentions.count > 1 {
+                                            DisclosureGroup("\(name.capitalized) · \(mentions.count) source details") {
+                                                ForEach(mentions) { fact in conditionFactRow(fact) }
+                                            }
+                                        } else {
+                                            ForEach(mentions) { fact in conditionFactRow(fact) }
+                                        }
+                                    }
+                                } else {
+                                    ForEach(rows) { fact in conditionFactRow(fact) }
+                                }
+                                } label: {
+                                    categoryLabel(category.displayTitle, count: rows.count)
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: bodySystemIcon(condition.bodySystem))
+                                .font(.title2).foregroundStyle(.blue)
+                                .frame(width: 40, height: 40)
+                                .background(.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                                .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(condition.name).font(.headline).foregroundStyle(.primary)
+                            Text("\(visible.count) \(visible.count == 1 ? "detail" : "details")").font(.caption).foregroundStyle(.secondary)
+                        }
+                        }.padding(.vertical, 2)
+                    }
+            }
+        }
+        }
+
+    }
+
+    private func bodySystemIcon(_ system: String) -> String {
+        let value = system.lowercased()
+        let symbols: [(String, String)] = [
+            ("neuro", "brain.head.profile"), ("mental", "brain.head.profile"),
+            ("eye", "eye"), ("ophthalm", "eye"), ("vision", "eye"),
+            ("card", "heart.fill"), ("circul", "heart.fill"),
+            ("resp", "lungs.fill"), ("pulmon", "lungs.fill"),
+            ("musculo", "figure.walk"), ("orthop", "figure.walk"),
+            ("endocr", "waveform.path.ecg"), ("hormon", "waveform.path.ecg"),
+            ("repro", "figure.and.child.holdinghands"), ("pregnan", "figure.and.child.holdinghands"),
+            ("digest", "stomach"), ("gastro", "stomach"),
+            ("ear", "ear"), ("audit", "ear"), ("immun", "shield"),
+            ("skin", "hand.raised"), ("dermat", "hand.raised")
+        ]
+        return symbols.first { value.contains($0.0) }?.1 ?? "figure.stand"
+    }
+
+    private func conditionFactRow(_ fact: HealthFact) -> some View {
+        let status = ConditionSummaryProjection.status(of: fact)
+        let statusTitle = status == .unknown ? "Status unknown" : (status == .current ? "Current" : "Not current")
+        return VStack(alignment: .leading, spacing: 6) {
+            HealthFactRow(fact: fact, actions: AnyView(factActions(fact)), open: { open(fact) },
+                          statusOverride: statusTitle, showBodySystem: false)
+            if fact.isAction {
+                if fact.latest.evidence?.practitioner?.isEmpty != false {
+                    Text("Provider not recorded").font(.caption).foregroundStyle(.secondary)
+                }
+                if fact.latest.evidence?.eventDate?.isEmpty != false && fact.latest.relevantDate == nil {
+                    Text("Clinical date not recorded").font(.caption).foregroundStyle(.secondary)
+                }
+
+            }
+        }.padding(.vertical, 8)
+    }
+
     private func factRow(_ fact: HealthFact) -> some View {
         HealthFactRow(fact: fact, actions: AnyView(factActions(fact)), open: { open(fact) })
             .padding(.vertical, 8)
@@ -252,14 +358,7 @@ struct HealthSummaryView: View {
     private func factActions(_ fact: HealthFact) -> some View {
             Menu {
                 Button("Edit", systemImage: "pencil") { open(fact) }
-                Button(fact.isCurrent ? "Mark as non-current" : "Mark as current", systemImage: fact.isCurrent ? "clock" : "arrow.uturn.backward") {
-                    Task { await model.changeStatus(fact, to: fact.isCurrent ? .past : .current) }
-                }
-                if fact.isAction && fact.isCurrent && fact.latest.evidence?.careInstruction?.isRecurring == false {
-                    Button("Mark as completed", systemImage: "checkmark.circle") {
-                        Task { await model.changeAction(fact, status: .completed) }
-                    }
-                }
+                Button("Assign condition", systemImage: "tag") { taskSheet = .condition(fact.id) }
                 if !fact.isReviewed {
                     Button("Mark as verified", systemImage: "checkmark.seal") {
                         Task {
@@ -370,9 +469,10 @@ struct HealthSummaryView: View {
 }
 
 private enum HealthSheet: Identifiable {
-    case fact(String), record(Session), add(SummaryEntryCategory), contact(CareTeamMember), combine(String), combineContact(UUID), share
+    case condition(String), fact(String), record(Session), add(SummaryEntryCategory), contact(CareTeamMember), combine(String), combineContact(UUID), share
     var id: String {
         switch self {
+        case .condition(let id): "condition-\(id)"
         case .fact(let id): "fact-\(id)"
         case .record(let session): "record-\(session.id)"
         case .add(let category): "add-\(category.rawValue)"
@@ -389,13 +489,17 @@ struct HealthFactRow: View {
     let fact: HealthFact
     var actions: AnyView? = nil
     var open: (() -> Void)? = nil
+    var statusOverride: String? = nil
+    var showBodySystem = true
     private var isCare: Bool { CareInstructionPresentation.applies(fact.latest) }
     private var title: String {
         if fact.category == .practitionerContact { return PractitionerContactsFormatting.namesOnly(fact.title) ?? HealthStoryText.clean(fact.title) }
         return isCare ? CareInstructionPresentation.instruction(fact.latest) : HealthStoryText.clean(fact.title)
     }
     private var fields: [SummaryEntryField] {
-        HealthDetailPresentation.fields(fact.displayEntry)
+        HealthDetailPresentation.fields(fact.displayEntry).filter {
+            showBodySystem || !["body system", "bodysystem", "body area"].contains($0.label.lowercased())
+        }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -416,7 +520,7 @@ struct HealthFactRow: View {
                 ForEach(HealthDetailPresentation.remainingDetails(fact.displayEntry), id: \.self) { RecordFieldLine(text: $0) }
                 ForEach(fields) { field in RecordFieldLine(label: field.label, value: field.value) }
             }
-            if let body = fact.latest.evidence?.bodySystem ?? fact.latest.fields.first(where: { $0.label.lowercased().contains("body system") })?.value,
+            if showBodySystem, let body = fact.latest.evidence?.bodySystem ?? fact.latest.fields.first(where: { $0.label.lowercased().contains("body system") })?.value,
                !body.isEmpty, !fields.contains(where: { $0.value == body }) { RecordFieldLine(label: "Body area", value: body, secondary: true) }
             if let practitioner = fact.latest.evidence?.practitioner, !practitioner.isEmpty,
                !fields.contains(where: { $0.value == practitioner }) {
@@ -445,7 +549,7 @@ struct HealthFactRow: View {
     }
     @ViewBuilder private var statusTags: some View {
         if fact.category != .practitionerContact {
-            RecordStatusTag(text: CareInstructionPresentation.status(fact))
+            RecordStatusTag(text: statusOverride ?? CareInstructionPresentation.status(fact))
         }
         if fact.isReviewed { RecordStatusTag(text: "Verified") }
         else {
@@ -651,5 +755,64 @@ struct SummaryProcessingIssueView: View {
             Button("Retry unfinished work", systemImage: "arrow.clockwise", action: retry)
                 .frame(minHeight: 44)
         }.padding(.vertical, 4)
+    }
+}
+
+/// Patient correction of condition links; uses existing topic preferences, never folders or source edits.
+private struct ConditionAssignmentSheet: View {
+    let factID: String
+    @ObservedObject var model: HealthSummaryModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var selected = Set<String>()
+    @State private var newName = ""
+    @State private var saving = false
+    @State private var error: String?
+    private var conditions: [ConditionSummary] {
+        ConditionSummaryProjection.groups(facts: model.facts, topics: model.snapshot.topics).filter { !$0.isUncategorized }
+    }
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("Choose only conditions this detail relates to. Leaving all choices off keeps it Uncategorized.")
+                    ForEach(conditions) { condition in
+                        Toggle(condition.name, isOn: Binding(get: { selected.contains(condition.id) }, set: {
+                            if $0 { selected.insert(condition.id) } else { selected.remove(condition.id) }
+                        }))
+                    }
+                    TextField("Another condition or concern", text: $newName)
+                }
+                if let error { Text(error).foregroundStyle(.red) }
+            }
+            .navigationTitle("Assign condition")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { Task { await save() } }.disabled(saving)
+                }
+            }
+            .task { selected = Set(conditions.filter { $0.facts.contains { $0.id == factID } }.map(\.id)) }
+        }
+    }
+    private func save() async {
+        guard let fact = model.facts.first(where: { $0.id == factID }) else { return }
+        saving = true
+        defer { saving = false }
+        var links: [UUID] = []
+        var choices = conditions.filter { selected.contains($0.id) }.map { ($0.name, $0.bodySystem) }
+        let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty { choices.append((name, "")) }
+        for (name, system) in choices {
+            let topic = model.snapshot.topics.first {
+                ConditionSummaryProjection.normalized($0.name) == ConditionSummaryProjection.normalized(name) &&
+                ConditionSummaryProjection.normalized($0.bodySystem) == ConditionSummaryProjection.normalized(system)
+            } ?? HealthTopic(name: name, bodySystem: system)
+            guard await model.save(topic) else { error = "The condition could not be saved. Please try again."; return }
+            links.append(topic.id)
+        }
+        var preference = fact.preference
+        preference.topicIDs = Array(Set(links))
+        if await model.save(preference) { dismiss() }
+        else { error = "The condition link could not be saved. Please try again." }
     }
 }
