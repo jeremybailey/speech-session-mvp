@@ -1,617 +1,252 @@
 import SwiftUI
 import SpeechSessionFeatures
 import SpeechSessionPersistence
+import SpeechSessionTranscription
 
 struct SessionDetailView: View {
+    let initialSession: Session
     let store: SessionStore
     @ObservedObject var home: HomeViewModel
-
-    /// Mutable local copy so we can persist the generated title and summary back to the store.
-    @State private var localSession: Session
-
-    @EnvironmentObject private var kindeAuth: KindeAuthManager
-    @AppStorage("speechSession.openaiAPIKey") private var openAIAPIKey = ""
-    @AppStorage("speechSession.summaryBackend") private var summaryBackendRaw = "openai"
-
-    @State private var selectedTab: DetailTab = .summary
-    @State private var summaryState: SummaryState = .idle
-    @State private var storageDirectory: URL?
-    @State private var sourceHighlightExcerpt: String?
-    @State private var sourceShareableURL: URL?
+    @EnvironmentObject private var health: HealthSummaryModel
+    @EnvironmentObject private var auth: KindeAuthManager
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("speechSession.transcriptionBackend") private var transcriptionBackend = TranscriptionBackend.onDeviceWhisperKit.rawValue
+    @AppStorage("speechSession.whisperKitModel") private var whisperModel = DeviceCapabilityProfile.tinyWhisperKitModel
+    @AppStorage("speechSession.openaiAPIKey") private var apiKey = ""
+    @AppStorage("speechSession.summaryBackend") private var summaryBackend = "openai"
+    @AppStorage("collectivecare.cloudSummaryConsent") private var cloudSummaryConsent = false
+    @State private var summaryConsent = false
+    @State private var resumeAfterConsent = false
+    @State private var summaryTask: Task<Void, Never>?
+    @State private var directory: URL?
+    @State private var shareableURL: URL?
+    @State private var transcriptionConsent = false
+    @State private var retrying = false
+    @State private var confirmDelete = false
+    @State private var localError: String?
+    @State private var selectedTab: DetailTab
+    @State private var expandedCategories: Set<SummaryEntryCategory> = []
+    @State private var editingFact: RecordFactSelection?
+    let sourceHighlightExcerpt: String?
 
     init(session: Session, store: SessionStore, home: HomeViewModel, initialTab: DetailTab = .summary, sourceHighlightExcerpt: String? = nil) {
-        self.store = store
-        self.home = home
-        _localSession = State(initialValue: session)
+        self.initialSession = session; self.store = store; self.home = home
+        self.sourceHighlightExcerpt = sourceHighlightExcerpt
         _selectedTab = State(initialValue: initialTab)
-        _sourceHighlightExcerpt = State(initialValue: sourceHighlightExcerpt)
     }
 
+    private var session: Session {
+        health.snapshot.sessions.first { $0.id == initialSession.id } ?? home.sessions.first { $0.id == initialSession.id } ?? initialSession
+    }
+    private var recordFacts: [HealthFact] {
+        health.facts.compactMap { $0.presentedFromRecord(session.id) }
+    }
     var body: some View {
         VStack(spacing: 0) {
-            Picker("View", selection: $selectedTab) {
+            Picker("Record view", selection: $selectedTab) {
                 Text("Summary").tag(DetailTab.summary)
-                Text("Source").tag(DetailTab.source)
-                Text("Transcript").tag(DetailTab.transcript)
+                Text("Original").tag(DetailTab.source)
+                Text(session.inputType == .audio ? "Transcript" : "Text").tag(DetailTab.transcript)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)
             .padding(.vertical, 10)
-
             Divider()
-
             switch selectedTab {
-            case .summary:
-                summaryTab
+            case .summary: recordSummary
             case .source:
-                sourceTab
+                if let directory {
+                    SessionSourceView(session: session, storageDirectory: directory,
+                                      highlightedExcerpt: sourceHighlightExcerpt, shareableFileURL: $shareableURL)
+                } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
             case .transcript:
-                transcriptTab
+                ScrollView {
+                    Text(session.transcript.isEmpty ? "No text available yet." : session.transcript)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .textSelection(.enabled)
+                }
             }
         }
-        .background(BrandPalette.canvas.ignoresSafeArea())
-        .navigationTitle(localSession.title ?? localSession.date.formatted(date: .abbreviated, time: .shortened))
+        .safeAreaInset(edge: .bottom) {
+            if retrying {
+                HStack { ProgressView(); Text("Reading your original…") }.padding().background(.regularMaterial)
+            } else if session.processingError != nil || session.transcript.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(session.processingError ?? "Your original is saved. Its text is not ready yet.")
+                        .font(.subheadline)
+                    Button("Read original again") { requestTranscription() }
+                        .buttonStyle(.borderedProminent)
+                }.frame(maxWidth: .infinity).padding().background(.regularMaterial)
+            }
+        }
+        .navigationTitle(session.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
+                if let shareableURL {
+                    ShareLink(item: shareableURL) { Label("Share original", systemImage: "square.and.arrow.up") }
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Section("Move to folder") {
-                        Button("Unfiled") {
-                            Task { await moveSession(to: nil) }
-                        }
-                        .disabled(localSession.folderID == nil)
-                        ForEach(home.folders) { folder in
-                            Button(folder.name) {
-                                Task { await moveSession(to: folder.id) }
+                    Button("Regenerate summary", systemImage: "arrow.clockwise") {
+                        if summaryBackend == "onDevice" || cloudSummaryConsent { regenerate() }
+                        else { summaryConsent = true }
+                    }.disabled(health.isProcessing || session.transcript.isEmpty)
+                    if health.isProcessing { Button("Cancel regeneration") { summaryTask?.cancel() } }
+                } label: { Image(systemName: "ellipsis") }.accessibilityLabel("Record actions")
+            }
+            ToolbarItem(placement: .bottomBar) {
+                Button("Delete record", role: .destructive) { confirmDelete = true }
+                    .disabled(retrying)
+            }
+        }
+        .confirmationDialog("Check your summary using cloud processing?", isPresented: $summaryConsent, titleVisibility: .visible) {
+            Button("Use cloud processing") { cloudSummaryConsent = true; regenerate() }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("Text from this record will be sent through CollectiveCare’s service to OpenAI for summarization and verification.") }
+        .task { directory = await store.storageDirectory; await health.refresh() }
+        .sheet(item: $editingFact) { selection in
+            NavigationStack {
+                HealthFactDetailView(factID: selection.factID, preferredEntryID: selection.entryID, sourceOnlyEntry: selection.sourceOnlyEntry,
+                                     model: health, home: home, store: store)
+            }
+        }
+        .confirmationDialog("Transcribe this audio", isPresented: $transcriptionConsent, titleVisibility: .visible) {
+            Button("Use cloud transcription") { Task { await retrySource() } }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("The saved audio will be sent through CollectiveCare’s service to OpenAI for transcription.") }
+        .confirmationDialog("Delete this record and its original files?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Delete record", role: .destructive) {
+                Task {
+                    await home.delete(session: session)
+                    if home.errorMessage == nil { await health.refresh(); dismiss() }
+                }
+            }
+        } message: { Text("This removes the recording or document and the summary details created from it.") }
+        .alert("Record processing", isPresented: Binding(get: { localError != nil }, set: { if !$0 { localError = nil } })) {
+            Button("OK") { localError = nil }
+        } message: { Text(localError ?? "") }
+    }
+
+    private var recordSummary: some View {
+        let grouped = Dictionary(grouping: recordFacts, by: \.category)
+        let categories = SummaryEntryCategory.allCases.filter { grouped[$0]?.isEmpty == false }
+        return List {
+            if health.isProcessing { HStack { ProgressView(); Text(health.progress) } }
+            if !health.isProcessing, let issue = health.processingIssue {
+                SummaryProcessingIssueView(issue: issue, retry: { regenerate(retryUnfinished: true) })
+            }
+            if let error = health.error { Text(error).foregroundStyle(.secondary) }
+            let excluded = (session.summaryEntries ?? []).filter { !$0.isDeleted && !SummaryVerification.isVisible($0, source: session.transcript) }
+            if !excluded.isEmpty {
+                DisclosureGroup("Details kept in original (\(excluded.count))") {
+                    Text(health.isProcessing ? "These are results from the previous check. They will update when processing finishes." : "These details have not passed source checking. They are not included in your health story or shared summary.").font(.subheadline)
+                    ForEach(excluded) { entry in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(entry.title).font(.headline)
+                            Text(SummaryVerification.exclusionReason(entry, source: session.transcript)).font(.caption).foregroundStyle(.secondary)
+                            Button("Edit and add to health story") {
+                                editingFact = RecordFactSelection(factID: HealthMemoryProjection.key(for: entry), entryID: entry.id, sourceOnlyEntry: entry)
                             }
-                            .disabled(localSession.folderID == folder.id)
                         }
+                    }
+                }
+            }
+            if categories.isEmpty {
+                ContentUnavailableView("No health details yet", systemImage: "heart.text.square",
+                    description: Text("This record has no summary details to show."))
+            }
+            ForEach(categories, id: \.self) { category in
+                let facts = grouped[category] ?? []
+                DisclosureGroup(isExpanded: Binding(
+                    get: { expandedCategories.contains(category) },
+                    set: { if $0 { expandedCategories.insert(category) } else { expandedCategories.remove(category) } }
+                )) {
+                    ForEach(facts) { fact in
+                        HealthFactRow(fact: fact, open: {
+                            editingFact = RecordFactSelection(factID: fact.id, entryID: fact.latest.id)
+                        })
+                        .padding(.vertical, 8)
                     }
                 } label: {
-                    Image(systemName: "folder")
+                    HStack(spacing: 12) {
+                        SummaryCategoryIcon(title: category.displayTitle).accessibilityHidden(true)
+                        Text(category.displayTitle).font(.headline)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(facts.count.formatted()).foregroundStyle(.secondary)
+                            .accessibilityLabel("\(facts.count) details")
+                    }.frame(minHeight: 48)
                 }
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                if selectedTab == .summary, let item = sharePDFItem {
-                    ShareLink(
-                        item: item,
-                        preview: SharePreview(sharePreviewTitle, image: Image(systemName: "doc.richtext"))
-                    ) {
-                        Image(systemName: "square.and.arrow.up")
-                    }
-                } else if selectedTab == .source, let url = sourceShareableURL {
-                    ShareLink(
-                        item: url,
-                        preview: SharePreview(url.lastPathComponent, image: Image(systemName: "doc"))
-                    ) {
-                        Image(systemName: "square.and.arrow.up")
-                    }
-                } else if let payload = textSharePayload {
-                    ShareLink(item: payload.text, subject: Text(payload.subject)) {
-                        Image(systemName: "square.and.arrow.up")
-                    }
-                }
-            }
-        }
-        // Start generating the summary immediately in the background when this view appears.
-        // If a cached summary exists it returns instantly; otherwise it runs silently while
-        // the user reads the transcript so there's no wait when they switch to the Summary tab.
-        .task {
-            storageDirectory = await store.storageDirectory
-            if let cached = localSession.summary {
-                await ensureAtomicEntriesFromLegacyIfNeeded(markdown: cached)
-                summaryState = .loaded(cached)
-            } else {
-                await loadSummary()
-            }
-        }
-        // When the user switches to the summary tab, surface whatever state we're in.
-        .task(id: selectedTab) {
-            guard selectedTab == .summary else { return }
-            if let cached = localSession.summary, case .idle = summaryState {
-                summaryState = .loaded(cached)
-            }
-            // If already loading or loaded, the existing summaryState drives the UI — no action needed.
-        }
+        }.listStyle(.insetGrouped)
     }
 
-    // MARK: - Transcript Tab
-
-    private var transcriptTab: some View {
-        ScrollView {
-            Text(localSession.transcript.isEmpty ? "(No transcript recorded)" : localSession.transcript)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .liquidGlassCard(cornerRadius: 14)
-                .padding()
-        }
-    }
-
-    // MARK: - Source Tab
-
-    @ViewBuilder
-    private var sourceTab: some View {
-        if let storageDirectory {
-            SessionSourceView(
-                session: localSession,
-                storageDirectory: storageDirectory,
-                highlightedExcerpt: sourceHighlightExcerpt,
-                shareableFileURL: $sourceShareableURL
-            )
-        } else {
-            ProgressView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-
-    // MARK: - Summary Tab
-
-    @ViewBuilder
-    private var summaryTab: some View {
-        switch summaryState {
-        case .idle:
-            Color.clear
-        case .loading:
-            VStack {
-                Spacer()
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Generating medical summary…")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(28)
-                .frame(maxWidth: .infinity)
-                .liquidGlassCard(cornerRadius: 16)
-                .padding(.horizontal, 20)
-                Spacer()
-            }
-            .frame(maxWidth: .infinity)
-        case .loaded(let text):
-            ScrollView {
-                Group {
-                    if !activeSummaryEntries.isEmpty {
-                        AtomicSummaryCardsView(
-                            entries: activeSummaryEntries,
-                            onSave: { entry in Task { await saveSummaryEntry(entry) } },
-                            onDelete: { entry in Task { await deleteSummaryEntry(entry) } },
-                            onAdd: { category in Task { await addSummaryEntry(category: category) } },
-                            onViewSource: { entry in
-                                sourceHighlightExcerpt = entry.sourceExcerpt
-                                selectedTab = .source
-                            }
-                        )
-                        .padding(.vertical)
-                    } else {
-                        SummaryCardsView(text: text)
-                            .padding(.vertical)
-                    }
-                }
-                .padding(.bottom, 28)
-            }
-            .scrollDismissesKeyboard(.interactively)
-        case .failed(let message):
-            VStack {
-                Spacer()
-                VStack(spacing: 16) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 40))
-                        .foregroundStyle(.secondary)
-                    Text(message)
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.secondary)
-                    Button("Try Again") {
-                        summaryState = .idle
-                        Task { await loadSummary() }
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                .padding(28)
-                .frame(maxWidth: .infinity)
-                .liquidGlassCard(cornerRadius: 16)
-                .padding(.horizontal, 20)
-                Spacer()
-            }
-            .frame(maxWidth: .infinity)
-        }
-    }
-
-    private func moveSession(to folderID: UUID?) async {
-        localSession.folderID = folderID
-        try? await store.upsert(localSession)
-        await home.loadSessions()
-    }
-
-    private var activeSummaryEntries: [SummaryEntry] {
-        (localSession.summaryEntries ?? []).filter { !$0.isDeleted }
-    }
-
-    private func ensureAtomicEntriesFromLegacyIfNeeded(markdown: String) async {
-        guard (localSession.summaryEntries ?? []).isEmpty else { return }
-        let imported = SummaryEntryFactory.legacyEntries(from: markdown, session: localSession)
-        guard !imported.isEmpty else { return }
-        localSession.summaryEntries = imported
-        try? await store.upsert(localSession)
-        await home.loadSessions()
-    }
-
-    private func saveSummaryEntry(_ entry: SummaryEntry) async {
-        var entries = localSession.summaryEntries ?? []
-        if let index = entries.firstIndex(where: { $0.id == entry.id }) {
-            entries[index] = entry
-        } else {
-            entries.append(entry)
-        }
-        localSession.summaryEntries = entries
-        try? await store.upsert(localSession)
-        await home.loadSessions()
-    }
-
-    private func deleteSummaryEntry(_ entry: SummaryEntry) async {
-        var entries = localSession.summaryEntries ?? []
-        if let index = entries.firstIndex(where: { $0.id == entry.id })
-            ?? entries.firstIndex(where: {
-                !$0.isDeleted
-                    && $0.category == entry.category
-                    && $0.title == entry.title
-                    && $0.details == entry.details
-            }) {
-            entries[index].isDeleted = true
-            entries[index].updatedAt = Date()
-            entries[index].origin = .userEdited
-        } else {
-            var deleted = entry
-            deleted.isDeleted = true
-            deleted.updatedAt = Date()
-            deleted.origin = .userEdited
-            entries.append(deleted)
-        }
-        localSession.summaryEntries = entries
-        try? await store.upsert(localSession)
-        await home.loadSessions()
-    }
-
-    private func addSummaryEntry(category: SummaryEntryCategory) async {
-        let now = Date()
-        let entry = SummaryEntry(
-            category: category,
-            title: "",
-            details: "",
-            fields: SummaryEntryFactory.fieldsForNewUserEntry(category: category),
-            relevantDate: nil,
-            dateNeedsReview: true,
-            sourceSessionID: localSession.id,
-            sourceTitle: localSession.title,
-            sourceDate: localSession.date,
-            provenance: "User-added detail",
-            needsReview: true,
-            reviewReason: "Add missing details and the actual relevant date.",
-            origin: .userAdded,
-            createdAt: now,
-            updatedAt: now
-        )
-        var entries = localSession.summaryEntries ?? []
-        entries.append(entry)
-        localSession.summaryEntries = entries
-        try? await store.upsert(localSession)
-        await home.loadSessions()
-    }
-
-    // MARK: - Share
-
-    /// Plain-text export kept for fallback — summary tab shares PDF via ``sharePDFItem``.
-    private var textSharePayload: (text: String, subject: String)? {
-        let dateLabel = localSession.date.formatted(date: .abbreviated, time: .shortened)
-        let sessionLabel = localSession.title ?? dateLabel
-
-        switch selectedTab {
-        case .source:
-            return nil
-
-        case .transcript:
-            let transcript = localSession.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !transcript.isEmpty else { return nil }
-            return (text: transcript, subject: "\(sessionLabel) — Transcript")
-
-        case .summary:
-            guard case .loaded(let text) = summaryState else { return nil }
-            let atomicText = atomicShareText().trimmingCharacters(in: .whitespacesAndNewlines)
-            let summary = atomicText.isEmpty ? text.trimmingCharacters(in: .whitespacesAndNewlines) : atomicText
-            guard !summary.isEmpty else { return nil }
-            return (text: summary, subject: "\(sessionLabel) — Medical Summary")
-        }
-    }
-
-    private var sharePreviewTitle: String {
-        let dateLabel = localSession.date.formatted(date: .abbreviated, time: .shortened)
-        let sessionLabel = localSession.title ?? dateLabel
-        return "\(sessionLabel) — Medical Summary"
-    }
-
-    private var sharePDFItem: SummaryPDFShareItem? {
-        guard selectedTab == .summary else { return nil }
-        guard case .loaded = summaryState else { return nil }
-
-        let entries = activeSummaryEntries
-        var legacy: [(title: String, content: String)] = []
-        if entries.isEmpty, case .loaded(let markdown) = summaryState {
-            let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                legacy = [("Summary", trimmed)]
-            }
-        }
-
-        let dateLabel = localSession.date.formatted(date: .abbreviated, time: .shortened)
-        let sessionLabel = localSession.title ?? dateLabel
-
-        guard let document = SummaryPDFDocumentBuilder.build(
-            title: sessionLabel,
-            subtitle: "Medical Summary · \(dateLabel)",
-            overview: nil,
-            entries: entries,
-            legacySections: legacy,
-            timelineSessions: [localSession]
-        ) else { return nil }
-
-        return SummaryPDFShareItem(document: document)
-    }
-
-    private func atomicShareText() -> String {
-        let entries = activeSummaryEntries
-        guard !entries.isEmpty else { return "" }
-        var parts: [String] = []
-        for category in SummaryEntryCategory.allCases {
-            let matches = entries.filter { $0.category == category }
-            guard !matches.isEmpty else { continue }
-            parts.append(category.displayTitle.uppercased())
-            for entry in matches {
-                let date = entry.relevantDate?.formatted(date: .abbreviated, time: .omitted) ?? "Date missing"
-                let line = [entry.title, entry.details].filter { !$0.isEmpty }.joined(separator: " — ")
-                parts.append("• \(date): \(line)")
-                if !entry.provenance.isEmpty {
-                    parts.append("  Source: \(entry.provenance)")
-                }
-            }
-            parts.append("")
-        }
-        return parts.joined(separator: "\n")
-    }
-
-    // MARK: - Summary Generation
-
-    /// Minimum word count before we'll attempt summarization.
-    /// Below this the model has too little context and will hallucinate structure.
-    private static let minimumWordCount = 30
-
-    private func loadSummary() async {
-        guard case .idle = summaryState else { return }
-
-        let transcript = localSession.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        let wordCount = transcript.split(separator: " ").count
-
-        guard !transcript.isEmpty else {
-            summaryState = .failed("No transcript was recorded.")
+    private func regenerate(retryUnfinished: Bool = false) {
+        let resume = retryUnfinished || resumeAfterConsent
+        if summaryBackend != "onDevice" && !cloudSummaryConsent {
+            resumeAfterConsent = resume
+            summaryConsent = true
             return
         }
-        guard wordCount >= Self.minimumWordCount else {
-            let tail = localSession.entryIntent == .personalJournal
-                ? "Speak or type more detail and try again."
-                : "Record a full appointment and try again."
-            summaryState = .failed(
-                "The recording is too short to summarize reliably (\(wordCount) word\(wordCount == 1 ? "" : "s") captured). "
-                    + tail
-            )
-            return
-        }
-
-        summaryState = .loading
-
-        // Route to the selected backend.
-        if summaryBackendRaw == "onDevice" {
-            if isOnDeviceSummaryAvailable {
-                await loadSummaryOnDevice()
-            } else {
-                summaryBackendRaw = "openai"
-                await loadSummaryOpenAI()
-            }
-            return
-        }
-        await loadSummaryOpenAI()
-    }
-
-    // MARK: On-device summary (Apple Intelligence, iOS 26.0+)
-
-    private func loadSummaryOnDevice() async {
-        guard #available(iOS 26.0, *) else {
-            summaryState = .failed("On-device summaries require iOS 26.0 or later.")
-            return
-        }
-        guard OnDeviceSummaryService.isAvailable else {
-            summaryState = .failed(OnDeviceSummaryService.unavailabilityReason)
-            return
-        }
-        do {
-            let service = OnDeviceSummaryService()
-        let contentKind: SummaryContentKind
-        if localSession.entryIntent == .personalJournal {
-            contentKind = .personalJournal
-        } else if localSession.inputType == .audio {
-            contentKind = .visitEncounter
-        } else {
-            do {
-                contentKind = try await service.classifyTranscript(localSession.transcript)
-            } catch {
-                contentKind = .mixedOther
-            }
-        }
-            let fields = try await service.generateFields(
-                transcript: localSession.transcript,
-                contentKind: contentKind
-            )
-            let defaultTitle = localSession.date.formatted(date: .abbreviated, time: .shortened)
-            guard applyGeneratedFields(fields, defaultTitle: defaultTitle) else {
-                summaryState = .failed("The model returned an empty summary. Try again.")
-                return
-            }
-            let sessionToSave = localSession
-            try? await store.upsert(sessionToSave)
+        resumeAfterConsent = false
+        summaryTask = Task {
+            let transport = summaryBackend == "onDevice" ? nil : await auth.openAIChatTransport(byokFallback: apiKey)
+            await health.prepareSummaries(transport: transport, onDevice: summaryBackend == "onDevice", forceSessionID: session.id, retryUnfinished: resume)
             await home.loadSessions()
-            summaryState = .loaded(localSession.summary ?? "")
-        } catch {
-            summaryState = error is CancellationError ? .idle : .failed(error.localizedDescription)
         }
     }
 
-    private func applyGeneratedFields(_ fields: VisitSummaryFields, defaultTitle: String) -> Bool {
-        guard let (titleText, summaryText) = fields.resolved(defaultTitle: defaultTitle) else {
-            return false
-        }
-        localSession.summary = summaryText
-        if !titleText.isEmpty { localSession.title = titleText }
-        let generated = SummaryEntryFactory.entries(from: fields, session: localSession)
-        localSession.summaryEntries = SummaryEntryMerge.merging(
-            generated: generated,
-            existing: localSession.summaryEntries
-        )
-        return true
+    private func requestTranscription() {
+        if session.inputType == .audio && transcriptionBackend == TranscriptionBackend.openAIWhisper.rawValue {
+            transcriptionConsent = true
+        } else { Task { await retrySource() } }
     }
-
-    private var isOnDeviceSummaryAvailable: Bool {
-        if #available(iOS 26.0, *) {
-            return OnDeviceSummaryService.isAvailable
-        }
-        return false
-    }
-
-    // MARK: OpenAI summary
-
-    private static var cloudOpenAINotConfiguredMessage: String {
-        var s = """
-        Sign in under Settings → Account to use cloud summaries. Your organization must configure the API endpoint. \
-        Session data stays on this device; only the transcript is sent for summarization.
-        """
-        #if DEBUG
-        s += " In debug builds you can paste an OpenAI API key in Settings."
-        #endif
-        return s
-    }
-
-    private func loadSummaryOpenAI() async {
-        guard let transport = await kindeAuth.openAIChatTransport(byokFallback: openAIAPIKey) else {
-            summaryState = .failed(Self.cloudOpenAINotConfiguredMessage)
-            return
-        }
-
-        let contentKind: SummaryContentKind
-        if localSession.entryIntent == .personalJournal {
-            contentKind = .personalJournal
-        } else if localSession.inputType == .audio {
-            contentKind = .visitEncounter
-        } else {
-            do {
-                contentKind = try await OpenAISummaryContentClassifier.classify(
-                    transcript: localSession.transcript,
-                    transport: transport
-                )
-            } catch {
-                contentKind = .mixedOther
-            }
-        }
-
-        let (systemPrompt, userPrefix) = SummaryPromptAssembly.openAISummaryPrompts(contentKind: contentKind)
-        let userPrompt = userPrefix + localSession.transcript
-
-        struct Msg: Encodable { let role: String; let content: String }
-        struct ResponseFormat: Encodable { let type: String }
-        struct ChatRequest: Encodable {
-            let model: String
-            let messages: [Msg]
-            let response_format: ResponseFormat
-            let max_tokens: Int
-            let temperature: Double
-        }
-        struct RespMsg: Decodable { let content: String? }
-        struct Choice: Decodable { let message: RespMsg }
-        struct ChatResponse: Decodable { let choices: [Choice] }
-        struct APIErr: Decodable { struct Err: Decodable { let message: String? }; let error: Err? }
-
-        var req = URLRequest(url: transport.chatCompletionsURL)
-        req.httpMethod = "POST"
+    private func retrySource() async {
+        guard !retrying, let directory else { return }
+        retrying = true
+        defer { retrying = false }
         do {
-            req.setValue(try await transport.makeAuthorizationHeader(), forHTTPHeaderField: "Authorization")
+            let source = SessionSourceStore(storageDirectory: directory)
+            let assets = session.sourceAssets ?? []
+            guard !assets.isEmpty else { throw SummaryProcessingError.unavailable("This older record has no saved original file.") }
+            let text: String
+            if session.inputType == .audio {
+                let url = source.url(for: assets[0], sessionID: session.id)
+                switch TranscriptionBackend(rawValue: transcriptionBackend) ?? .onDeviceApple {
+                case .onDeviceApple: text = try await AudioFileTranscriptionService.transcribeWithAppleSpeech(fileURL: url)
+                case .onDeviceWhisperKit: text = try await AudioFileTranscriptionService.transcribeWithWhisperKit(fileURL: url, modelName: whisperModel)
+                case .openAIWhisper:
+                    guard let credentials = await auth.openAIWhisperCredentials(byokKey: apiKey) else { throw SummaryProcessingError.unavailable("Sign in in Settings to transcribe with OpenAI.") }
+                    text = try await AudioFileTranscriptionService.transcribeWithOpenAIWhisper(fileURL: url, credentials: credentials)
+                }
+            } else if assets[0].kind == .pdf || assets[0].kind == .plainText {
+                text = try await DocumentFileExtractService().extractText(from: source.url(for: assets[0], sessionID: session.id))
+            } else {
+                let urls = assets.sorted { ($0.pageIndex ?? 0) < ($1.pageIndex ?? 0) }.map { source.url(for: $0, sessionID: session.id) }
+                let images = urls.compactMap { UIImage(contentsOfFile: $0.path) }
+                text = try await DocumentScanService().transcribe(images: images)
+            }
+            try await store.updateTranscript(sessionID: session.id, transcript: text, error: nil)
+            await home.loadSessions(); await health.refresh()
         } catch {
-            summaryState = .failed(error.localizedDescription)
-            return
-        }
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.timeoutInterval = 60
-
-        let body = ChatRequest(
-            model: "gpt-4o-mini",
-            messages: [
-                Msg(role: "system", content: systemPrompt),
-                Msg(role: "user", content: userPrompt)
-            ],
-            response_format: ResponseFormat(type: "json_object"),
-            max_tokens: 2200,
-            temperature: 0
-        )
-
-        do {
-            req.httpBody = try JSONEncoder().encode(body)
-            let (data, response) = try await URLSession.shared.data(for: req)
-
-            guard let http = response as? HTTPURLResponse else {
-                summaryState = .failed("Invalid server response.")
-                return
+            localError = error.localizedDescription
+            if let partial = error as? PartialAudioTranscriptionError, !partial.transcript.isEmpty {
+                do {
+                    try await store.updateTranscript(sessionID: session.id, transcript: partial.transcript, error: partial.localizedDescription)
+                    await home.loadSessions(); await health.refresh()
+                } catch { localError = "The partial transcription could not be saved. Your original audio is unchanged." }
             }
-            guard (200...299).contains(http.statusCode) else {
-                let msg = (try? JSONDecoder().decode(APIErr.self, from: data))?.error?.message
-                summaryState = .failed(msg ?? "Server error (\(http.statusCode)). Try signing in again under Settings.")
-                return
-            }
-
-            guard
-                let chatResponse = try? JSONDecoder().decode(ChatResponse.self, from: data),
-                let content = chatResponse.choices.first?.message.content
-            else {
-                summaryState = .failed("Could not parse summary response. Try again.")
-                return
-            }
-
-            guard let fields = VisitSummaryJSONParser.fields(fromAssistantContent: content) else {
-                summaryState = .failed("Could not parse summary JSON. Try again.")
-                return
-            }
-            let defaultTitle = localSession.date.formatted(date: .abbreviated, time: .shortened)
-            guard applyGeneratedFields(fields, defaultTitle: defaultTitle) else {
-                summaryState = .failed("The model returned an empty summary. Try again.")
-                return
-            }
-
-            let sessionToSave = localSession
-            try? await store.upsert(sessionToSave)
-            await home.loadSessions()
-
-            summaryState = .loaded(localSession.summary ?? "")
-
-        } catch {
-            summaryState = error is CancellationError ? .idle : .failed(error.localizedDescription)
         }
     }
 }
 
-// MARK: - Supporting Types
+enum DetailTab: Hashable { case summary, source, transcript }
 
-enum DetailTab: Hashable {
-    case summary, source, transcript
+private struct RecordFactSelection: Identifiable {
+    let factID: String
+    let entryID: UUID
+    var sourceOnlyEntry: SummaryEntry? = nil
+    var id: String { "\(factID)|\(entryID)" }
 }
-
-private enum SummaryState {
-    case idle
-    case loading
-    case loaded(String)
-    case failed(String)
-}
-
-// SummaryCardsView and SummaryCategoryCard now live in SummaryCardView.swift

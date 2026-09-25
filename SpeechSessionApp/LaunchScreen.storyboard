@@ -6,6 +6,7 @@
         <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="23506"/>
         <capability name="Safe area layout guides" minToolsVersion="9.0"/>
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+        <capability name="System colors in document resources" minToolsVersion="11.0"/>
     </dependencies>
     <scenes>
         <scene sceneID="launchScene">
@@ -15,20 +16,34 @@
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="CollectiveCare" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="brandLabel">
-                                <rect key="frame" x="48" y="411" width="297" height="38"/>
-                                <fontDescription key="fontDescription" name="Helvetica-Bold" family="Helvetica" pointSize="32"/>
-                                <color key="textColor" red="0.94901960784313721" green="0.78823529411764703" blue="0.8901960784313725" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
-                                <nil key="highlightedColor"/>
-                            </label>
+                            <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" alignment="center" spacing="18" translatesAutoresizingMaskIntoConstraints="NO" id="brandStack">
+                                <rect key="frame" x="48" y="355" width="297" height="110"/>
+                                <subviews>
+                                    <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="heart.fill" catalog="system" translatesAutoresizingMaskIntoConstraints="NO" id="brandHeart">
+                                        <rect key="frame" x="116.5" y="0.0" width="64" height="54"/>
+                                        <color key="tintColor" red="0.85882352941176465" green="0.31372549019607843" blue="0.29019607843137257" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                        <constraints>
+                                            <constraint firstAttribute="width" constant="64" id="heartW"/>
+                                            <constraint firstAttribute="height" constant="56" id="heartH"/>
+                                        </constraints>
+                                        <preferredSymbolConfiguration key="preferredSymbolConfiguration" configurationType="pointSize" pointSize="48" scale="large" weight="semibold"/>
+                                    </imageView>
+                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="CollectiveCare" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="brandLabel">
+                                        <rect key="frame" x="0.0" y="74" width="297" height="36"/>
+                                        <fontDescription key="fontDescription" name="Helvetica-Bold" family="Helvetica" pointSize="30"/>
+                                        <color key="textColor" red="0.28235294117647058" green="0.23921568627450981" blue="0.24705882352941178" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                        <nil key="highlightedColor"/>
+                                    </label>
+                                </subviews>
+                            </stackView>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="launchSafeArea"/>
-                        <color key="backgroundColor" red="0.2196078431372549" green="0.14117647058823529" blue="0.29019607843137257" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <color key="backgroundColor" red="1" green="0.93333333333333335" blue="0.81176470588235294" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
-                            <constraint firstItem="brandLabel" firstAttribute="centerX" secondItem="launchRootView" secondAttribute="centerX" id="centerXLabel"/>
-                            <constraint firstItem="brandLabel" firstAttribute="centerY" secondItem="launchSafeArea" secondAttribute="centerY" id="centerYLabel"/>
-                            <constraint firstItem="brandLabel" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="launchSafeArea" secondAttribute="leading" constant="24" id="leadingMin"/>
-                            <constraint firstItem="launchSafeArea" firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="brandLabel" secondAttribute="trailing" constant="24" id="trailingMin"/>
+                            <constraint firstItem="brandStack" firstAttribute="centerX" secondItem="launchRootView" secondAttribute="centerX" id="centerXStack"/>
+                            <constraint firstItem="brandStack" firstAttribute="centerY" secondItem="launchSafeArea" secondAttribute="centerY" id="centerYStack"/>
+                            <constraint firstItem="brandStack" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="launchSafeArea" secondAttribute="leading" constant="24" id="leadingMin"/>
+                            <constraint firstItem="launchSafeArea" firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="brandStack" secondAttribute="trailing" constant="24" id="trailingMin"/>
                         </constraints>
                     </view>
                 </viewController>
@@ -37,4 +52,7 @@
             <point key="canvasLocation" x="53" y="375"/>
         </scene>
     </scenes>
+    <resources>
+        <image name="heart.fill" catalog="system" width="32" height="28"/>
+    </resources>
 </document>

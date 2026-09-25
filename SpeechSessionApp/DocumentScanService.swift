@@ -24,21 +24,16 @@ struct DocumentScanService {
         }
 
         var pages: [String] = []
-
-        for image in images {
-            let pageText = try await recognizeText(in: image)
-            if !pageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                pages.append(pageText)
-            }
+        var readablePages = 0
+        for (index, image) in images.enumerated() {
+            try Task.checkCancellation()
+            let pageText = (try? await recognizeText(in: image)) ?? ""
+            let readable = !pageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if readable { readablePages += 1 }
+            pages.append("--- Page \(index + 1) ---\n" + (readable ? pageText : "[Text unavailable for this page]"))
         }
-
-        guard !pages.isEmpty else {
-            throw DocumentScanError.noTextFound
-        }
-
-        return pages.enumerated().map { i, text in
-            pages.count > 1 ? "--- Page \(i + 1) ---\n\(text)" : text
-        }.joined(separator: "\n\n")
+        guard readablePages > 0 else { throw DocumentScanError.noTextFound }
+        return pages.joined(separator: "\n\n")
     }
 
     // MARK: - Per-image OCR

@@ -912,7 +912,7 @@ private struct SummaryEntryEditor: View {
     }
 }
 
-private struct SummaryCategoryIcon: View {
+struct SummaryCategoryIcon: View {
     let title: String
 
     var body: some View {
@@ -927,6 +927,7 @@ private struct SummaryCategoryIcon: View {
     }
 
     private var icon: String {
+        if title == "Original records" { return "tray.full.fill" }
         let l = title.lowercased()
         if l.contains("care team") || l.contains("practitioner") || (l.contains("provider") && l.contains("contact")) {
             return "person.2.fill"
@@ -1128,9 +1129,12 @@ struct SessionSourceView: View {
                     if let asset = selectedAsset {
                         assetViewer(for: asset)
                     }
-                } else {
-                    transcriptFallback
                 }
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(session.inputType == .audio ? "Transcript" : "Extracted text").font(.headline)
+                    transcriptFallback.textSelection(.enabled)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding()
         }

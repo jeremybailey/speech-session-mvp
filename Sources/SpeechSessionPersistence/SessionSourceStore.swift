@@ -6,7 +6,7 @@ public enum SessionSourceStoreError: Error, Equatable, Sendable {
 }
 
 /// Persists original session source files under `{storageDirectory}/sources/{sessionID}/`.
-public struct SessionSourceStore: Sendable {
+public struct SessionSourceStore {
     public static let sourcesDirectoryName = "sources"
 
     private let fileManager: FileManager
@@ -24,8 +24,12 @@ public struct SessionSourceStore: Sendable {
     }
 
     public func url(for asset: SessionSourceAsset, sessionID: UUID) -> URL {
-        sessionSourcesDirectory(sessionID: sessionID)
-            .appendingPathComponent(asset.relativePath, isDirectory: false)
+        let root = sessionSourcesDirectory(sessionID: sessionID).standardizedFileURL
+        let candidate = root.appendingPathComponent(asset.relativePath, isDirectory: false).standardizedFileURL
+        guard !asset.relativePath.hasPrefix("/"), candidate.path.hasPrefix(root.path + "/") else {
+            return root.appendingPathComponent("unavailable-source")
+        }
+        return candidate
     }
 
     /// Copies a file from disk into the session sources folder.

@@ -147,20 +147,13 @@ enum PractitionerContactsFormatting {
     }
 
     private static func addressFragment(in text: String) -> String? {
-        let separators = [" — ", " – ", " - ", ","]
-        for separator in separators {
-            guard let range = text.range(of: separator) else { continue }
-            let tail = String(text[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard addressHint(in: tail) || tail.contains(where: \.isNumber) else { continue }
-            let stripped = stripPhonePatterns(tail)
-            let cleaned = stripped
-                .components(separatedBy: .whitespacesAndNewlines)
-                .joined(separator: " ")
-                .trimmingCharacters(in: CharacterSet(charactersIn: " ,.;"))
-            if !cleaned.isEmpty, !cleaned.contains("@") {
-                return cleaned
-            }
-        }
-        return nil
+        // Only an explicit address field can establish its boundaries. Never treat a numeric tail as an address.
+        let pattern = #"(?i)\baddress\s*:\s*(.*?)(?=;\s*(?:org|organization|clinic|phone|email|role|specialty)\s*:|$)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range(at: 1), in: text) else { return nil }
+        let value = String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, value.range(of: #"(?i)\b(org|phone|email|role)\s*:"#, options: .regularExpression) == nil else { return nil }
+        return value
     }
 }

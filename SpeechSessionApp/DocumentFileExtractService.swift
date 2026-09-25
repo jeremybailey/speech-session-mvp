@@ -42,45 +42,27 @@ struct DocumentFileExtractService {
         }
 
         var segments: [String] = []
-        segments.reserveCapacity(pdf.pageCount)
-
+        var readablePages = 0
         for pageIndex in 0..<pdf.pageCount {
-            guard let page = pdf.page(at: pageIndex) else { continue }
-
-            let layerText = (page.string ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !layerText.isEmpty {
-                segments.append(page.string ?? layerText)
+            try Task.checkCancellation()
+            let heading = "--- Page \(pageIndex + 1) ---"
+            guard let page = pdf.page(at: pageIndex) else {
+                segments.append("\(heading)\n[Text unavailable for this page]")
                 continue
             }
-
-            guard let image = Self.renderPDFPage(page) else { continue }
-
-            let pageText: String
-            do {
-                pageText = try await ocr.transcribe(images: [image])
-            } catch {
-                continue
-            }
-            let trimmedPage = pageText.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmedPage.isEmpty {
-                segments.append(pageText)
-            }
+            let layer = (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !layer.isEmpty {
+                segments.append("\(heading)\n\(layer)")
+                readablePages += 1
+            } else if let image = Self.renderPDFPage(page), let text = try? await ocr.transcribe(images: [image]), !text.isEmpty {
+                // Remove the single-image wrapper; preserve the original PDF page number.
+                let body = text.replacingOccurrences(of: "--- Page 1 ---\n", with: "")
+                segments.append("\(heading)\n\(body)")
+                readablePages += 1
+            } else { segments.append("\(heading)\n[Text unavailable for this page]") }
         }
-
-        guard segments.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
-            throw DocumentFileExtractError.emptyContent
-        }
-
-        let body = segments.enumerated().map { idx, text in
-            segments.count > 1 ? "--- Page \(idx + 1) ---\n\(text)" : text
-        }.joined(separator: "\n\n")
-
-        let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedBody.isEmpty else {
-            throw DocumentFileExtractError.emptyContent
-        }
-        return body
+        guard readablePages > 0 else { throw DocumentFileExtractError.emptyContent }
+        return segments.joined(separator: "\n\n")
     }
 
     /// Renders a PDF page into a bitmap for Vision OCR — scale balances legibility vs memory use.

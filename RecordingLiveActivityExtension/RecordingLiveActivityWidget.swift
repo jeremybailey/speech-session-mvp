@@ -60,7 +60,7 @@ struct RecordingLiveActivityWidget: Widget {
                     .font(.caption.weight(.bold))
             }
             .buttonStyle(.borderless)
-            .tint(LiveActivityBrand.plumAccent)
+            .tint(LiveActivityBrand.copper)
         case .paused:
             Button(intent: StartRecordingLiveActivityIntent()) {
                 Image(systemName: "arrow.up.forward.app")
@@ -136,8 +136,8 @@ private struct RecordingLiveActivityLockView: View {
                     .font(.caption.weight(.semibold))
             }
             .buttonStyle(.borderedProminent)
-            .tint(LiveActivityBrand.plumAccent)
-            .foregroundStyle(LiveActivityBrand.plumBackground)
+            .tint(LiveActivityBrand.copper)
+            .foregroundStyle(LiveActivityBrand.plumAccent)
         case .paused:
             Button(intent: StartRecordingLiveActivityIntent()) {
                 Label("Open", systemImage: "arrow.up.forward.app")

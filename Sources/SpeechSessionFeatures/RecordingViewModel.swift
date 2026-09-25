@@ -189,8 +189,18 @@ public final class RecordingViewModel: ObservableObject {
             }
             try sessionPipeline.start(outputFileURL: recordingURL, locale: locale)
             isRecording = true
+            if let id = pendingRecordingSessionID, let recordingURL {
+                var draft = Session(id: id, date: recordingStartedAt ?? Date(), transcript: "",
+                    title: pendingEntryIntent == .personalJournal ? "Journal recording" : "Appointment recording",
+                    entryIntent: pendingEntryIntent, folderID: pendingFolderID,
+                    sourceAssets: [SessionSourceAsset(kind: .audio, relativePath: recordingURL.lastPathComponent, displayName: "Recording")])
+                draft.processingState = .saved
+                try await store.upsert(draft)
+            }
             startTimer()
         } catch let error as TranscriptionServiceError {
+            sessionPipeline.stop()
+            eventTask?.cancel()
             isRecording = false
             activeSessionUsesWhisper = false
             pipeline = nil
@@ -198,6 +208,8 @@ public final class RecordingViewModel: ObservableObject {
             pendingRecordingFileURL = nil
             errorMessage = error.userFacingMessage
         } catch let error as AudioRecordingError {
+            sessionPipeline.stop()
+            eventTask?.cancel()
             isRecording = false
             activeSessionUsesWhisper = false
             pipeline = nil
@@ -205,6 +217,8 @@ public final class RecordingViewModel: ObservableObject {
             pendingRecordingFileURL = nil
             errorMessage = error.userFacingMessage
         } catch {
+            sessionPipeline.stop()
+            eventTask?.cancel()
             isRecording = false
             activeSessionUsesWhisper = false
             pipeline = nil
@@ -235,6 +249,12 @@ public final class RecordingViewModel: ObservableObject {
         }
 
         pipeline?.stop()
+        isRecording = false
+        isFinishingWhisper = true
+        if let id = pendingRecordingSessionID {
+            do { try await store.updateTranscript(sessionID: id, transcript: fullTranscriptForSave(), error: "The audio is saved. Transcription is being prepared; retry if it does not finish.") }
+            catch { errorMessage = "Recording saved, but its processing status could not be updated." }
+        }
 
         let transcript = await resolveFinalTranscript(
             recordingFileURL: recordingURL,
@@ -252,7 +272,7 @@ public final class RecordingViewModel: ObservableObject {
         activeSessionUsesWhisper = false
         isFinishingWhisper = false
 
-        if transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, errorMessage == nil {
             errorMessage = "Transcription did not return a result."
         }
 
@@ -271,7 +291,7 @@ public final class RecordingViewModel: ObservableObject {
         pendingRecordingSessionID = nil
         pendingRecordingFileURL = nil
 
-        let session = Session(
+        var session = Session(
             id: sessionID,
             date: recordingStartedAt ?? Date(),
             transcript: transcript,
@@ -279,6 +299,8 @@ public final class RecordingViewModel: ObservableObject {
             folderID: pendingFolderID,
             sourceAssets: sourceAssets
         )
+        session.processingState = finalTranscriptIncomplete || transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .failed : .ready
+        session.processingError = session.processingState == .failed ? (errorMessage ?? "The audio is saved. The text may be incomplete; try reading the original again.") : nil
         recordingStartedAt = nil
 
         do {
@@ -327,14 +349,25 @@ public final class RecordingViewModel: ObservableObject {
         isTranscribingFile = true
         defer { isTranscribingFile = false }
 
+        let sessionID = UUID()
+        var savedSession: Session?
         do {
+            let storageDir = await store.storageDirectory
+            let sourceStore = SessionSourceStore(storageDirectory: storageDir)
+            let asset = try sourceStore.copyFile(from: fileURL, sessionID: sessionID,
+                                                displayName: fileURL.lastPathComponent, kind: .audio)
+            var draft = Session(id: sessionID, transcript: "", title: "Audio record",
+                                inputType: .audio, entryIntent: entryIntent,
+                                folderID: defaultFolderID, sourceAssets: [asset])
+            draft.processingState = .transcribing
+            try await store.upsert(draft)
+            savedSession = draft
             let transcript: String
             switch backend {
             case .onDeviceApple:
                 let speechStatus = await TranscriptionService.requestAuthorization()
                 guard speechStatus == .authorized else {
-                    errorMessage = "Speech recognition not authorized."
-                    return nil
+                    throw AudioFileTranscriptionError.openAIError("Speech recognition not authorized. You can retry from the saved record.")
                 }
                 transcript = try await AudioFileTranscriptionService.transcribeWithAppleSpeech(
                     fileURL: fileURL,
@@ -350,8 +383,7 @@ public final class RecordingViewModel: ObservableObject {
                 } else {
                     let key = openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !key.isEmpty else {
-                        errorMessage = Self.openAIWhisperUnavailableMessage
-                        return nil
+                        throw AudioFileTranscriptionError.openAIError(Self.openAIWhisperUnavailableMessage)
                     }
                     transcript = try await AudioFileTranscriptionService.transcribeWithOpenAIWhisper(
                         fileURL: fileURL,
@@ -364,9 +396,8 @@ public final class RecordingViewModel: ObservableObject {
                 guard capability.permitsWhisperKit(experimentalUnlocked: experimentalWhisperKitUnlocked),
                       capability.permitsWhisperKitModel(whisperKitModel, experimentalUnlocked: experimentalWhisperKitUnlocked)
                 else {
-                    errorMessage = capability.whisperKitHardBlockReason(experimentalUnlocked: experimentalWhisperKitUnlocked)
-                        ?? "This WhisperKit model is not available on this iPhone."
-                    return nil
+                    throw AudioFileTranscriptionError.openAIError(capability.whisperKitHardBlockReason(experimentalUnlocked: experimentalWhisperKitUnlocked)
+                        ?? "This WhisperKit model is not available on this iPhone.")
                 }
                 transcript = try await AudioFileTranscriptionService.transcribeWithWhisperKit(
                     fileURL: fileURL,
@@ -376,32 +407,23 @@ public final class RecordingViewModel: ObservableObject {
 
             let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
-                errorMessage = "No speech was detected in the selected audio file."
-                return nil
+                throw AudioFileTranscriptionError.emptyTranscript
             }
 
-            let sessionID = UUID()
-            let storageDir = await store.storageDirectory
-            let sourceStore = SessionSourceStore(storageDirectory: storageDir)
-            let asset = try sourceStore.copyFile(
-                from: fileURL,
-                sessionID: sessionID,
-                displayName: fileURL.lastPathComponent,
-                kind: .audio
-            )
-
-            let session = Session(
-                id: sessionID,
-                transcript: trimmed,
-                inputType: .audio,
-                entryIntent: entryIntent,
-                folderID: defaultFolderID,
-                sourceAssets: [asset]
-            )
-            try await store.upsert(session)
-            return session
+            try await store.updateTranscript(sessionID: sessionID, transcript: trimmed, error: nil)
+            savedSession?.transcript = trimmed
+            savedSession?.processingState = .ready
+            return savedSession
         } catch {
             errorMessage = error.localizedDescription
+            if savedSession != nil {
+                do { try await store.updateTranscript(sessionID: sessionID, transcript: (error as? PartialAudioTranscriptionError)?.transcript, error: error.localizedDescription) }
+                catch { errorMessage = "The original was saved, but processing status could not be updated." }
+                if let partial = error as? PartialAudioTranscriptionError { savedSession?.transcript = partial.transcript }
+                savedSession?.processingState = .failed
+                savedSession?.processingError = error.localizedDescription
+                return savedSession
+            }
             return nil
         }
     }
@@ -452,7 +474,8 @@ public final class RecordingViewModel: ObservableObject {
             if pauseBeganAt == nil {
                 pauseBeganAt = Date()
             }
-        case .interruptionEnded:
+        case .interruptionEnded(let shouldResume):
+            guard shouldResume else { return }
             resumeElapsedAfterPause()
             isCaptureInterrupted = false
         case .routeChanged, .mediaServicesReset:
@@ -468,49 +491,55 @@ public final class RecordingViewModel: ObservableObject {
         }
     }
 
+    private var finalTranscriptIncomplete = false
+
     private func resolveFinalTranscript(
         recordingFileURL: URL?,
         backend: TranscriptionBackend,
         wasWhisper: Bool
     ) async -> String {
         let live = fullTranscriptForSave()
-
-        if wasWhisper,
-           let recordingFileURL,
-           FileManager.default.fileExists(atPath: recordingFileURL.path),
-           let fileText = try? await transcribeStoredRecordingFile(recordingFileURL),
-           !fileText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        {
-            return fileText
+        finalTranscriptIncomplete = false
+        // Preserve the working live Apple path; a second recognition pass must not invalidate it.
+        if backend == .onDeviceApple, !live.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return live
+        }
+        var fileFailure: Error?
+        var partialFileText = ""
+        if let recordingFileURL, FileManager.default.fileExists(atPath: recordingFileURL.path) {
+            do {
+                let text = try await transcribeStoredRecordingFile(recordingFileURL)
+                if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    errorMessage = nil
+                    return text
+                }
+            } catch {
+                fileFailure = error
+                partialFileText = (error as? PartialAudioTranscriptionError)?.transcript ?? ""
+            }
         }
 
         if wasWhisper {
             let deadline = Date().addingTimeInterval(120)
-            while Date() < deadline {
-                if let message = errorMessage, !message.isEmpty { break }
+            while !Task.isCancelled && Date() < deadline {
                 let current = fullTranscriptForSave()
-                if !current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { break }
-                if transcriptionStreamFinished { break }
+                if !current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    // Prefer a partial full-file transcript over the batch backend's capped audio buffer.
+                    if partialFileText.isEmpty {
+                        errorMessage = nil
+                        return current
+                    }
+                    break
+                }
+                if errorMessage != nil || transcriptionStreamFinished { break }
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
-            return fullTranscriptForSave()
         }
-
-        if backend == .onDeviceApple,
-           !live.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        {
-            return live
+        finalTranscriptIncomplete = true
+        if let fileFailure {
+            errorMessage = "The full recording could not be transcribed: \(fileFailure.localizedDescription) Your audio and partial text are saved. Open the original record and try reading it again."
         }
-
-        if let recordingFileURL,
-           FileManager.default.fileExists(atPath: recordingFileURL.path),
-           let fileText = try? await transcribeStoredRecordingFile(recordingFileURL),
-           !fileText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        {
-            return fileText
-        }
-
-        return live
+        return partialFileText.isEmpty ? fullTranscriptForSave() : partialFileText
     }
 
     private func transcribeStoredRecordingFile(_ fileURL: URL) async throws -> String {

@@ -120,6 +120,7 @@ final class AppModel: ObservableObject {
     let store: SessionStore
     let home: HomeViewModel
     let recording: RecordingViewModel
+    let health: HealthSummaryModel
     private var sharedImportURLObserver: NSObjectProtocol?
     private var liveActivityCommandObserverToken: UnsafeMutableRawPointer?
     private var isHandlingLiveActivityStop = false
@@ -131,6 +132,7 @@ final class AppModel: ObservableObject {
         self.store = store
         self.home = HomeViewModel(store: store)
         self.recording = RecordingViewModel(store: store)
+        self.health = HealthSummaryModel(store: store)
         self.sharedImportURLObserver = NotificationCenter.default.addObserver(
             forName: .sharedImportURLReceived,
             object: nil,

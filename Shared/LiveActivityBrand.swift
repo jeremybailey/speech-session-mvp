@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// Splash-screen plum palette for Live Activity surfaces (widget extension safe).
+/// CollectiveCare brand tokens for Live Activity surfaces (widget-extension safe).
 enum LiveActivityBrand {
-    /// Launch screen background `#38244A`
-    static let plumBackground = Color(red: 0.220, green: 0.141, blue: 0.290)
-    /// Launch screen wordmark `#F2C9E3`
-    static let plumAccent = Color(red: 0.949, green: 0.788, blue: 0.890)
-    static let plumAccentMuted = Color(red: 0.949, green: 0.788, blue: 0.890).opacity(0.72)
+    /// Mocha `#483d3f` — lock-screen / Dynamic Island chrome
+    static let plumBackground = Color(red: 72 / 255, green: 61 / 255, blue: 63 / 255)
+    /// Papaya `#ffeecf` — heart, labels, and timer on dark chrome
+    static let plumAccent = Color(red: 255 / 255, green: 238 / 255, blue: 207 / 255)
+    static let plumAccentMuted = Color(red: 255 / 255, green: 238 / 255, blue: 207 / 255).opacity(0.72)
+    /// Copper `#db504a` — primary stop / CTA
+    static let copper = Color(red: 219 / 255, green: 80 / 255, blue: 74 / 255)
 }

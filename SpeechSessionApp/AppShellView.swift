@@ -22,6 +22,9 @@ struct AppShellView: View {
             }
         }
         .environmentObject(kindeAuth)
+        // Keep ordinary interactive controls and links consistently blue even when the
+        // marketing accent color changes. Destructive controls retain their explicit role.
+        .tint(BrandPalette.systemBlue)
         .onOpenURL { url in
             guard !KindeAuthManager.isKindeOAuthCallbackURL(url) else { return }
             if url.scheme == "collectivecare", url.host == "record-start" {
@@ -30,11 +33,27 @@ struct AppShellView: View {
             }
             SharedImportURLInbox.shared.enqueue(url)
         }
+        .alert("Cloud session needs attention", isPresented: Binding(
+            get: { kindeAuth.sessionNotice != nil },
+            set: { if !$0 { kindeAuth.sessionNotice = nil } }
+        )) {
+            Button("Sign in") {
+                Task {
+                    do { try await kindeAuth.login() }
+                    catch { kindeAuth.sessionNotice = "Sign-in did not finish. Try again in Settings." }
+                }
+            }
+            Button("Later", role: .cancel) { kindeAuth.sessionNotice = nil }
+        } message: {
+            Text(kindeAuth.sessionNotice ?? "")
+        }
+        .task { await kindeAuth.refreshSessionIfNeeded() }
         .task {
             await appModel.syncRecordingLiveActivity()
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
+            Task { await kindeAuth.refreshSessionIfNeeded() }
             Task {
                 await appModel.handleLiveActivityStopIfNeeded()
                 appModel.handleLiveActivityStartIfNeeded()

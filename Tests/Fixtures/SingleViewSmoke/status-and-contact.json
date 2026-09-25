@@ -1,0 +1,133 @@
+{
+  "version": 4,
+  "sessions": [
+    {
+      "id": "A75498CE-5848-4D7D-9914-9FF06D16066F",
+      "date": "2026-09-01T12:00:00Z",
+      "transcript": "SYNTHETIC QA RECORD\nAdjust the backpack to reduce pressure on the spine.\nKeep a headache diary daily and bring it to the next visit.",
+      "title": "Sample appointment",
+      "inputType": "documentFile",
+      "entryIntent": "clinicalVisit",
+      "summaryEntries": [
+        {
+          "id": "7F745DC9-2DAD-48BC-B0D4-9C0325CC106D",
+          "category": "carePlan",
+          "title": "Adjust knapsack to reduce pressure on spine",
+          "details": "",
+          "sourceSessionID": "A75498CE-5848-4D7D-9914-9FF06D16066F",
+          "createdAt": "2026-09-01T12:00:00Z",
+          "updatedAt": "2026-09-01T12:00:00Z",
+          "relevantDate": "2026-09-01T12:00:00Z",
+          "clinicalStatus": "current",
+          "factKey": "adjust knapsack to reduce pressure on spine",
+          "evidence": {
+            "excerpt": "Adjust the backpack to reduce pressure on the spine.",
+            "eventDate": "2026-09-01",
+            "practitioner": "Sample RMT",
+            "statusExplicit": false
+          }
+        },
+        {
+          "id": "14EA0E90-03A1-4E2F-81AA-F48E608E810D",
+          "category": "carePlan",
+          "title": "Backpack Adjustment",
+          "details": "Adjust the backpack to reduce pressure on the spine.",
+          "sourceSessionID": "A75498CE-5848-4D7D-9914-9FF06D16066F",
+          "createdAt": "2026-09-01T12:00:00Z",
+          "updatedAt": "2026-09-01T12:00:00Z",
+          "relevantDate": "2026-09-01T12:00:00Z",
+          "clinicalStatus": "current",
+          "factKey": "backpack adjustment",
+          "evidence": {
+            "excerpt": "Adjust the backpack to reduce pressure on the spine.",
+            "eventDate": "2026-09-01",
+            "practitioner": "Sample RMT",
+            "statusExplicit": false
+          }
+        },
+        {
+          "id": "0FDCE50B-8D7B-4124-8155-98B93D5282CB",
+          "category": "carePlan",
+          "title": "Keep a headache diary",
+          "details": "",
+          "sourceSessionID": "A75498CE-5848-4D7D-9914-9FF06D16066F",
+          "createdAt": "2026-09-01T12:00:00Z",
+          "updatedAt": "2026-09-01T12:00:00Z",
+          "relevantDate": "2026-09-01T12:00:00Z",
+          "clinicalStatus": "current",
+          "factKey": "keep a headache diary",
+          "evidence": {
+            "excerpt": "Keep a headache diary daily and bring it to the next visit.",
+            "eventDate": "2026-09-01",
+            "practitioner": "Sample RMT",
+            "statusExplicit": true,
+            "actionKind": "homecare",
+            "careInstruction": {
+              "instruction": "Keep a headache diary",
+              "schedule": "Daily",
+              "reviewTiming": "At the next visit",
+              "isRecurring": true
+            }
+          }
+        },
+        {
+          "id": "26FA51BB-C803-4930-A91F-704786E0EF17",
+          "category": "practitionerContact",
+          "title": "Sample Therapist",
+          "details": "Address: 456 Example Avenue\nToronto, ON B2B 2B2\nPhone: 416-555-0199\nAppointments by referral",
+          "sourceSessionID": "A75498CE-5848-4D7D-9914-9FF06D16066F",
+          "createdAt": "2026-09-01T12:00:00Z",
+          "updatedAt": "2026-09-01T12:00:00Z",
+          "relevantDate": "2026-09-01T12:00:00Z",
+          "clinicalStatus": "current",
+          "factKey": "sample-therapist",
+          "evidence": {
+            "excerpt": "Sample Therapist: 456 Example Avenue, Toronto, ON B2B 2B2. 416-555-0199. Appointments by referral."
+          },
+          "fields": [
+            {
+              "id": "7438E2C2-D8A5-4159-8B09-CB77C740B309",
+              "label": "Address",
+              "value": "456 Example Avenue, Toronto, ON B2B 2B2",
+              "isMissing": false,
+              "needsReview": false
+            },
+            {
+              "id": "492B1525-E4D6-43DE-899E-20DE45F104FD",
+              "label": "Phone",
+              "value": "416-555-0199",
+              "isMissing": false,
+              "needsReview": false
+            }
+          ]
+        }
+      ],
+      "extractionVersion": 6,
+      "processingState": "ready"
+    }
+  ],
+  "folders": [],
+  "careTeam": [
+    {
+      "id": "C0DD96FF-C541-4B69-8188-4758813B808F",
+      "name": "Dr. Avery Example",
+      "role": "Family physician",
+      "organization": "Sample Health Clinic",
+      "phone": "+1 (416) 555-0100",
+      "email": "avery@example.com",
+      "address": "123 Sample Street\nToronto, ON A1A 1A1",
+      "notes": "Synthetic QA contact",
+      "sourceEntryIDs": []
+    }
+  ],
+  "preferences": [
+    {
+      "id": "carePlan|keep-a-headache-diary|A75498CE-5848-4D7D-9914-9FF06D16066F|0FDCE50B-8D7B-4124-8155-98B93D5282CB",
+      "actionStatus": "completed",
+      "reviewedRevision": "0FDCE50B-8D7B-4124-8155-98B93D5282CB:1788264000.0",
+      "reminderEnabled": false,
+      "hidden": false,
+      "updatedAt": "2026-09-01T12:00:00Z"
+    }
+  ]
+}

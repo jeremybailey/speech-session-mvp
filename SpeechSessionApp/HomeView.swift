@@ -21,6 +21,7 @@ struct HomeView: View {
     /// Called after consuming (or rejecting) one App Group handoff so queued files + folder scan can drain.
     var advanceSharedImportQueue: () -> Void = {}
 
+    @EnvironmentObject private var health: HealthSummaryModel
     @EnvironmentObject private var kindeAuth: KindeAuthManager
     @Environment(\.scenePhase) private var scenePhase
 
@@ -30,8 +31,6 @@ struct HomeView: View {
     @AppStorage("speechSession.whisperKitExperimentalUnlock") private var whisperKitExperimentalUnlock = false
 
     @State private var showSettings = false
-    /// Sheet (not navigation push) avoids nested-`NavigationStack` presentation bugs on iPad that swallow all touches.
-    @State private var showHealthSummarySheet = false
     @State private var pulseAnimation = false
     @State private var showDocumentScanner = false
     @State private var showCameraCapture = false
@@ -41,6 +40,8 @@ struct HomeView: View {
     /// Intent captured before presenting the audio file importer.
     @State private var pendingImportAudioEntryIntent: SessionEntryIntent?
     @State private var showAddEntrySheet = false
+    @State private var showManualDetail = false
+    @State private var showContact = false
     @State private var showPhotosPicker = false
     @State private var photoPickerItems: [PhotosPickerItem] = []
     @State private var isScanningDocument = false
@@ -67,24 +68,6 @@ struct HomeView: View {
 
     // Derive recording phase purely from the ViewModel — no duplicate state.
     private enum RecordingPhase { case idle, recording, transcribing, scanTranscribing, fileTranscribing }
-    private var displayedSessions: [Session] {
-        switch listScope {
-        case .all:
-            return home.sessions
-        case .folder(let id):
-            return home.sessions.filter { $0.folderID == id }
-        }
-    }
-
-    private var listTitle: String {
-        switch listScope {
-        case .all:
-            return "All entries"
-        case .folder(let id):
-            return home.folders.first { $0.id == id }?.name ?? "Folder"
-        }
-    }
-
     private var phase: RecordingPhase {
         if isScanningDocument { return .scanTranscribing }
         if recording.isTranscribingFile { return .fileTranscribing }
@@ -93,111 +76,16 @@ struct HomeView: View {
         return .idle
     }
 
-    private var summaryPinnedSubtitle: String {
-        switch listScope {
-        case .all:
-            let n = home.sessions.count
-            return n == 0 ? "All entries" : "Across \(n) entr\(n == 1 ? "y" : "ies")"
-        case .folder(let id):
-            let name = home.folders.first { $0.id == id }?.name ?? "Folder"
-            let n = displayedSessions.count
-            return n == 0 ? name : "\(name) · \(n) entr\(n == 1 ? "y" : "ies")"
-        }
-    }
-
-    /// Uppercase secondary header, aligned with `List` / inset content (system section-header pattern).
-    private var entriesSectionHeader: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text("Entries")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.4)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .padding(.bottom, 6)
-    }
-
     var body: some View {
-        VStack(spacing: 0) {
-            Button {
-                showHealthSummarySheet = true
-            } label: {
-                HStack(alignment: .center, spacing: 14) {
-                    Image(systemName: "heart.text.square.fill")
-                        .font(.system(size: 26, weight: .medium))
-                        .foregroundStyle(BrandPalette.systemPink)
-                        .frame(width: 36, height: 36)
-                        .background(BrandPalette.systemPink.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Health summary")
-                            .font(.headline)
-                        Text(summaryPinnedSubtitle)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    Image(systemName: "chevron.right")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .summaryGlassCard(cornerRadius: 16)
-                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 6)
-
-            // List section header — matches system grouped `Section` header styling (Health, Settings).
-            entriesSectionHeader
-
-            List {
-                if displayedSessions.isEmpty && phase == .idle {
-                    switch listScope {
-                    case .all:
-                        emptyStateRow
-                    case .folder:
-                        folderEmptyStateRow
-                    }
-                } else {
-                    ForEach(displayedSessions) { session in
-                        NavigationLink(value: session) {
-                            sessionRow(session)
-                        }
-                        .listRowBackground(BrandPalette.surface)
-                    }
-                    .onDelete { indexSet in
-                        for index in indexSet {
-                            let session = displayedSessions[index]
-                            Task { await home.delete(session: session) }
-                        }
-                    }
-                }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-        }
+        HealthSummaryView(model: health, home: home, store: store)
         .background(BrandPalette.canvas)
-        .animation(.default, value: displayedSessions.map(\.id))
-        .navigationTitle(listTitle)
+        .navigationTitle("My health story")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showSettings = true } label: {
-                    Image(systemName: "gearshape")
-                }
-                .disabled(phase != .idle)
+                Button("Settings", systemImage: "gearshape") { showSettings = true }
+                    .labelStyle(.iconOnly)
+                    .disabled(phase != .idle)
             }
         }
         .sheet(isPresented: $showAddEntrySheet) {
@@ -230,9 +118,15 @@ struct HomeView: View {
                     scanErrorMessage = nil
                     pendingFileImportKind = .pdfOrPlainText
                     showFileImporter = true
-                }
+                },
+                onWriteDetail: { showManualDetail = true },
+                onAddContact: { showContact = true }
             )
         }
+        .sheet(isPresented: $showManualDetail) {
+            HealthManualEntryView(model: health, home: home, store: store, topicID: nil)
+        }
+        .sheet(isPresented: $showContact) { CareTeamEditor(member: .init(), model: health) }
         .photosPicker(isPresented: $showPhotosPicker, selection: $photoPickerItems, maxSelectionCount: 24, matching: .images, photoLibrary: .shared())
         .onChange(of: photoPickerItems) { _, newItems in
             guard !newItems.isEmpty else { return }
@@ -242,19 +136,6 @@ struct HomeView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(isPresented: $showSettings)
-        }
-        .sheet(isPresented: $showHealthSummarySheet) {
-            NavigationStack {
-                ScopedHealthSummaryView(scope: listScope, home: home, store: store)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { showHealthSummarySheet = false }
-                        }
-                    }
-            }
-            .background(BrandPalette.canvas.ignoresSafeArea())
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
         }
         .fullScreenCover(isPresented: $showCameraCapture) {
             CameraCaptureView { image in
@@ -308,6 +189,9 @@ struct HomeView: View {
         .safeAreaInset(edge: .bottom) {
             bottomAccessoryBar
                 .frame(maxWidth: .infinity)
+                .background {
+                    if phase == .idle { Rectangle().fill(.bar).ignoresSafeArea(edges: .bottom) }
+                }
                 .contentShape(Rectangle())
         }
         .task {
@@ -325,28 +209,8 @@ struct HomeView: View {
         .onChange(of: pendingSharedImportURL) { _, _ in
             Task { await consumePendingSharedImportIfNeeded() }
         }
-        // Auto-dismiss error messages after 4 seconds.
         .onChange(of: recording.errorMessage) { _, newValue in
-            guard newValue != nil else { return }
-            showRecordingError = true
-            Task {
-                try? await Task.sleep(for: .seconds(4))
-                showRecordingError = false
-            }
-        }
-        .onChange(of: scanErrorMessage) { _, newValue in
-            guard newValue != nil else { return }
-            Task {
-                try? await Task.sleep(for: .seconds(4))
-                scanErrorMessage = nil
-            }
-        }
-        .onChange(of: fileErrorMessage) { _, newValue in
-            guard newValue != nil else { return }
-            Task {
-                try? await Task.sleep(for: .seconds(4))
-                fileErrorMessage = nil
-            }
+            showRecordingError = newValue != nil
         }
         .onChange(of: scenePhase) { _, newPhase in
             recording.setAppInBackground(newPhase != .active)
@@ -402,25 +266,19 @@ struct HomeView: View {
         }
     }
 
-    /// Voice Memos–style primary control; 70×70 pt exceeds the 44 pt minimum for older adults.
+    /// A labeled, full-width action stays reachable while the health list scrolls.
     private var addEntryFloatingButton: some View {
         Button {
             scanErrorMessage = nil
             fileErrorMessage = nil
             showAddEntrySheet = true
         } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 34, weight: .medium))
-                .foregroundStyle(.white)
-                .frame(width: 70, height: 70)
-                .background {
-                    Circle()
-                        .fill(BrandPalette.brand)
-                        .shadow(color: BrandPalette.cardShadow, radius: 12, y: 5)
-                }
+            Label("Add record", systemImage: "plus")
+                .font(.headline)
+                .frame(maxWidth: .infinity, minHeight: 44)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Add new entry")
+        .buttonStyle(.borderedProminent)
+        .padding(.horizontal)
     }
 
     @ViewBuilder
@@ -483,7 +341,7 @@ struct HomeView: View {
                 Divider()
                     .frame(height: 20)
 
-                Image(systemName: "stop.fill")
+                Label("Stop recording", systemImage: "stop.fill")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(BrandPalette.systemRed)
             }
@@ -523,89 +381,6 @@ struct HomeView: View {
         .frame(height: 56)
         .liquidGlassCapsule()
         .transition(.scale(scale: 0.85).combined(with: .opacity))
-    }
-
-    // MARK: - Entry list rows
-
-    private var emptyStateRow: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "waveform.circle")
-                .font(.system(size: 52))
-                .foregroundStyle(.secondary)
-            Text("No recordings yet")
-                .font(.headline)
-            Text("Tap the plus button below to add an entry")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 60)
-        .listRowBackground(BrandPalette.surface)
-    }
-
-    private var folderEmptyStateRow: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "folder")
-                .font(.system(size: 44))
-                .foregroundStyle(.secondary)
-            Text("No entries in this folder")
-                .font(.headline)
-            Text("Tap the plus button below, or move entries here using the folder button on an entry.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 48)
-        .listRowBackground(BrandPalette.surface)
-    }
-
-    /// List-row badge: aligned with `AddEntryFlowSheet` colors (audio blue, photos green, documents orange/brown).
-    private func entryBadge(for inputType: SessionInputType) -> (symbol: String, color: Color) {
-        switch inputType {
-        case .audio:
-            return ("waveform", BrandPalette.systemBlue)
-        case .documentScan:
-            return ("doc.viewfinder", BrandPalette.systemOrange)
-        case .documentImage, .document:
-            return ("photo.fill", BrandPalette.systemGreen)
-        case .documentFile:
-            return ("doc.badge.plus", BrandPalette.systemBrown)
-        }
-    }
-
-    @ViewBuilder
-    private func sessionRow(_ session: Session) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            // Input type badge
-            let badge = entryBadge(for: session.inputType)
-            Image(systemName: badge.symbol)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(badge.color)
-                .padding(.top, 3)
-
-            if let title = session.title {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.headline)
-                    Text(session.date.formatted(date: .abbreviated, time: .shortened))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(.vertical, 2)
-            } else {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(session.date.formatted(date: .abbreviated, time: .shortened))
-                        .font(.headline)
-                    Text(session.transcript.isEmpty ? "No transcript" : session.transcript)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .italic(session.transcript.isEmpty)
-                }
-                .padding(.vertical, 2)
-            }
-        }
     }
 
     private func formattedElapsed(_ t: TimeInterval) -> String {
@@ -659,22 +434,20 @@ struct HomeView: View {
         return SessionSourceStore(storageDirectory: directory)
     }
 
-    private func persistSession(
-        id: UUID = UUID(),
-        transcript: String,
-        inputType: SessionInputType,
-        sourceAssets: [SessionSourceAsset]?,
-        entryIntent: SessionEntryIntent = .clinicalVisit
-    ) async throws {
-        let session = Session(
-            id: id,
-            transcript: transcript,
-            inputType: inputType,
-            entryIntent: entryIntent,
-            folderID: listScope.defaultFolderID,
-            sourceAssets: sourceAssets
-        )
-        try await store.upsert(session)
+    private func saveOriginalThenRead(id: UUID, inputType: SessionInputType, assets: [SessionSourceAsset], read: () async throws -> String) async throws {
+        var draft = Session(id: id, transcript: "", title: assets.first?.displayName ?? "Health document",
+                            inputType: inputType, folderID: listScope.defaultFolderID, sourceAssets: assets)
+        draft.processingState = .transcribing
+        try await store.upsert(draft)
+        await home.loadSessions()
+        do {
+            let text = try await read()
+            let warning = text.contains("[Text unavailable") ? "Some pages could not be read. Check the original before relying on this summary." : nil
+            try await store.updateTranscript(sessionID: id, transcript: text, error: warning)
+        } catch {
+            try await store.updateTranscript(sessionID: id, transcript: nil, error: "The original is saved. " + error.localizedDescription)
+            scanErrorMessage = "The original is saved. You can try reading it again under Original records."
+        }
         await home.loadSessions()
     }
 
@@ -683,7 +456,7 @@ struct HomeView: View {
     }
 
     private func sourceAssetsForImages(_ images: [UIImage], sessionID: UUID, sourceStore: SessionSourceStore) throws -> [SessionSourceAsset] {
-        let pages = try images.enumerated().compactMap { index, image -> (data: Data, displayName: String)? in
+        let pages = images.enumerated().compactMap { index, image -> (data: Data, displayName: String)? in
             guard let data = jpegData(from: image) else { return nil }
             let title = images.count > 1 ? "Page \(index + 1)" : "Photo"
             return (data, title)
@@ -715,8 +488,9 @@ struct HomeView: View {
             let sessionID = UUID()
             let sourceStore = await makeSourceStore()
             let assets = try sourceAssetsForImages(images, sessionID: sessionID, sourceStore: sourceStore)
-            let transcript = try await DocumentScanService().transcribe(images: images)
-            try await persistSession(id: sessionID, transcript: transcript, inputType: .documentScan, sourceAssets: assets)
+            try await saveOriginalThenRead(id: sessionID, inputType: .documentScan, assets: assets) {
+                try await DocumentScanService().transcribe(images: images)
+            }
         } catch {
             scanErrorMessage = error.localizedDescription
         }
@@ -749,8 +523,9 @@ struct HomeView: View {
             let sessionID = UUID()
             let sourceStore = await makeSourceStore()
             let assets = try sourceAssetsForImages(images, sessionID: sessionID, sourceStore: sourceStore)
-            let transcript = try await DocumentScanService().transcribe(images: images)
-            try await persistSession(id: sessionID, transcript: transcript, inputType: .documentImage, sourceAssets: assets)
+            try await saveOriginalThenRead(id: sessionID, inputType: .documentImage, assets: assets) {
+                try await DocumentScanService().transcribe(images: images)
+            }
         } catch {
             scanErrorMessage = error.localizedDescription
         }
@@ -780,13 +555,9 @@ struct HomeView: View {
                 displayName: url.lastPathComponent,
                 kind: kind
             )
-            let text = try await DocumentFileExtractService().extractText(from: url)
-            try await persistSession(
-                id: sessionID,
-                transcript: text,
-                inputType: .documentFile,
-                sourceAssets: [asset]
-            )
+            try await saveOriginalThenRead(id: sessionID, inputType: .documentFile, assets: [asset]) {
+                try await DocumentFileExtractService().extractText(from: sourceStore.url(for: asset, sessionID: sessionID))
+            }
         } catch {
             scanErrorMessage = error.localizedDescription
         }
@@ -865,8 +636,9 @@ struct HomeView: View {
             let sessionID = UUID()
             let sourceStore = await makeSourceStore()
             let assets = try sourceAssetsForImages([uiImage], sessionID: sessionID, sourceStore: sourceStore)
-            let transcript = try await DocumentScanService().transcribe(images: [uiImage])
-            try await persistSession(id: sessionID, transcript: transcript, inputType: .documentImage, sourceAssets: assets)
+            try await saveOriginalThenRead(id: sessionID, inputType: .documentImage, assets: assets) {
+                try await DocumentScanService().transcribe(images: [uiImage])
+            }
             removeSharedImportIfNeeded(claimedURL)
         } catch {
             scanErrorMessage = error.localizedDescription
@@ -898,13 +670,9 @@ struct HomeView: View {
                 displayName: claimedURL.lastPathComponent,
                 kind: kind
             )
-            let text = try await DocumentFileExtractService().extractText(from: claimedURL)
-            try await persistSession(
-                id: sessionID,
-                transcript: text,
-                inputType: .documentFile,
-                sourceAssets: [asset]
-            )
+            try await saveOriginalThenRead(id: sessionID, inputType: .documentFile, assets: [asset]) {
+                try await DocumentFileExtractService().extractText(from: sourceStore.url(for: asset, sessionID: sessionID))
+            }
             removeSharedImportIfNeeded(claimedURL)
         } catch {
             scanErrorMessage = error.localizedDescription

@@ -32,6 +32,28 @@ struct OnDeviceSummaryService {
         }
     }
 
+    @Generable
+    struct OverviewSentence: Encodable {
+        var text: String
+        var factIDs: [String]
+    }
+
+    @Generable
+    struct OverviewNarrative: Encodable {
+        var sentences: [OverviewSentence]
+    }
+
+    @Generable
+    struct OverviewProse: Encodable {
+        var text: String
+    }
+
+    @Generable
+    struct OverviewSupport: Encodable {
+        var supported: Bool
+        var reason: String
+    }
+
     // MARK: - Structured Output
 
     @Generable
@@ -45,11 +67,48 @@ struct OnDeviceSummaryService {
         @Guide(description: "current if ongoing; past if resolved, stopped, completed, or historical.")
         var clinicalStatus: String?
 
-        @Guide(description: "Lowercase hyphenated slug for this fact across visits, e.g. migraine or metformin.")
+        @Guide(description: "Stable lowercase concept slug across visits. Use the same slug for equivalent wording, preserving side, negation, dose, and clinical meaning. Headache and migraine are distinct.")
         var factKey: String?
 
         @Guide(description: "Body system for chief complaints only (e.g. Neurological). Empty otherwise.")
         var bodySystem: String?
+        @Guide(description: "Short verbatim source passage supporting this fact; include qualifiers and negation.")
+        var sourceExcerpt: String?
+        @Guide(description: "Explicit event date YYYY-MM-DD, YYYY-MM or YYYY. Omit if not stated.")
+        var eventDate: String?
+        @Guide(description: "Names of health topics explicitly associated with this fact. Empty if not stated.")
+        var topicNames: [String]
+        var practitioner: String?
+        var assessmentMethod: String?
+        var dose: String?
+        var frequency: String?
+        var reasonStarted: String?
+        var reasonStopped: String?
+        @Guide(description: "homecare, follow_up, treatment_received, self_directed or uncertain. Omit for non-actions.")
+        var actionKind: String?
+        @Guide(description: "Care plans only: one complete action sentence from the source. Do not repeat it in details or another row.")
+        var instruction: String?
+        var additionalDirections: String?
+        var goal: String?
+        var schedule: String?
+        var reviewTiming: String?
+        @Guide(description: "True for ongoing/repeated instructions, false for an explicit one-time task; omit if unknown.")
+        var isRecurring: Bool?
+        @Guide(description: "True only when the source explicitly supports current/past status.")
+        var statusExplicit: Bool
+        var reviewReason: String?
+        @Guide(description: "Contacts only: organization, role, phone, email and postal address in separate fields, from the same source block. Never put field labels inside values.")
+        var contact: ContactRow?
+    }
+
+    @Generable
+    struct ContactRow {
+        var name: String
+        var organization: String?
+        var role: String?
+        var phone: String?
+        var email: String?
+        var address: String?
     }
 
     @Generable
@@ -138,7 +197,7 @@ struct OnDeviceSummaryService {
         @Guide(description: "One fact per distinct complaint. Include clinicalStatus (current/past) and factKey.")
         var chiefComplaint: [VisitFactRow]
 
-        @Guide(description: "One fact per distinct symptom. Include clinicalStatus (current/past) and factKey.")
+        @Guide(description: "One fact per distinct symptom, not separate title and expanded-description objects. Use consistent titles for equivalent wording; preserve location, side and negation. Include clinicalStatus (current/past) and factKey.")
         var symptoms: [VisitFactRow]
 
         @Guide(description: "Examination findings, diagnoses, impressions—NOT the treatment plan itself.")
@@ -178,6 +237,8 @@ struct OnDeviceSummaryService {
         do not duplicate other sections.
         """)
         var otherNotes: [VisitFactRow]
+        @Guide(description: "Stated mental health, daily-life circumstances, diet, lifestyle and personal context.")
+        var biopsychosocialContext: [VisitFactRow]
     }
 
     @Generable
@@ -233,14 +294,8 @@ struct OnDeviceSummaryService {
         let lead = SummaryPromptAssembly.onDeviceUserPromptLead(contentKind: contentKind)
         let prompt = lead + transcript
 
-        switch contentKind {
-        case .medicationReference:
-            let response = try await session.respond(to: prompt, generating: MedicationRefStructuredSummary.self)
-            return Self.visitSummaryFields(from: response.content)
-        default:
-            let response = try await session.respond(to: prompt, generating: StructuredVisitSummary.self)
-            return Self.visitSummaryFields(from: response.content)
-        }
+        let response = try await session.respond(to: prompt, generating: StructuredVisitSummary.self)
+        return Self.visitSummaryFields(from: response.content)
     }
 
     func generate(transcript: String, contentKind: SummaryContentKind) async throws -> (title: String, summary: String) {
@@ -296,6 +351,7 @@ struct OnDeviceSummaryService {
             .testsAndLabs: facts(from: output.testsAndLabs),
             .followUp: facts(from: output.followUp),
             .otherNotes: facts(from: output.otherNotes),
+            .biopsychosocialContext: facts(from: output.biopsychosocialContext),
         ]
         return fields
     }
@@ -305,12 +361,32 @@ struct OnDeviceSummaryService {
             let title = row.title.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !title.isEmpty else { return nil }
             let details = row.details?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            var evidence = ClinicalEvidence()
+            if let c = row.contact {
+                evidence.contactFields = [("Name", Optional(c.name)), ("Organization", c.organization),
+                    ("Role or specialty", c.role), ("Phone", c.phone), ("Email", c.email), ("Address", c.address)].compactMap { label, value in
+                    guard let value, !value.isEmpty else { return nil }
+                    return SummaryEntryField(label: label, value: value)
+                }
+            }
+            evidence.excerpt = row.sourceExcerpt; evidence.eventDate = row.eventDate
+            evidence.topicNames = row.topicNames; evidence.bodySystem = row.bodySystem
+            evidence.practitioner = row.practitioner; evidence.assessmentMethod = row.assessmentMethod
+            evidence.dose = row.dose; evidence.frequency = row.frequency
+            evidence.reasonStarted = row.reasonStarted; evidence.reasonStopped = row.reasonStopped
+            if row.instruction != nil {
+                evidence.careInstruction = CareInstruction(instruction: row.instruction, directions: row.additionalDirections,
+                    goal: row.goal, schedule: row.schedule, reviewTiming: row.reviewTiming, isRecurring: row.isRecurring)
+            }
+            evidence.actionKind = row.actionKind; evidence.statusExplicit = row.statusExplicit
+            evidence.reviewReason = row.reviewReason
             return VisitSummaryFact(
                 title: title,
                 details: details,
                 bodySystem: chiefComplaint ? BodySystem.parse(row.bodySystem) : nil,
                 clinicalStatus: SummaryEntryClinicalStatus.parse(row.clinicalStatus),
-                factKey: SummaryEntry.normalizedFactKey(row.factKey) ?? SummaryEntry.normalizedFactKey(title)
+                factKey: SummaryEntry.normalizedFactKey(row.factKey) ?? SummaryEntry.normalizedFactKey(title),
+                evidence: evidence
             )
         }
     }

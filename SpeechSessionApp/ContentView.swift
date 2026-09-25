@@ -1,47 +1,34 @@
 import SwiftUI
+import SpeechSessionFeatures
 import SpeechSessionPersistence
 
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var appModel: AppModel
-
-    @State private var navPath = NavigationPath()
-    @State private var didBootstrapEntriesNavigation = false
-
     var body: some View {
-        NavigationStack(path: $navPath) {
-            EntriesShelfView(home: appModel.home, store: appModel.store)
-                .navigationDestination(for: EntryListScope.self) { scope in
-                    HomeView(
-                        home: appModel.home,
-                        recording: appModel.recording,
-                        store: appModel.store,
-                        listScope: scope,
-                        pendingSharedImportURL: $appModel.pendingSharedImportURL,
-                        advanceSharedImportQueue: appModel.enqueuePendingSharedImportIfAvailable
-                    )
-                    .navigationDestination(for: Session.self) { session in
-                        SessionDetailView(session: session, store: appModel.store, home: appModel.home)
-                    }
-                }
+        NavigationStack {
+            HomeView(home: appModel.home, recording: appModel.recording, store: appModel.store,
+                     pendingSharedImportURL: $appModel.pendingSharedImportURL,
+                     advanceSharedImportQueue: appModel.enqueuePendingSharedImportIfAvailable)
         }
-        .background(BrandPalette.canvas.ignoresSafeArea())
-        .toolbarBackground(BrandPalette.canvas, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .onAppear {
-            if !didBootstrapEntriesNavigation {
-                didBootstrapEntriesNavigation = true
-                navPath.append(EntryListScope.all)
-            }
+        .environmentObject(appModel.health)
+        .onChange(of: scenePhase) { _, phase in
+            appModel.recording.setAppInBackground(phase != .active)
+            if phase == .active { appModel.enqueuePendingSharedImportIfAvailable() }
         }
-        .onChange(of: appModel.pendingSharedImportURL) { _, newValue in
-            guard newValue != nil else { return }
-            navPath = NavigationPath()
-            navPath.append(EntryListScope.all)
-        }
-        .onChange(of: scenePhase) { _, newPhase in
-            guard newPhase == .active else { return }
-            appModel.enqueuePendingSharedImportIfAvailable()
-        }
+        .modifier(HealthErrorPresentation(model: appModel.health, home: appModel.home))
+    }
+}
+
+private struct HealthErrorPresentation: ViewModifier {
+    @ObservedObject var model: HealthSummaryModel
+    @ObservedObject var home: HomeViewModel
+    func body(content: Content) -> some View {
+        content.alert("Please try again", isPresented: Binding(
+            get: { model.error != nil || home.errorMessage != nil },
+            set: { if !$0 { model.error = nil; home.errorMessage = nil } }
+        )) {
+            Button("OK") { model.error = nil; home.errorMessage = nil }
+        } message: { Text(model.error ?? home.errorMessage ?? "") }
     }
 }

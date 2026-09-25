@@ -1,299 +1,78 @@
 import SwiftUI
 import SpeechSessionPersistence
 
-// MARK: - Medium (step 1)
-
-enum AddEntryMedium: Hashable {
-    case audio
-    case photo
-    case documents
-
-    var navigationTitle: String {
-        switch self {
-        case .audio: "Audio"
-        case .photo: "Photos"
-        case .documents: "Documents"
-        }
-    }
-}
-
-private enum AudioCaptureAction: Hashable {
-    case record
-    case importFile
-}
-
-// MARK: - Full-screen sheet (Wallet-style drill-down)
-
-/// Two-step add flow: choose medium → choose source (and audio intent). Large controls for readability.
+/// Every capture action is available in one sheet, without a drill-down menu.
 struct AddEntryFlowSheet: View {
     @Binding var isPresented: Bool
-    @State private var path = NavigationPath()
-    @State private var audioIntent: SessionEntryIntent = .clinicalVisit
-    @State private var pendingAudioAction: AudioCaptureAction?
-
+    @State private var recordingIntent: SessionEntryIntent?
+    @State private var importingAudio = false
+    @State private var importIntent: SessionEntryIntent = .clinicalVisit
     let onAudioRecord: (SessionEntryIntent) -> Void
     let onAudioImport: (SessionEntryIntent) -> Void
     let onPhotoCapture: () -> Void
     let onPhotoLibrary: () -> Void
     let onDocumentScan: () -> Void
     let onDocumentImport: () -> Void
+    let onWriteDetail: () -> Void
+    let onAddContact: () -> Void
 
     var body: some View {
-        NavigationStack(path: $path) {
-            mediumSelectionRoot
-                .navigationDestination(for: AddEntryMedium.self) { medium in
-                    sourceSelectionPage(for: medium)
+        NavigationStack {
+            List {
+                Section("Record") {
+                    choice("Record an appointment", icon: "mic.fill") { recordingIntent = .clinicalVisit }
+                    choice("Record my journal", icon: "waveform") { recordingIntent = .personalJournal }
                 }
-        }
-        .background(BrandPalette.canvas.ignoresSafeArea())
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
-        .confirmationDialog(
-            "Before transcribing",
-            isPresented: Binding(
-                get: { pendingAudioAction != nil },
-                set: { if !$0 { pendingAudioAction = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button(consentCTA) {
-                confirmPendingAudioAction()
+                Section("Add a document or photo") {
+                    choice("Scan papers", icon: "doc.viewfinder") { dismissThen(onDocumentScan) }
+                    choice("Choose a file", icon: "folder") { dismissThen(onDocumentImport) }
+                    choice("Take a photo", icon: "camera") { dismissThen(onPhotoCapture) }
+                    choice("Choose photos", icon: "photo") { dismissThen(onPhotoLibrary) }
+                }
+                Section("Add details yourself") {
+                    choice("Write a health detail", icon: "square.and.pencil") { dismissThen(onWriteDetail) }
+                    choice("Add a care team contact", icon: "person.badge.plus") { dismissThen(onAddContact) }
+                }
+                Section("Add a recording") {
+                    Picker("Recording is a", selection: $importIntent) {
+                        Text("Appointment").tag(SessionEntryIntent.clinicalVisit)
+                        Text("Journal").tag(SessionEntryIntent.personalJournal)
+                    }.pickerStyle(.segmented)
+                    choice("Choose an audio file", icon: "waveform.badge.plus") { importingAudio = true }
+                }
             }
-            Button("Cancel", role: .cancel) {
-                pendingAudioAction = nil
+            .navigationTitle("Add record")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { isPresented = false } }
             }
-        } message: {
-            Text("This audio will be turned into a written transcript.")
-        }
-        .onChange(of: isPresented) { _, isOpen in
-            if isOpen {
-                path = NavigationPath()
-                pendingAudioAction = nil
-            }
+            .confirmationDialog("Before recording", isPresented: Binding(
+                get: { recordingIntent != nil }, set: { if !$0 { recordingIntent = nil } }
+            ), titleVisibility: .visible) {
+                Button(recordingIntent == .clinicalVisit ? "Everyone present has agreed — record" : "Start my journal") {
+                    let intent = recordingIntent ?? .personalJournal
+                    recordingIntent = nil
+                    dismissThen { onAudioRecord(intent) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: { Text("Your audio will be saved and turned into text. Ask everyone present before recording an appointment.") }
+            .confirmationDialog("Transcribe this recording", isPresented: $importingAudio, titleVisibility: .visible) {
+                Button("I have permission — choose audio") { dismissThen { onAudioImport(importIntent) } }
+                Button("Cancel", role: .cancel) {}
+            } message: { Text("Choose a recording you have permission to save and turn into text.") }
         }
     }
 
-    private var consentCTA: String {
-        switch audioIntent {
-        case .clinicalVisit:
-            return "I confirm everyone present consented"
-        case .personalJournal:
-            return "I confirm I have consent to transcribe"
-        }
-    }
-
-    private func confirmPendingAudioAction() {
-        let intent = audioIntent
-        let action = pendingAudioAction
-        pendingAudioAction = nil
-        switch action {
-        case .record:
-            dismissThen { onAudioRecord(intent) }
-        case .importFile:
-            dismissThen { onAudioImport(intent) }
-        case nil:
-            break
+    private func choice(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.body).frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                .contentShape(Rectangle())
         }
     }
 
     private func dismissThen(_ action: @escaping () -> Void) {
         isPresented = false
         DispatchQueue.main.async(execute: action)
-    }
-
-    // MARK: Step 1
-
-    private var mediumSelectionRoot: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                VStack(spacing: 14) {
-                    AddEntryBigChoiceRow(
-                        title: "Audio",
-                        subtitle: "Record a visit or journal entry, or import an audio file",
-                        systemImage: "waveform.circle.fill",
-                        tint: BrandPalette.systemBlue
-                    ) {
-                        path.append(AddEntryMedium.audio)
-                    }
-
-                    AddEntryBigChoiceRow(
-                        title: "Photos",
-                        subtitle: "Use the camera or library to read text from images",
-                        systemImage: "photo.circle.fill",
-                        tint: BrandPalette.systemGreen
-                    ) {
-                        path.append(AddEntryMedium.photo)
-                    }
-
-                    AddEntryBigChoiceRow(
-                        title: "Documents",
-                        subtitle: "Scan papers or import a PDF or text file",
-                        systemImage: "doc.text.image",
-                        tint: BrandPalette.systemOrange
-                    ) {
-                        path.append(AddEntryMedium.documents)
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .background(BrandPalette.canvas)
-        .navigationTitle("New entry")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Close") {
-                    isPresented = false
-                }
-                .font(.body.weight(.medium))
-            }
-        }
-    }
-
-    // MARK: Step 2
-
-    @ViewBuilder
-    private func sourceSelectionPage(for medium: AddEntryMedium) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if medium == .audio {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("This recording is for")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
-
-                        Picker("", selection: $audioIntent) {
-                            Text("Medical visit").tag(SessionEntryIntent.clinicalVisit)
-                            Text("Personal journal").tag(SessionEntryIntent.personalJournal)
-                        }
-                        .pickerStyle(.segmented)
-                        .accessibilityLabel("This recording is for a medical visit or personal journal")
-                    }
-                }
-
-                Text("How do you want to add it?")
-                    .font(.title2.weight(.bold))
-                    .padding(.top, medium == .audio ? 4 : 0)
-                    .accessibilityAddTraits(.isHeader)
-
-                VStack(spacing: 14) {
-                    switch medium {
-                    case .audio:
-                        AddEntryBigChoiceRow(
-                            title: "Record",
-                            subtitle: "Speak now; your words are saved as text",
-                            systemImage: "mic.circle.fill",
-                            tint: BrandPalette.systemRed
-                        ) {
-                            pendingAudioAction = .record
-                        }
-
-                        AddEntryBigChoiceRow(
-                            title: "Import audio file",
-                            subtitle: "Choose a recording from Files or iCloud",
-                            systemImage: "folder.circle.fill",
-                            tint: BrandPalette.systemIndigo
-                        ) {
-                            pendingAudioAction = .importFile
-                        }
-
-                    case .photo:
-                        AddEntryBigChoiceRow(
-                            title: "Take photos",
-                            subtitle: "Use the regular camera; text is read from the picture",
-                            systemImage: "camera.circle.fill",
-                            tint: BrandPalette.systemGreen
-                        ) {
-                            dismissThen(onPhotoCapture)
-                        }
-
-                        AddEntryBigChoiceRow(
-                            title: "Choose photos",
-                            subtitle: "Pick existing pictures from your library",
-                            systemImage: "photo.stack",
-                            tint: BrandPalette.systemMint
-                        ) {
-                            dismissThen(onPhotoLibrary)
-                        }
-
-                    case .documents:
-                        AddEntryBigChoiceRow(
-                            title: "Scan papers",
-                            subtitle: "Use the camera to scan pages",
-                            systemImage: "doc.viewfinder",
-                            tint: BrandPalette.systemOrange
-                        ) {
-                            dismissThen(onDocumentScan)
-                        }
-
-                        AddEntryBigChoiceRow(
-                            title: "Import file",
-                            subtitle: "PDF or plain text from Files",
-                            systemImage: "doc.badge.plus",
-                            tint: BrandPalette.systemBrown
-                        ) {
-                            dismissThen(onDocumentImport)
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .background(BrandPalette.canvas)
-        .navigationTitle(medium.navigationTitle)
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-// MARK: - Large touch-target row (~64pt min height, calendar / Wallet scale)
-
-private struct AddEntryBigChoiceRow: View {
-    let title: String
-    let subtitle: String
-    let systemImage: String
-    let tint: Color
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(alignment: .center, spacing: 16) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 28, weight: .medium))
-                    .foregroundStyle(tint)
-                    .frame(width: 60, height: 60)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(tint.opacity(0.14))
-                    )
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(title)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .multilineTextAlignment(.leading)
-                    Text(subtitle)
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 8)
-
-                Image(systemName: "chevron.right")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
-            .liquidGlassCard(cornerRadius: 18)
-            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityHint(subtitle)
     }
 }

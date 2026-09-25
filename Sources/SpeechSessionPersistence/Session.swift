@@ -187,6 +187,7 @@ public struct SummaryEntry: Codable, Equatable, Hashable, Identifiable, Sendable
     public var title: String
     public var details: String
     public var fields: [SummaryEntryField]
+    public var evidence: ClinicalEvidence?
     public var relevantDate: Date?
     public var dateNeedsReview: Bool
     public var sourceSessionID: UUID?
@@ -207,7 +208,7 @@ public struct SummaryEntry: Codable, Equatable, Hashable, Identifiable, Sendable
 
     enum CodingKeys: String, CodingKey {
         case id, category, title, details, fields
-        case relevantDate, dateNeedsReview
+        case evidence, relevantDate, dateNeedsReview
         case sourceSessionID, sourceTitle, sourceDate, sourceExcerpt
         case provenance, needsReview, reviewReason, isDeleted, origin
         case clinicalStatus, factKey, createdAt, updatedAt
@@ -240,6 +241,7 @@ public struct SummaryEntry: Codable, Equatable, Hashable, Identifiable, Sendable
         self.title = title
         self.details = details
         self.fields = fields
+        self.evidence = nil
         self.relevantDate = relevantDate
         self.dateNeedsReview = dateNeedsReview
         self.sourceSessionID = sourceSessionID
@@ -264,6 +266,7 @@ public struct SummaryEntry: Codable, Equatable, Hashable, Identifiable, Sendable
         title = try c.decode(String.self, forKey: .title)
         details = try c.decodeIfPresent(String.self, forKey: .details) ?? ""
         fields = try c.decodeIfPresent([SummaryEntryField].self, forKey: .fields) ?? []
+        evidence = try c.decodeIfPresent(ClinicalEvidence.self, forKey: .evidence)
         relevantDate = try c.decodeIfPresent(Date.self, forKey: .relevantDate)
         dateNeedsReview = try c.decodeIfPresent(Bool.self, forKey: .dateNeedsReview) ?? false
         sourceSessionID = try c.decodeIfPresent(UUID.self, forKey: .sourceSessionID)
@@ -335,9 +338,15 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var folderID: UUID?
     /// Original uploaded or recorded files; `nil`/empty for legacy transcript-only sessions.
     public var sourceAssets: [SessionSourceAsset]?
+    public var processingState: RecordProcessingState?
+    public var processingError: String?
+    public var extractionVersion: Int?
+    public var summaryRun: SummaryRun?
+    public var summaryDrafts: [SummaryEntry]?
+    public var summaryRevisions: [SummaryRevision]?
 
     enum CodingKeys: String, CodingKey {
-        case id, date, transcript, title, summary, summaryEntries, inputType, entryIntent, folderID, sourceAssets
+        case id, date, transcript, title, summary, summaryEntries, inputType, entryIntent, folderID, sourceAssets, processingState, processingError, extractionVersion, summaryRun, summaryRevisions, summaryDrafts
     }
 
     public init(
@@ -362,6 +371,9 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
         self.entryIntent = entryIntent
         self.folderID = folderID
         self.sourceAssets = sourceAssets
+        self.processingState = nil
+        self.processingError = nil
+        self.extractionVersion = nil
     }
 
     // Custom decoder so existing persisted sessions (without inputType) default to .audio.
@@ -377,5 +389,11 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
         entryIntent = try c.decodeIfPresent(SessionEntryIntent.self, forKey: .entryIntent) ?? .clinicalVisit
         folderID = try c.decodeIfPresent(UUID.self, forKey: .folderID)
         sourceAssets = try c.decodeIfPresent([SessionSourceAsset].self, forKey: .sourceAssets)
+        processingState = try c.decodeIfPresent(RecordProcessingState.self, forKey: .processingState)
+        processingError = try c.decodeIfPresent(String.self, forKey: .processingError)
+        extractionVersion = try c.decodeIfPresent(Int.self, forKey: .extractionVersion)
+        summaryRun = try c.decodeIfPresent(SummaryRun.self, forKey: .summaryRun)
+        summaryDrafts = try c.decodeIfPresent([SummaryEntry].self, forKey: .summaryDrafts)
+        summaryRevisions = try c.decodeIfPresent([SummaryRevision].self, forKey: .summaryRevisions)
     }
 }

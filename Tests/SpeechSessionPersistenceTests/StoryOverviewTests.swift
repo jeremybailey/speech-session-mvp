@@ -1,0 +1,127 @@
+import XCTest
+@testable import SpeechSessionPersistence
+
+final class StoryOverviewTests: XCTestCase {
+    func testMedicationHistoryDoesNotChangeIdentityOnEveryRefresh() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try SessionStore(storageDirectory: directory)
+        let source = "Example 0.5% Eye Drops filled on 2023-08-01 and 2024-05-30"
+        var entries: [SummaryEntry] = []
+        for day in ["2023-08-01", "2024-05-30"] {
+            var entry = SummaryEntry(category: .medications, title: "Example 0.5% Eye Drops", details: "Filled on \(day)")
+            entry.evidence = ClinicalEvidence()
+            entry.evidence?.eventDate = day
+            // Simulate an already affected installation, with distinct fills sharing
+            // a previously persisted display identity.
+            entry.evidence?.factIdentity = "legacy-medication-display-group"
+            let contentHash = SummaryVerification.contentHash(entry)
+            entry.evidence?.assessment = SummaryAssessment(admission: .supported, reason: "Fixture", sourceHash: SummaryVerification.hash(source), contentHash: contentHash, citations: [])
+            entries.append(entry)
+        }
+        try await store.upsert(Session(transcript: source, summaryEntries: entries))
+        try await store.consolidateHealthFacts()
+        let initial = HealthMemoryProjection.facts(in: try await store.healthSnapshot())
+        XCTAssertEqual(initial.count, 1)
+        XCTAssertEqual(initial.first?.occurrences.count, 2)
+        let json: [String: Any] = ["sentences": [["text": "Eye drops were prescribed.", "factIDs": [try XCTUnwrap(initial.first?.id)]]]]
+        let overview = try JSONDecoder().decode(StoryOverview.self, from: JSONSerialization.data(withJSONObject: json))
+        try await store.saveStoryOverview(overview, expected: initial)
+        for _ in 0..<3 {
+            try await store.consolidateHealthFacts()
+            let next = HealthMemoryProjection.facts(in: try await store.healthSnapshot())
+            XCTAssertEqual(next.map(\.id), initial.map(\.id))
+            XCTAssertEqual(StoryOverview.fingerprint(next), StoryOverview.fingerprint(initial))
+            let cached = await store.storyOverview(for: next)
+            XCTAssertEqual(cached?.text, overview.text)
+        }
+    }
+    func testShortRequestCodesRestoreDurableFactIDsBeforeValidation() throws {
+        let overview = try JSONDecoder().decode(StoryOverview.self, from: Data(#"{"sentences":[{"text":"A recorded concern.","factIDs":["F001"]}]}"#.utf8))
+        let translated = overview.replacingFactIDs(using: ["F001": "durable-fact-id"])
+        XCTAssertEqual(translated.sentences[0].factIDs, ["durable-fact-id"])
+        XCTAssertEqual(overview.replacingFactIDs(using: [:]).sentences[0].factIDs, ["F001"])
+    }
+    func testReferencesAndFingerprintInvalidateChangedPatientState() throws {
+        let e = SummaryEntry(category: .symptoms, title: "Example", origin: .userAdded)
+        let f = HealthFact(id: "one", occurrences: [e], preference: .init(id: "one"), topicIDs: [])
+        let valid = try JSONDecoder().decode(StoryOverview.self, from: Data(#"{"sentences":[{"text":"A recorded concern is Example.","factIDs":["one"]}]}"#.utf8))
+        XCTAssertTrue(valid.hasValidReferences(in: [f]))
+        XCTAssertFalse(valid.hasValidReferences(in: []))
+        var changed = f; changed.preference.clinicalStatus = .past
+        XCTAssertNotEqual(StoryOverview.fingerprint([f]), StoryOverview.fingerprint([changed]))
+        var edited = f
+        edited.occurrences[0].details = "Changed within the same timestamp"
+        XCTAssertEqual(edited.revision, f.revision)
+        XCTAssertNotEqual(StoryOverview.fingerprint([f]), StoryOverview.fingerprint([edited]))
+    }
+    func testOverviewCacheSurvivesReloadAndRejectsConcurrentEdits() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try SessionStore(storageDirectory: directory)
+        let entry = SummaryEntry(category: .symptoms, title: "Example concern", origin: .userAdded)
+        try await store.upsert(Session(transcript: "Original", summaryEntries: [entry]))
+        let facts = HealthMemoryProjection.facts(in: try await store.healthSnapshot())
+        let json: [String: Any] = ["sentences": [["text": "A recorded concern is Example concern.", "factIDs": [facts[0].id]]]]
+        let overview = try JSONDecoder().decode(StoryOverview.self, from: JSONSerialization.data(withJSONObject: json))
+        try await store.saveStoryOverview(overview, expected: facts)
+        let reopened = try SessionStore(storageDirectory: directory)
+        let cached = await reopened.storyOverview(for: facts)
+        XCTAssertEqual(cached?.text, overview.text)
+        // Match the app's refresh path, including consolidation and a fresh projection.
+        for _ in 0..<3 {
+            try await reopened.consolidateHealthFacts()
+            let refreshedFacts = HealthMemoryProjection.facts(in: try await reopened.healthSnapshot())
+            XCTAssertEqual(refreshedFacts.map(\.id), facts.map(\.id))
+            XCTAssertEqual(StoryOverview.fingerprint(refreshedFacts), StoryOverview.fingerprint(facts))
+            let refreshedOverview = await reopened.storyOverview(for: refreshedFacts)
+            XCTAssertEqual(refreshedOverview?.text, overview.text)
+        }
+        var preference = facts[0].preference; preference.hidden = true
+        try await store.savePreference(preference)
+        let updated = HealthMemoryProjection.facts(in: try await store.healthSnapshot())
+        let invalidated = await store.storyOverview(for: updated)
+        XCTAssertNil(invalidated)
+        do { try await store.saveStoryOverview(overview, expected: facts); XCTFail("Stale overview must not commit") }
+        catch { XCTAssertTrue(error is SummaryCommitError) }
+    }
+
+    func testLocalFallbackOrdersClinicalHistoryWithoutInventingDates() {
+        func fact(_ title: String, category: SummaryEntryCategory, date: String?) -> HealthFact {
+            var e = SummaryEntry(category: category, title: title)
+            e.evidence = ClinicalEvidence(); e.evidence?.eventDate = date
+            return HealthFact(id: title, occurrences: [e], preference: .init(id: title), topicIDs: [])
+        }
+        let overview = HealthSummaryPresentation.overview(facts: [fact("Later", category: .findings, date: "2025-01"), fact("Earlier", category: .symptoms, date: "2020"), fact("Undated", category: .medications, date: nil)])!
+        XCTAssertLessThan(overview.range(of: "2020")!.lowerBound, overview.range(of: "2025-01")!.lowerBound)
+        XCTAssertFalse(overview.contains("2026"))
+    }
+    func testBoundedConcurrencyAndStableOutputOrder() async throws {
+        actor Counter {
+            var active = 0, peak = 0
+            func start() { active += 1; peak = max(peak, active) }
+            func stop() { active -= 1 }
+        }
+        let counter = Counter()
+        let result = try await SummaryParallelWork.map(Array(0..<12), limit: 3) { value in
+            await counter.start()
+            try await Task.sleep(nanoseconds: UInt64(12 - value) * 1_000_000)
+            await counter.stop()
+            return value
+        }
+        XCTAssertEqual(result, Array(0..<12))
+        let peak = await counter.peak
+        XCTAssertEqual(peak, 3)
+    }
+    func testCancelledParallelWorkDoesNotStartMoreItems() async {
+        let task = Task {
+            try await SummaryParallelWork.map(Array(0..<20), limit: 2) { value in
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+                return value
+            }
+        }
+        task.cancel()
+        do { _ = try await task.value; XCTFail("Cancellation must propagate") }
+        catch { XCTAssertTrue(error is CancellationError) }
+    }
+}

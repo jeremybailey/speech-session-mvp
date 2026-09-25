@@ -54,6 +54,11 @@
 		BF42 /* RecordingLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR42 /* RecordingLiveActivityWidget.swift */; };
 		BF43 /* RecordingLiveActivityBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR43 /* RecordingLiveActivityBundle.swift */; };
 		BF44 /* LiveActivityBrand.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR46 /* LiveActivityBrand.swift */; };
+		BF50 /* HealthSummaryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR50 /* HealthSummaryModel.swift */; };
+		BF51 /* HealthSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR51 /* HealthSummaryView.swift */; };
+		BF52 /* HealthFactDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR52 /* HealthFactDetailView.swift */; };
+		BF53 /* CareTeamView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR53 /* CareTeamView.swift */; };
+		BF54 /* HealthShareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR54 /* HealthShareView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -135,6 +140,11 @@
 		FR44 /* RecordingLiveActivityExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RecordingLiveActivityExtension.entitlements; sourceTree = "<group>"; };
 		FR45 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		FR46 /* LiveActivityBrand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityBrand.swift; sourceTree = "<group>"; };
+		FR50 /* HealthSummaryModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSummaryModel.swift; sourceTree = "<group>"; };
+		FR51 /* HealthSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSummaryView.swift; sourceTree = "<group>"; };
+		FR52 /* HealthFactDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthFactDetailView.swift; sourceTree = "<group>"; };
+		FR53 /* CareTeamView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareTeamView.swift; sourceTree = "<group>"; };
+		FR54 /* HealthShareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthShareView.swift; sourceTree = "<group>"; };
 		PR01 /* SpeechSessionApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpeechSessionApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		PR02 /* VoiceMemoShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VoiceMemoShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		PR03 /* RecordingLiveActivityExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RecordingLiveActivityExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -183,6 +193,11 @@
 			isa = PBXGroup;
 			children = (
 				FR01 /* AppModel.swift */,
+				FR54 /* HealthShareView.swift */,
+				FR53 /* CareTeamView.swift */,
+				FR52 /* HealthFactDetailView.swift */,
+				FR51 /* HealthSummaryView.swift */,
+				FR50 /* HealthSummaryModel.swift */,
 				FR34 /* BrandPalette.swift */,
 				FR30 /* AppShellView.swift */,
 				FR32 /* CameraCaptureView.swift */,
@@ -408,6 +423,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				BF01 /* AppModel.swift in Sources */,
+				BF54 /* HealthShareView.swift in Sources */,
+				BF53 /* CareTeamView.swift in Sources */,
+				BF52 /* HealthFactDetailView.swift in Sources */,
+				BF51 /* HealthSummaryView.swift in Sources */,
+				BF50 /* HealthSummaryModel.swift in Sources */,
 				BF31 /* BrandPalette.swift in Sources */,
 				BF27 /* AppShellView.swift in Sources */,
 				BF29 /* CameraCaptureView.swift in Sources */,
@@ -584,9 +604,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = SpeechSessionApp/SpeechSessionApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 20;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SpeechSessionApp/Info.plist;
@@ -596,7 +617,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.095;
+				MARKETING_VERSION = 1.098;
 				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -613,9 +634,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = SpeechSessionApp/SpeechSessionApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 20;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SpeechSessionApp/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
@@ -624,7 +646,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.095;
+				MARKETING_VERSION = 1.098;
 				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -643,7 +665,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = VoiceMemoShareExtension/VoiceMemoShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 17;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VoiceMemoShareExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -652,7 +674,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.06;
+				MARKETING_VERSION = 1.095;
 				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot.VoiceMemoShareExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -669,7 +691,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = VoiceMemoShareExtension/VoiceMemoShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 17;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VoiceMemoShareExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -678,7 +700,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.06;
+				MARKETING_VERSION = 1.095;
 				PRODUCT_BUNDLE_IDENTIFIER = com.CollectiveCare.pilot.VoiceMemoShareExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;

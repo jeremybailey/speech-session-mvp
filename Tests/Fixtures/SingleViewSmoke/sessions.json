@@ -1,0 +1,146 @@
+{
+  "version": 4,
+  "sessions": [
+    {
+      "id": "A75498CE-5848-4D7D-9914-9FF06D16066F",
+      "date": "2026-09-01T12:00:00Z",
+      "transcript": "SYNTHETIC UI TEST RECORD \u2014 not a real patient or clinical advice.\n\nHeadaches are the main concern.\nBright light makes headaches harder to manage.\nBring the current medication list to the next visit.\nRecord when a headache starts and how long it lasts.\nDiscuss the pattern with my care provider.\nSleep has been interrupted this week.",
+      "title": "Sample appointment",
+      "inputType": "documentFile",
+      "entryIntent": "clinicalVisit",
+      "summaryEntries": [
+        {
+          "id": "C2E00D3F-A8DC-4FAA-B836-BB43BF82F979",
+          "category": "chiefComplaint",
+          "title": "Migraine",
+          "details": "Headaches are the main concern.",
+          "sourceSessionID": "A75498CE-5848-4D7D-9914-9FF06D16066F",
+          "createdAt": "2026-09-01T12:00:00Z",
+          "updatedAt": "2026-09-01T12:00:00Z",
+          "relevantDate": "2026-09-01T12:00:00Z",
+          "clinicalStatus": "current",
+          "factKey": "migraine",
+          "evidence": {
+            "eventDate": "2026-09-01",
+            "excerpt": "Headaches are the main concern.",
+            "statusExplicit": true,
+            "topicNames": [
+              "Migraine"
+            ]
+          }
+        },
+        {
+          "id": "8803547D-9233-4FF5-818C-208B4E81DDC1",
+          "category": "symptoms",
+          "title": "Light sensitivity",
+          "details": "Bright light makes headaches harder to manage.",
+          "sourceSessionID": "A75498CE-5848-4D7D-9914-9FF06D16066F",
+          "createdAt": "2026-09-01T12:00:00Z",
+          "updatedAt": "2026-09-01T12:00:00Z",
+          "relevantDate": "2026-09-01T12:00:00Z",
+          "clinicalStatus": "current",
+          "factKey": "light sensitivity",
+          "evidence": {
+            "eventDate": "2026-09-01",
+            "excerpt": "Bright light makes headaches harder to manage.",
+            "statusExplicit": true,
+            "topicNames": [
+              "Migraine"
+            ]
+          }
+        },
+        {
+          "id": "EF9465BE-B9EC-4CEB-8DF3-2B45BF5887DA",
+          "category": "medications",
+          "title": "Medication list to check",
+          "details": "Bring the current medication list to the next visit.",
+          "sourceSessionID": "A75498CE-5848-4D7D-9914-9FF06D16066F",
+          "createdAt": "2026-09-01T12:00:00Z",
+          "updatedAt": "2026-09-01T12:00:00Z",
+          "relevantDate": "2026-09-01T12:00:00Z",
+          "clinicalStatus": "current",
+          "factKey": "medication list to check",
+          "evidence": {
+            "eventDate": "2026-09-01",
+            "excerpt": "Bring the current medication list to the next visit.",
+            "statusExplicit": true
+          }
+        },
+        {
+          "id": "B9BABB06-4797-43B5-9427-384B6E120BF1",
+          "category": "carePlan",
+          "title": "Keep a headache diary",
+          "details": "Record when a headache starts and how long it lasts.",
+          "sourceSessionID": "A75498CE-5848-4D7D-9914-9FF06D16066F",
+          "createdAt": "2026-09-01T12:00:00Z",
+          "updatedAt": "2026-09-01T12:00:00Z",
+          "relevantDate": "2026-09-01T12:00:00Z",
+          "clinicalStatus": "current",
+          "factKey": "keep a headache diary",
+          "evidence": {
+            "eventDate": "2026-09-01",
+            "excerpt": "Record when a headache starts and how long it lasts.",
+            "statusExplicit": true,
+            "actionKind": "homecare",
+            "topicNames": [
+              "Migraine"
+            ]
+          }
+        },
+        {
+          "id": "122B6C2F-A07E-483F-A893-F4E2FF32D996",
+          "category": "followUp",
+          "title": "Bring the diary to my next visit",
+          "details": "Discuss the pattern with my care provider.",
+          "sourceSessionID": "A75498CE-5848-4D7D-9914-9FF06D16066F",
+          "createdAt": "2026-09-01T12:00:00Z",
+          "updatedAt": "2026-09-01T12:00:00Z",
+          "relevantDate": "2026-09-01T12:00:00Z",
+          "clinicalStatus": "current",
+          "factKey": "bring the diary to my next visit",
+          "evidence": {
+            "eventDate": "2026-09-01",
+            "excerpt": "Discuss the pattern with my care provider.",
+            "statusExplicit": true,
+            "actionKind": "follow_up",
+            "topicNames": [
+              "Migraine"
+            ]
+          }
+        },
+        {
+          "id": "F973CC7D-1A55-4FD7-B1FB-A74115D8D8AF",
+          "category": "biopsychosocialContext",
+          "title": "Interrupted sleep",
+          "details": "Sleep has been interrupted this week.",
+          "sourceSessionID": "A75498CE-5848-4D7D-9914-9FF06D16066F",
+          "createdAt": "2026-09-01T12:00:00Z",
+          "updatedAt": "2026-09-01T12:00:00Z",
+          "relevantDate": "2026-09-01T12:00:00Z",
+          "clinicalStatus": "current",
+          "factKey": "interrupted sleep",
+          "evidence": {
+            "eventDate": "2026-09-01",
+            "excerpt": "Sleep has been interrupted this week.",
+            "statusExplicit": true
+          }
+        }
+      ],
+      "extractionVersion": 5,
+      "processingState": "ready"
+    }
+  ],
+  "folders": [],
+  "careTeam": [
+    {
+      "id": "AE5A3D5A-D4E5-4258-9D19-42151B6001B9",
+      "name": "Sample care provider",
+      "role": "Family doctor",
+      "organization": "Example clinic",
+      "email": "",
+      "phone": "",
+      "notes": "Synthetic contact for UI testing.",
+      "sourceEntryIDs": []
+    }
+  ]
+}

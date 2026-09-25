@@ -1,5 +1,6 @@
 import Foundation
 import Speech
+import AVFoundation
 import WhisperKit
 
 public enum AudioFileTranscriptionError: LocalizedError, Sendable {
@@ -34,28 +35,86 @@ public enum AudioFileTranscriptionError: LocalizedError, Sendable {
     }
 }
 
+/// Successful sections remain available even when another section cannot be recognized.
+public struct PartialAudioTranscriptionError: LocalizedError, Sendable {
+    public let transcript: String
+    public let reason: String
+    public var errorDescription: String? { reason }
+}
+
 public enum AudioFileTranscriptionService {
-    /// Transcribes a local audio file with Apple Speech. Voice Memos M4A imports often yield an empty
-    /// ``AudioFileTranscriptionError/emptyTranscript`` when `requiresOnDeviceRecognition` is true; this method
-    /// retries once with ``SFSpeechURLRecognitionRequest/requiresOnDeviceRecognition`` disabled so Apple's
-    /// server-assisted path can transcribe (network + cloud policy apply).
-    public static func transcribeWithAppleSpeech(
-        fileURL: URL,
-        locale: Locale = .current
-    ) async throws -> String {
-        do {
-            return try await transcribeAppleSpeechFromFileOnce(
-                fileURL: fileURL,
-                locale: locale,
-                requiresOnDeviceRecognition: true
-            )
-        } catch AudioFileTranscriptionError.emptyTranscript {
-            return try await transcribeAppleSpeechFromFileOnce(
-                fileURL: fileURL,
-                locale: locale,
-                requiresOnDeviceRecognition: false
-            )
+    /// File-first, on-device-only recognition in short segments. The original file is never modified.
+    public static func transcribeWithAppleSpeech(fileURL: URL, locale: Locale = .current) async throws -> String {
+        try await transcribeSegments(fileURL: fileURL, maximumDuration: 45) { url in
+            try await transcribeAppleSpeechFromFileOnce(fileURL: url, locale: locale, requiresOnDeviceRecognition: true)
         }
+    }
+
+    private static func transcribeSegments(
+        fileURL: URL, maximumDuration: Double, operation: (URL) async throws -> String
+    ) async throws -> String {
+        let asset = AVURLAsset(url: fileURL)
+        let duration = try await asset.load(.duration).seconds
+        guard duration.isFinite, duration > 0 else { throw AudioFileTranscriptionError.emptyTranscript }
+        // Compress even short recordings: uncompressed CAF can exceed request size limits.
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Transcription-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var start: Double = 0
+        var segments: [String] = []
+        var failures: [String] = []
+        do {
+            while start < duration {
+                try Task.checkCancellation()
+                let end = min(start + maximumDuration, duration)
+                let url = directory.appendingPathComponent("segment-\(segments.count).m4a")
+                guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
+                    throw AudioFileTranscriptionError.openAIError("The saved audio could not be prepared for transcription.")
+                }
+                exporter.timeRange = CMTimeRange(start: CMTime(seconds: start, preferredTimescale: 600),
+                                                 duration: CMTime(seconds: end - start, preferredTimescale: 600))
+                if #available(iOS 18.0, macOS 15.0, *) {
+                    try await exporter.export(to: url, as: .m4a)
+                } else {
+                    exporter.outputURL = url; exporter.outputFileType = .m4a
+                    await exporter.export()
+                    guard exporter.status == .completed else { throw exporter.error ?? AudioFileTranscriptionError.invalidServerResponse }
+                }
+                // Retry only this section; do not repeat sections already recognized.
+                var lastError: Error?
+                for attempt in 0..<2 {
+                    do {
+                        try Task.checkCancellation()
+                        let text = try await operation(url)
+                        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                            throw AudioFileTranscriptionError.emptyTranscript
+                        }
+                        segments.append("--- Audio \(Int(start))–\(Int(end)) seconds ---\n\(text)")
+                        lastError = nil
+                        break
+                    } catch {
+                        if error is CancellationError || Task.isCancelled { throw CancellationError() }
+                        lastError = error
+                        if attempt == 0 { try await Task.sleep(nanoseconds: 300_000_000) }
+                    }
+                }
+                if let lastError {
+                    failures.append("\(Int(start))–\(Int(end)) seconds: \(lastError.localizedDescription)")
+                }
+                try? FileManager.default.removeItem(at: url)
+                if end >= duration { break }
+                start = end - 2 // Preserve words spanning an export boundary.
+            }
+        } catch {
+            throw PartialAudioTranscriptionError(transcript: segments.joined(separator: "\n\n"),
+                                                 reason: error.localizedDescription)
+        }
+        let transcript = segments.joined(separator: "\n\n")
+        if !failures.isEmpty {
+            throw PartialAudioTranscriptionError(transcript: transcript,
+                reason: "Some audio sections could not be transcribed after retrying: " + failures.joined(separator: "; "))
+        }
+        return transcript
     }
 
     private static func transcribeAppleSpeechFromFileOnce(
@@ -118,6 +177,12 @@ public enum AudioFileTranscriptionService {
         fileURL: URL,
         credentials: OpenAIWhisperHTTPCredentials
     ) async throws -> String {
+        try await transcribeSegments(fileURL: fileURL, maximumDuration: 300) { url in
+            try await transcribeOpenAIFileOnce(fileURL: url, credentials: credentials)
+        }
+    }
+
+    private static func transcribeOpenAIFileOnce(fileURL: URL, credentials: OpenAIWhisperHTTPCredentials) async throws -> String {
         let fileSize = try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard fileSize < 25 * 1024 * 1024 else {
             throw AudioFileTranscriptionError.fileTooLarge
