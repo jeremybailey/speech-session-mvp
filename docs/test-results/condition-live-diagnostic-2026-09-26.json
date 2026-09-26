@@ -1,0 +1,18 @@
+[
+  {
+    "groupNames" : [
+      "Reported left knee injury",
+      "Reported migraine",
+      "Right knee pain"
+    ],
+    "groups" : 3,
+    "mixed" : false,
+    "pass" : false,
+    "run" : 1,
+    "seconds" : 94.650338053703308,
+    "unassigned" : 60,
+    "unassignedTitles" : {
+      "Hormone testing" : 60
+    }
+  }
+]

@@ -77,17 +77,10 @@ struct HomeView: View {
     }
 
     var body: some View {
-        HealthSummaryView(model: health, home: home, store: store)
+        HealthSummaryView(model: health, home: home, store: store, canOpenSettings: phase == .idle, openSettings: { showSettings = true })
         .background(BrandPalette.canvas)
         .navigationTitle("My health story")
         .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Settings", systemImage: "gearshape") { showSettings = true }
-                    .labelStyle(.iconOnly)
-                    .disabled(phase != .idle)
-            }
-        }
         .sheet(isPresented: $showAddEntrySheet) {
             AddEntryFlowSheet(
                 isPresented: $showAddEntrySheet,
@@ -185,14 +178,11 @@ struct HomeView: View {
                 }
             }
         }
-        // Bottom + button (idle) or recording / transcription pills; contentShape keeps list from stealing taps.
+        // Floating controls reserve scroll clearance without an opaque full-width bottom plate.
         .safeAreaInset(edge: .bottom) {
             bottomAccessoryBar
                 .frame(maxWidth: .infinity)
-                .background {
-                    if phase == .idle { Rectangle().fill(.bar).ignoresSafeArea(edges: .bottom) }
-                }
-                .contentShape(Rectangle())
+
         }
         .task {
             await home.loadSessions()
@@ -266,7 +256,7 @@ struct HomeView: View {
         }
     }
 
-    /// A labeled, full-width action stays reachable while the health list scrolls.
+    /// Native glass capsule floats above the list and remains clear of the home indicator.
     private var addEntryFloatingButton: some View {
         Button {
             scanErrorMessage = nil
@@ -275,9 +265,13 @@ struct HomeView: View {
         } label: {
             Label("Add record", systemImage: "plus")
                 .font(.headline)
-                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 44)
         }
-        .buttonStyle(.borderedProminent)
+        .summarySecondaryButtonStyle()
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
+        .tint(BrandPalette.systemBlue)
         .padding(.horizontal)
     }
 

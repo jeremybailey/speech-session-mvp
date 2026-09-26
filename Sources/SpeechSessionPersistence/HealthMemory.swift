@@ -47,6 +47,8 @@ public struct ClinicalEvidence: Codable, Equatable, Hashable, Sendable {
     /// Organizational association, not a diagnosis or a replacement for source text.
     public var conditionGroup: String?
     public var conditionGroupReason: String?
+    public var conditionIsPrimary: Bool?
+    public var conditionSynthesisUnassigned: Bool?
     public var bodySystem: String?
     public var dose: String?
     public var frequency: String?

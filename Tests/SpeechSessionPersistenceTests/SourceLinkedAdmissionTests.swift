@@ -2,6 +2,22 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class SourceLinkedAdmissionTests: XCTestCase {
+    func testAttributedJournalParaphraseUsesItsOwnQuote() {
+        let source = "My ankle injury still bothers me. Please include this in my health story."
+        var draft = SummaryEntry(category: .chiefComplaint, title: "Persistent ankle injury", details: "Patient reports continuing difficulty from an ankle injury.")
+        draft.evidence = ClinicalEvidence()
+        draft.evidence?.excerpt = "My ankle injury still bothers me."
+        let accepted = SummaryVerification.sourceLinked(draft, source: source, evidence: source)
+        XCTAssertTrue(SummaryVerification.isVisible(accepted, source: source))
+        XCTAssertEqual(accepted.evidence?.assessment?.admission, .sourceLinked)
+        XCTAssertTrue(accepted.needsReview)
+        let blocked = SummaryVerification.sourceLinked(draft, source: source, evidence: source, exclusion: "contradicted")
+        XCTAssertFalse(SummaryVerification.isVisible(blocked, source: source))
+        draft.evidence?.excerpt = "A quote absent from the transcript"
+        XCTAssertFalse(SummaryVerification.isVisible(SummaryVerification.sourceLinked(draft, source: source, evidence: source), source: source))
+        let meta = SummaryEntry(category: .otherNotes, title: "Please include this in my health story.")
+        XCTAssertFalse(SummaryVerification.isVisible(SummaryVerification.sourceLinked(meta, source: source, evidence: source), source: source))
+    }
     func testIncompleteLabIsVisibleWithoutFabricatedMetadataOrVerification() {
         let source = "Test Name\nThyroid Stimulating Hormone (TSH)\nResult\n2.03 mIU/L"
         let draft = SummaryEntry(category: .testsAndLabs, title: "Thyroid Stimulating Hormone (TSH)", fields: [.init(label: "Result", value: "2.03 mIU/L")])

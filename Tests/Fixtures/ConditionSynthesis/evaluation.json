@@ -1,0 +1,364 @@
+[
+  {
+    "name": "named_eye_condition",
+    "entries": [
+      {
+        "id": "cc0e7b3c-e3af-5c6f-8311-06faf3e293b1",
+        "title": "Neurotrophic eye condition",
+        "details": "Patient reports a neurotrophic eye condition as their main ongoing concern.",
+        "category": "chiefComplaint",
+        "fields": [],
+        "excerpt": "Patient reports a neurotrophic eye condition as their main ongoing concern.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      },
+      {
+        "id": "133e0ee1-4142-5767-ad65-dacb2cefbaf3",
+        "title": "Retinal surgery",
+        "details": "Patient reports prior retinal surgery before the explicitly linked ongoing eye condition. Retina is now doing well.",
+        "category": "findings",
+        "fields": [],
+        "excerpt": "Patient reports prior retinal surgery before the explicitly linked ongoing eye condition. Retina is now doing well.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      },
+      {
+        "id": "8d785b93-895c-58cf-a1ff-8a4b9484dfac",
+        "title": "Vision slowly improving",
+        "details": "Patient reports slow improvement of vision during treatment for the neurotrophic eye condition.",
+        "category": "symptoms",
+        "fields": [],
+        "excerpt": "Patient reports slow improvement of vision during treatment for the neurotrophic eye condition.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      },
+      {
+        "id": "cac2e8fb-7d90-5b00-947f-06994c21f034",
+        "title": "Inflammatory diagnosis ruled out",
+        "details": "Patient reports uveitis was ruled out during investigation of this eye problem.",
+        "category": "findings",
+        "fields": [],
+        "excerpt": "Patient reports uveitis was ruled out during investigation of this eye problem.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      },
+      {
+        "id": "627a216a-0db4-589b-88cf-338949fd0679",
+        "title": "Normal heart size",
+        "details": "Unrelated chest image reports normal heart size.",
+        "category": "testsAndLabs",
+        "fields": [],
+        "excerpt": "Unrelated chest image reports normal heart size.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      }
+    ],
+    "together": [
+      [
+        0,
+        1,
+        2,
+        3
+      ]
+    ],
+    "apart": [],
+    "unassigned": [
+      4
+    ],
+    "forbidden": [
+      "heart findings",
+      "uveitis"
+    ],
+    "primary": 0,
+    "required": {
+      "0": [
+        "neurotrophic"
+      ]
+    }
+  },
+  {
+    "name": "unnamed_eye_concern",
+    "entries": [
+      {
+        "id": "4a70625c-6aeb-5ed0-930a-26bd7098fd3e",
+        "title": "Ongoing corneal difficulty",
+        "details": "Patient reports poor corneal healing and vision trouble as the main problem after prior surgery. No diagnosis name is stated.",
+        "category": "chiefComplaint",
+        "fields": [],
+        "excerpt": "Patient reports poor corneal healing and vision trouble as the main problem after prior surgery. No diagnosis name is stated.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      },
+      {
+        "id": "06f926b6-5fbb-522c-aeee-a20ccaec71dd",
+        "title": "Dry eye",
+        "details": "Patient reports dry eye as part of the same corneal problem.",
+        "category": "symptoms",
+        "fields": [],
+        "excerpt": "Patient reports dry eye as part of the same corneal problem.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      }
+    ],
+    "together": [
+      [
+        0,
+        1
+      ]
+    ],
+    "apart": [],
+    "unassigned": [],
+    "forbidden": [
+      "neurotrophic",
+      "keratitis",
+      "neuropathy"
+    ],
+    "primary": 0,
+    "required": {}
+  },
+  {
+    "name": "migraine_and_hormone_testing",
+    "entries": [
+      {
+        "id": "0fc46723-b38d-55ad-83d2-15c32b778fd5",
+        "title": "Migraines",
+        "details": "Patient reports migraines as the main reason for care.",
+        "category": "chiefComplaint",
+        "fields": [],
+        "excerpt": "Patient reports migraines as the main reason for care.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      },
+      {
+        "id": "097df947-efae-5f27-9367-2c120ef7e270",
+        "title": "Headache diary",
+        "details": "Clinician recommends a diary for the reported migraines.",
+        "category": "carePlan",
+        "fields": [],
+        "excerpt": "Clinician recommends a diary for the reported migraines.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      },
+      {
+        "id": "04249772-6088-500e-8936-21e1c817ac69",
+        "title": "Hormone investigation",
+        "details": "A separate explicitly named hormone-testing investigation is underway.",
+        "category": "chiefComplaint",
+        "fields": [],
+        "excerpt": "A separate explicitly named hormone-testing investigation is underway.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      },
+      {
+        "id": "44b1ccc1-0905-5a4f-aa29-beb8d5ef03aa",
+        "title": "Analyte result",
+        "details": "This result is explicitly part of the hormone-testing investigation.",
+        "category": "testsAndLabs",
+        "fields": [],
+        "excerpt": "This result is explicitly part of the hormone-testing investigation.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      },
+      {
+        "id": "d37ab899-974e-521f-98ea-f63d0cca7622",
+        "title": "Normal lungs",
+        "details": "Unrelated routine report says lungs are clear.",
+        "category": "testsAndLabs",
+        "fields": [],
+        "excerpt": "Unrelated routine report says lungs are clear.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      }
+    ],
+    "together": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        3
+      ]
+    ],
+    "apart": [
+      [
+        0,
+        2
+      ]
+    ],
+    "unassigned": [
+      4
+    ],
+    "forbidden": [
+      "lung findings"
+    ],
+    "primary": 0,
+    "required": {}
+  },
+  {
+    "name": "distinct_laterality",
+    "entries": [
+      {
+        "id": "208c818f-a9b7-590f-99d7-f7895ae4551d",
+        "title": "Left knee injury",
+        "details": "Patient describes a left knee injury from a previous fall.",
+        "category": "symptoms",
+        "fields": [],
+        "excerpt": "Patient describes a left knee injury from a previous fall.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      },
+      {
+        "id": "40b65eaf-0f40-5faf-bbd8-8ea621e6e6c8",
+        "title": "Right knee pain",
+        "details": "Patient explicitly describes an unrelated right knee pain problem.",
+        "category": "symptoms",
+        "fields": [],
+        "excerpt": "Patient explicitly describes an unrelated right knee pain problem.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      },
+      {
+        "id": "41f45e81-fd3a-5a1f-a9a1-b55d08f591c4",
+        "title": "Left knee exercises",
+        "details": "Provider A recommends exercises for the left knee injury.",
+        "category": "carePlan",
+        "fields": [],
+        "excerpt": "Provider A recommends exercises for the left knee injury.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      },
+      {
+        "id": "c5559709-3416-5100-aace-c1ba9d91e5fc",
+        "title": "Right knee referral",
+        "details": "Provider B refers the patient for the separate right knee problem.",
+        "category": "carePlan",
+        "fields": [],
+        "excerpt": "Provider B refers the patient for the separate right knee problem.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      }
+    ],
+    "together": [
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        3
+      ]
+    ],
+    "apart": [
+      [
+        0,
+        1
+      ]
+    ],
+    "unassigned": [],
+    "forbidden": [],
+    "primary": null,
+    "required": {}
+  },
+  {
+    "name": "context_not_diagnosis",
+    "entries": [
+      {
+        "id": "5a5836e9-f518-588c-997e-894ebbf69607",
+        "title": "Relationship discussion",
+        "details": "General discussion of attachment theory, without a personal disorder or reason for care.",
+        "category": "biopsychosocialContext",
+        "fields": [],
+        "excerpt": "General discussion of attachment theory, without a personal disorder or reason for care.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      },
+      {
+        "id": "96cac92a-7a6d-52bf-90bf-ccda39fcbd33",
+        "title": "Fatigue",
+        "details": "Patient reports fatigue as their main concern.",
+        "category": "chiefComplaint",
+        "fields": [],
+        "excerpt": "Patient reports fatigue as their main concern.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      },
+      {
+        "id": "2a2efb2e-0efa-5c38-9e3f-93d82bed60a4",
+        "title": "Past medication",
+        "details": "Previously used medication for fatigue, explicitly discontinued.",
+        "category": "medications",
+        "fields": [],
+        "excerpt": "Previously used medication for fatigue, explicitly discontinued.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      },
+      {
+        "id": "bb3a2b21-2513-5502-b583-5d4dcb1d2714",
+        "title": "Current plan",
+        "details": "Patient and practitioner have a current plan to keep a fatigue diary.",
+        "category": "carePlan",
+        "fields": [],
+        "excerpt": "Patient and practitioner have a current plan to keep a fatigue diary.",
+        "bodySystem": "",
+        "date": "",
+        "status": "unknown",
+        "patientAssigned": false
+      }
+    ],
+    "together": [
+      [
+        1,
+        2,
+        3
+      ]
+    ],
+    "apart": [],
+    "unassigned": [
+      0
+    ],
+    "forbidden": [
+      "attachment theory"
+    ],
+    "primary": 1,
+    "required": {}
+  }
+]

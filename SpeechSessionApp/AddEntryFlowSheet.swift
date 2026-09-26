@@ -6,7 +6,7 @@ struct AddEntryFlowSheet: View {
     @Binding var isPresented: Bool
     @State private var recordingIntent: SessionEntryIntent?
     @State private var importingAudio = false
-    @State private var importIntent: SessionEntryIntent = .clinicalVisit
+    @State private var audioIntent: SessionEntryIntent = .clinicalVisit
     let onAudioRecord: (SessionEntryIntent) -> Void
     let onAudioImport: (SessionEntryIntent) -> Void
     let onPhotoCapture: () -> Void
@@ -19,9 +19,13 @@ struct AddEntryFlowSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Record") {
-                    choice("Record an appointment", icon: "mic.fill") { recordingIntent = .clinicalVisit }
-                    choice("Record my journal", icon: "waveform") { recordingIntent = .personalJournal }
+                Section("Record or add audio") {
+                    Picker("Recording type", selection: $audioIntent) {
+                        Text("Appointment").tag(SessionEntryIntent.clinicalVisit)
+                        Text("Journal").tag(SessionEntryIntent.personalJournal)
+                    }.pickerStyle(.segmented)
+                    choice("Record and transcribe", icon: "mic.fill") { recordingIntent = audioIntent }
+                    choice("Choose an audio file", icon: "waveform.badge.plus") { importingAudio = true }
                 }
                 Section("Add a document or photo") {
                     choice("Scan papers", icon: "doc.viewfinder") { dismissThen(onDocumentScan) }
@@ -33,13 +37,7 @@ struct AddEntryFlowSheet: View {
                     choice("Write a health detail", icon: "square.and.pencil") { dismissThen(onWriteDetail) }
                     choice("Add a care team contact", icon: "person.badge.plus") { dismissThen(onAddContact) }
                 }
-                Section("Add a recording") {
-                    Picker("Recording is a", selection: $importIntent) {
-                        Text("Appointment").tag(SessionEntryIntent.clinicalVisit)
-                        Text("Journal").tag(SessionEntryIntent.personalJournal)
-                    }.pickerStyle(.segmented)
-                    choice("Choose an audio file", icon: "waveform.badge.plus") { importingAudio = true }
-                }
+
             }
             .navigationTitle("Add record")
             .navigationBarTitleDisplayMode(.inline)
@@ -57,7 +55,7 @@ struct AddEntryFlowSheet: View {
                 Button("Cancel", role: .cancel) {}
             } message: { Text("Your audio will be saved and turned into text. Ask everyone present before recording an appointment.") }
             .confirmationDialog("Transcribe this recording", isPresented: $importingAudio, titleVisibility: .visible) {
-                Button("I have permission — choose audio") { dismissThen { onAudioImport(importIntent) } }
+                Button("I have permission — choose audio") { dismissThen { onAudioImport(audioIntent) } }
                 Button("Cancel", role: .cancel) {}
             } message: { Text("Choose a recording you have permission to save and turn into text.") }
         }

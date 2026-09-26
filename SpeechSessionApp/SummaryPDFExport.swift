@@ -117,13 +117,12 @@ enum SummaryPDFDocumentBuilder {
 
     private static func pdfRow(from cluster: SummaryEntryCluster) -> SummaryPDFEntryRow {
         if cluster.isStack {
-            let nested = cluster.entriesNewestFirst.map { pdfRow(from: $0) }
             return SummaryPDFEntryRow(
                 sentence: cluster.sentenceSummary,
                 dateText: cluster.dateRangeText ?? "Date not set",
                 practitionerText: SummaryEntryPresentation.exportPractitionerLine(for: cluster),
-                sourceCaption: "\(cluster.entries.count) sources",
-                nestedSources: nested
+                sourceCaption: nil,
+                nestedSources: []
             )
         }
         guard let entry = cluster.entries.first else {

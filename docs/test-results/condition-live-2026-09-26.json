@@ -1,0 +1,26 @@
+[
+  {
+    "groups" : 3,
+    "mixed" : false,
+    "pass" : false,
+    "run" : 1,
+    "seconds" : 97.45634400844574,
+    "unassigned" : 60
+  },
+  {
+    "groups" : 3,
+    "mixed" : false,
+    "pass" : false,
+    "run" : 2,
+    "seconds" : 92.959929943084717,
+    "unassigned" : 60
+  },
+  {
+    "groups" : 3,
+    "mixed" : false,
+    "pass" : false,
+    "run" : 3,
+    "seconds" : 94.044880032539368,
+    "unassigned" : 60
+  }
+]

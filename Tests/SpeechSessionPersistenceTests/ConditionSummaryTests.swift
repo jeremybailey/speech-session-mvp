@@ -43,6 +43,22 @@ final class ConditionSummaryTests: XCTestCase {
                      "Left knee pain", "Right knee pain", "Sciatica"]
         XCTAssertEqual(ConditionSummaryProjection.groups(facts: names.map { fact(.symptoms, $0) }, topics: []).count, names.count)
     }
+    func testLegacyReportGroupsStayInAllAndPrimaryConcernLeads() {
+        let old = fact(.findings, "Normal heart size")
+        var observation = old.latest
+        observation.evidence?.conditionGroup = "Heart findings"
+        observation.evidence?.conditionGroupReason = "Report section"
+        let legacy = HealthFact(id: old.id, occurrences: [observation], preference: old.preference, topicIDs: [])
+        let concern = fact(.chiefComplaint, "Migraine", date: "2020-01-01")
+        var primary = concern.latest
+        primary.evidence?.conditionIsPrimary = true
+        let primaryFact = HealthFact(id: concern.id, occurrences: [primary], preference: concern.preference, topicIDs: [])
+        let recent = fact(.symptoms, "Fatigue", date: "2026-01-01")
+        let groups = ConditionSummaryProjection.groups(facts: [legacy, recent, primaryFact], topics: [])
+        XCTAssertEqual(groups.first?.name, "Migraine")
+        XCTAssertFalse(groups.contains { $0.name == "Heart findings" })
+        XCTAssertEqual(groups.first { $0.isUncategorized }?.facts.first?.id, legacy.id)
+    }
     func testLargePanelsAndUnrelatedFindingsRemainSeparate() {
         var facts = (1...40).map { fact(.testsAndLabs, "Analyte \($0)", condition: "Hormone testing") }
         facts += [fact(.findings, "Fetal position", condition: "Pregnancy-related care"),

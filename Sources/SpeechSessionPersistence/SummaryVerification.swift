@@ -88,14 +88,22 @@ public enum SummaryVerification {
         let blockers = ["wrong_patient", "contradicted", "not_patient_information", "unreadable"]
         let words = title.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init).filter { !["the", "and", "of", "in", "a", "dr", "panel"].contains($0) }
         let originalWords = Set(source.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init))
-        let anchored = !words.isEmpty && words.allSatisfy { originalWords.contains($0) }
+        let ownExcerpt = entry.supportingExcerpt.flatMap { matchingCitation($0, source: source) }
+        let attributed = entry.details.lowercased().range(of: #"\b(?:patient|person|i) (?:reports?|describes?|states?|reported|described|stated)\b"#, options: .regularExpression) != nil
+        let narrativeCategory = [SummaryEntryCategory.chiefComplaint, .symptoms, .findings, .biopsychosocialContext].contains(entry.category)
+        // An attributed paraphrase may use words absent from speech, but must retain
+        // a concrete source quote and a meaningful shared subject. This is not verification.
+        let subjectWords = words.filter { !["patient", "reported", "reports", "ongoing", "persistent", "condition", "problem", "history", "care", "health"].contains($0) }
+        let excerptWords = Set((ownExcerpt ?? "").lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init))
+        let quotedReport = narrativeCategory && attributed && ownExcerpt != nil && subjectWords.contains { excerptWords.contains($0) }
+        let anchored = (!words.isEmpty && words.allSatisfy { originalWords.contains($0) }) || quotedReport
         let excluded = SummaryEntityStructure.exclusion(entry) != nil || blockers.contains(exclusion ?? "") || administrative.contains(where: { title.contains($0) }) || !anchored
         if result.evidence == nil { result.evidence = ClinicalEvidence() }
         let reason = SummaryEntityStructure.exclusion(entry) ?? (excluded ? "This detail could not be linked to relevant information in the original." : "Added from your record. Automated checking is incomplete; you can edit or delete this detail.")
         result.needsReview = true
         result.reviewReason = reason
         result.evidence?.reviewReason = reason
-        let excerpt = matchingCitation(evidence, source: source)
+        let excerpt = ownExcerpt ?? matchingCitation(evidence, source: source)
         result.sourceExcerpt = excerpt
         result.evidence?.assessment = nil
         let fingerprint = contentHash(result)

@@ -6,8 +6,12 @@ import OSLog
 
 @MainActor
 final class HealthSummaryModel: ObservableObject {
+    @Published private(set) var hasLoaded = false
     @Published private(set) var snapshot = HealthMemorySnapshot()
     @Published private(set) var facts: [HealthFact] = []
+    @Published private(set) var needsConditionOrganization = false
+    @Published private(set) var conditionFacts: [HealthFact] = []
+    @Published private(set) var conditionNotice: String?
     @Published private(set) var overview: String?
     @Published private(set) var overviewNotice: String?
     @Published private(set) var overviewCheckerExplanation: String?
@@ -25,6 +29,38 @@ final class HealthSummaryModel: ObservableObject {
     init(store: SessionStore) { self.store = store }
 
     #if DEBUG
+    func runLiveConditionStress(transport: OpenAIChatTransport?) async {
+        guard !isProcessing, let transport else { return }
+        isProcessing = true
+        defer { isProcessing = false; progress = "" }
+        var reports: [[String: Any]] = []
+        let runCount = ProcessInfo.processInfo.arguments.contains("--live-condition-diagnostic") ? 1 : 3
+        for run in 1...runCount {
+            progress = "Synthetic live test \(run) of \(runCount)…"
+            let facts = (0..<240).map { index -> HealthFact in
+                let name = ["Migraine", "Right knee pain", "Left knee injury", "Hormone testing"][index % 4]
+                let entry = SummaryEntry(category: index % 4 == 3 ? .testsAndLabs : .symptoms, title: name,
+                    details: "Synthetic test patient. \(name) discussed with Provider \(index % 5). " + String(repeating: "No relationship to other concerns is documented. ", count: 35), origin: .userAdded)
+                return HealthMemoryProjection.facts(in: HealthMemorySnapshot(sessions: [Session(transcript: "Synthetic", summaryEntries: [entry])]), verifiedOnly: true)[0]
+            }
+            let started = Date()
+            do {
+                let result = try await processor.synthesizeConditions(facts: facts, transport: transport)
+                let titles = Dictionary(uniqueKeysWithValues: facts.map { ($0.latest.id, $0.title) })
+                let mixed = result.groups.contains { Set($0.entryIDs.compactMap { titles[$0] }).count > 1 }
+                reports.append(["run": run, "seconds": Date().timeIntervalSince(started), "groups": result.groups.count,
+                    "unassigned": result.unassigned.count, "mixed": mixed,
+                    "groupNames": result.groups.map(\.name),
+                    "unassignedTitles": Dictionary(grouping: result.unassigned.compactMap { titles[$0] }, by: { $0 }).mapValues { $0.count },
+                    "pass": result.groups.count == 4 && result.unassigned.isEmpty && !mixed])
+            } catch {
+                reports.append(["run": run, "seconds": Date().timeIntervalSince(started), "pass": false, "error": error.localizedDescription])
+            }
+            let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("condition-live-stress.json")
+            if let data = try? JSONSerialization.data(withJSONObject: reports, options: [.prettyPrinted, .sortedKeys]) { try? data.write(to: url, options: .atomic) }
+        }
+    }
+
     func showProcessingFailureForQA() {
         guard let session = snapshot.sessions.first else { return }
         retryRecordIDs = [session.id]
@@ -39,6 +75,7 @@ final class HealthSummaryModel: ObservableObject {
         defer { Logger(subsystem: "com.CollectiveCare.pilot", category: "SummaryPerformance").info("refresh seconds=\(Date().timeIntervalSince(started), privacy: .public)") }
         refreshRevision += 1
         let revision = refreshRevision
+        defer { if revision == refreshRevision { hasLoaded = true } }
         do {
             var saved = try await store.healthSnapshot()
             for session in saved.sessions where session.summaryEntries?.isEmpty != false {
@@ -57,8 +94,13 @@ final class HealthSummaryModel: ObservableObject {
             // Saved care-team members are explicitly maintained by the patient. Generated contacts use the verified fact projection.
             let savedOverview = await store.storyOverview(for: projected)?.text
             guard revision == refreshRevision else { return }
+            let synthesized = await store.conditionSynthesis(for: projected)
+            let displayed = await store.displayedConditionFacts(for: projected)
+            guard revision == refreshRevision else { return }
             snapshot = saved
             facts = projected
+            conditionFacts = displayed
+            needsConditionOrganization = !projected.isEmpty && synthesized == nil
             if overview != nil && savedOverview == nil {
                 overviewNotice = "Your health details changed after this overview was created. Create an updated overview from the saved details."
             }
@@ -184,6 +226,44 @@ final class HealthSummaryModel: ObservableObject {
         if await save(preference) { undoRemoval = nil }
     }
 
+    func organizeConditions(transport: OpenAIChatTransport?, onDevice: Bool) async {
+        guard !isProcessing else { return }
+        isProcessing = true
+        defer { isProcessing = false; progress = "" }
+        await refresh()
+        await synthesizeAcceptedConditions(transport: transport, onDevice: onDevice, force: true)
+        guard !Task.isCancelled, !needsConditionOrganization, !facts.isEmpty else { return }
+        do {
+            progress = "Updating your health story…"
+            let expected = facts
+            let narrative = try await processor.makeOverview(facts: expected, conditionContext: StoryOverview.conditionContext(facts: conditionFacts, topics: snapshot.topics), transport: transport, onDevice: onDevice)
+            try await store.saveStoryOverview(narrative, expected: expected)
+            await refresh()
+        } catch { overviewNotice = error.localizedDescription }
+    }
+
+    private func synthesizeAcceptedConditions(transport: OpenAIChatTransport?, onDevice: Bool, force: Bool = false) async {
+        guard !facts.isEmpty, !Task.isCancelled else { return }
+        guard !onDevice else {
+            conditionNotice = "Whole-history condition organization uses cloud processing. Your on-device details remain available."
+            return
+        }
+        progress = "Organizing your conditions…"
+        do {
+            let accepted = facts
+            let cached = await store.conditionSynthesis(for: accepted)
+            if force || cached == nil {
+                let synthesis = try await processor.synthesizeConditions(facts: accepted, transport: transport)
+                try await store.saveConditionSynthesis(synthesis, expected: accepted)
+                await refresh()
+            }
+            conditionNotice = nil
+        } catch {
+            if error is CancellationError || Task.isCancelled { return }
+            conditionNotice = "Condition organization could not finish. Your details are saved in All. Try Organize conditions again. " + error.localizedDescription
+        }
+    }
+
     func prepareSummaries(transport: OpenAIChatTransport?, onDevice: Bool, forceSessionID: UUID? = nil, forceAll: Bool = false, retryUnfinished: Bool = false, overviewOnly: Bool = false) async {
         if overviewOnly {
             await createOverview(transport: transport, onDevice: onDevice)
@@ -227,11 +307,14 @@ final class HealthSummaryModel: ObservableObject {
             } catch is CancellationError { }
             catch { if failures.isEmpty { processingIssue = SummaryProcessingIssue(error: error, session: nil, completed: completed, remaining: retryRecordIDs.count) } }
         }
+        if !onDevice {
+            await synthesizeAcceptedConditions(transport: transport, onDevice: onDevice)
+        }
         if !Task.isCancelled && !facts.isEmpty {
             progress = "Writing your health story…"
             do {
                 let overviewFacts = facts
-                let narrative = try await processor.makeOverview(facts: overviewFacts, transport: transport, onDevice: onDevice)
+                let narrative = try await processor.makeOverview(facts: overviewFacts, conditionContext: StoryOverview.conditionContext(facts: conditionFacts, topics: snapshot.topics), transport: transport, onDevice: onDevice)
                 try await store.saveStoryOverview(narrative, expected: overviewFacts)
                 await refresh()
             } catch {
@@ -270,7 +353,7 @@ final class HealthSummaryModel: ObservableObject {
             try Task.checkCancellation()
             let expected = facts
             progress = "Writing your health story…"
-            let narrative = try await processor.makeOverview(facts: expected, transport: transport, onDevice: onDevice)
+            let narrative = try await processor.makeOverview(facts: expected, conditionContext: StoryOverview.conditionContext(facts: conditionFacts, topics: snapshot.topics), transport: transport, onDevice: onDevice)
             progress = "Saving your overview…"
             try await store.saveStoryOverview(narrative, expected: expected)
             // Read back the exact saved snapshot before declaring success.
@@ -720,13 +803,13 @@ actor RecordSummaryProcessor {
         return SummaryReview(assessed: assessed, corrections: corrections)
     }
 
-    func makeOverview(facts: [HealthFact], transport: OpenAIChatTransport?, onDevice: Bool) async throws -> StoryOverview {
+    func makeOverview(facts: [HealthFact], conditionContext: String, transport: OpenAIChatTransport?, onDevice: Bool) async throws -> StoryOverview {
         timingStage = "overview"
         let sortedFacts = facts.sorted { $0.id < $1.id }
-        // Compact IDs distinguish input entries; the model never has to return them.
-        let rows: [[String: Any]] = sortedFacts.enumerated().map { index, fact in
+        // Stable IDs link supporting entries to the organized priority map.
+        let rows: [[String: Any]] = sortedFacts.map { fact in
             let entry = fact.displayEntry
-            return ["id": String(format: "F%03d", index + 1), "category": fact.category.displayTitle, "title": entry.title,
+            return ["id": fact.id, "category": fact.category.displayTitle, "title": entry.title,
                     "details": entry.details, "fields": entry.fields.map { ["label": $0.label, "value": $0.value] },
                     "patientStatus": fact.statusTitle, "statusExplicit": fact.hasKnownStatus,
                     "actionStatus": fact.actionStatus.rawValue,
@@ -760,6 +843,8 @@ actor RecordSummaryProcessor {
             input = notes.joined(separator: "\n\n")
             guard input.count < previousSize else { throw OverviewFailure.invalidFormat }
         }
+        // Keep the priority map outside condensation so long histories cannot erase it.
+        input = "Organized conditions (in display priority order):\n" + (conditionContext.isEmpty ? "No organized conditions yet." : conditionContext) + "\n\nAccepted supporting details:\n" + input
         timingStage = "overview"
         let raw = try await request(system: """
         Write the patient-friendly introduction to this person's health story: a short story they can
@@ -783,7 +868,12 @@ actor RecordSummaryProcessor {
         This is a compact introduction for a small phone screen. Prioritize the main concern, one or two
         important developments, and the present situation or care plan. Leave secondary concerns and routine
         results in the sections below. Do not add a generic concluding sentence or repeat the same point.
-        Lead with the most relevant documented chief complaint: the problem that brought this person to care.
+        Follow the organized conditions in their supplied priority order. Lead with those concerns and use
+        the accepted entries to explain their history and present situation. Entries outside those groups
+        are secondary context, not competing lead concerns. Do not elevate an isolated unassigned symptom
+        above organized conditions or imply that it belongs to them. Grouping is organization, not proof
+        of diagnosis, current status, or causality. If no organized conditions exist, use documented concerns.
+        Lead with the most relevant documented chief complaint only when no organized priority is supplied.
         If none is established, lead with their documented concerns without inventing a primary complaint.
         Never lead with prescriptions when a complaint or symptoms are available. Then tell the relevant
         history chronologically, connecting developments only where documented, and finish with the present
@@ -807,11 +897,20 @@ actor RecordSummaryProcessor {
         // pass, not another clinical admission decision or source-verification loop.
         let text = try OverviewResponseContract.decodeProse(raw)
         guard text.count <= 3500 else { throw OverviewFailure.invalidFormat }
-        let overview = StoryOverview(text: text, facts: facts)
+        var overview = StoryOverview(text: text, facts: facts)
+        overview.conditionContext = conditionContext
         return overview
     }
 
-    private func request(system: String, user: String, transport: OpenAIChatTransport?, onDevice: Bool, contract: OverviewResponseContract? = nil) async throws -> String {
+    func synthesizeConditions(facts: [HealthFact], transport: OpenAIChatTransport?) async throws -> ConditionSynthesis {
+        try await ConditionSynthesis.organize(facts: facts) { input in
+            self.timingStage = "condition-synthesis"
+            return try await self.request(system: ConditionSynthesis.instruction, user: input,
+                transport: transport, onDevice: false, model: ConditionSynthesis.model)
+        }
+    }
+
+    private func request(system: String, user: String, transport: OpenAIChatTransport?, onDevice: Bool, contract: OverviewResponseContract? = nil, model: String = "gpt-4o-mini") async throws -> String {
         try Task.checkCancellation()
         let started = Date(), label = timingStage
         defer { timing.info("model_request stage=\(label, privacy: .public) seconds=\(Date().timeIntervalSince(started), privacy: .public)") }
@@ -845,11 +944,19 @@ actor RecordSummaryProcessor {
         request.httpMethod = "POST"; request.timeoutInterval = 120
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(try await transport.makeAuthorizationHeader(), forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "model": "gpt-4o-mini", "temperature": 0, "max_tokens": 6000,
+        var payload: [String: Any] = [
+            "model": model,
             "response_format": contract?.responseFormat ?? ["type": "json_object"],
             "messages": [["role": "system", "content": system], ["role": "user", "content": user]]
-        ])
+        ]
+        if model == ConditionSynthesis.model {
+            payload["reasoning_effort"] = "low"
+            payload["max_completion_tokens"] = 16000
+        } else {
+            payload["temperature"] = 0
+            payload["max_tokens"] = 6000
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
         let (data, response) = try await URLSession.shared.data(for: request)
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse else { throw SummaryResponseError.network }

@@ -11,6 +11,11 @@ public enum SummaryEntityStructure {
         return machineField || attributes.contains { $0.filter { $0.isLetter || $0.isNumber } == key }
     }
     public static func exclusion(_ entry: SummaryEntry) -> String? {
+        let title = entry.title.lowercased()
+        if entry.category == .otherNotes,
+           ["make sure this makes it into", "include this in my health story", "add this to my health story"].contains(where: title.contains) {
+            return "This is a request about organizing the record, not a separate health detail."
+        }
         if isAttribute(entry.title) {
             return "This is a field belonging to another detail, not a separate health entry. It remains in the original record."
         }

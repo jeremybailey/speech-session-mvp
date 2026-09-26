@@ -18,6 +18,24 @@ final class SummaryCategoryClassificationTests: XCTestCase {
         let output = try SummaryCategoryClassification.apply(#"{"decisions":[{"id":0,"category":"symptoms","conditionGroup":"Diabetes"}]}"#, to: [entry])
         XCTAssertNil(output[0].evidence?.conditionGroup)
     }
+    func testReportHeadingsCannotBecomeConditions() throws {
+        for name in ["Heart findings", "Lung findings", "Bony findings", "Mediastinal findings"] {
+            let entry = SummaryEntry(category: .findings, title: name)
+            let response = "{\"decisions\":[{\"id\":0,\"category\":\"testsAndLabs\",\"conditionGroup\":\"\(name)\",\"conditionGroupReason\":\"Report section\"}]}"
+            let result = try SummaryCategoryClassification.apply(response, to: [entry])
+            XCTAssertNil(result[0].evidence?.conditionGroup)
+            XCTAssertEqual(result[0].id, entry.id)
+        }
+    }
+    func testPatientReportedPrimaryConcernSurfacesFromJournal() throws {
+        let entry = SummaryEntry(category: .otherNotes, title: "Migraine", details: "I am focusing on my migraines; this is why I am seeking care.")
+        let result = try SummaryCategoryClassification.apply(#"{"decisions":[{"id":0,"category":"chiefComplaint","conditionGroup":"Migraine","conditionGroupReason":"Patient explicitly identifies migraines as the main reason for care.","conditionIsPrimary":true}]}"#, to: [entry])
+        XCTAssertEqual(result[0].details, entry.details)
+        XCTAssertEqual(result[0].category, .chiefComplaint)
+        XCTAssertEqual(result[0].evidence?.conditionIsPrimary, true)
+        let fact = HealthFact(id: entry.id.uuidString, occurrences: result, preference: .init(id: entry.id.uuidString), topicIDs: [])
+        XCTAssertEqual(ConditionSummaryProjection.groups(facts: [fact], topics: []).first?.name, "Migraine")
+    }
     func testEveryCategoryHasDefinitionAndAcceptsDecision() throws {
         for category in SummaryEntryCategory.allCases {
             XCTAssertFalse(SummaryCategoryClassification.definition(for: category).isEmpty)

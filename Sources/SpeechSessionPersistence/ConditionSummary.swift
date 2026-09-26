@@ -40,6 +40,15 @@ public enum ConditionSummaryProjection {
         return value
     }
 
+    /// Report sections describe observations, not the patient's reason for care.
+    public static func isConcernName(_ name: String) -> Bool {
+        let value = normalized(name)
+        guard !value.isEmpty else { return false }
+        let words = value.split(separator: " ")
+        if ["finding", "findings", "result", "results", "structure", "structures"].contains(String(words.last ?? "")) { return false }
+        return !["heart", "lungs", "lung", "bones", "mediastinum", "lung volume", "heart size", "normal", "normal examination", "unremarkable"].contains(value)
+    }
+
     private struct Candidate: Hashable {
         let name: String
         let system: String
@@ -94,6 +103,8 @@ public enum ConditionSummaryProjection {
                 if let ids = fact.preference.topicIDs {
                     // An explicit empty array is the patient's choice to leave this unassigned.
                     candidates = ids.compactMap { topicMap[$0] }.map { Candidate(name: $0.name, system: normalized($0.bodySystem)) }
+                } else if entry.evidence?.conditionSynthesisUnassigned == true {
+                    candidates = []
                 } else if let group = entry.evidence?.conditionGroup, !normalized(group).isEmpty,
                           entry.evidence?.conditionGroupReason?.isEmpty == false {
                     candidates = [Candidate(name: group, system: normalized(entry.evidence?.bodySystem ?? ""))]
@@ -120,7 +131,7 @@ public enum ConditionSummaryProjection {
                         candidates = []
                     }
                 }
-                assignments.append((fact, entry, candidates.filter { !$0.key.isEmpty }))
+                assignments.append((fact, entry, candidates.filter { fact.preference.topicIDs != nil || isConcernName($0.name) }))
             }
         }
         // Unknown body systems join a name only when there is at most one explicit system.
@@ -163,6 +174,9 @@ public enum ConditionSummaryProjection {
             return ConditionSummary(id: id, name: names[id] ?? "Uncategorized", bodySystem: bodies[id] ?? "", facts: sorted(projected))
         }.sorted {
             if $0.isUncategorized != $1.isUncategorized { return !$0.isUncategorized }
+            let primaryA = $0.facts.flatMap(\.occurrences).contains { $0.evidence?.conditionIsPrimary == true }
+            let primaryB = $1.facts.flatMap(\.occurrences).contains { $0.evidence?.conditionIsPrimary == true }
+            if primaryA != primaryB { return primaryA }
             let a = $0.facts.flatMap(\.occurrences).compactMap(date).max() ?? .distantPast
             let b = $1.facts.flatMap(\.occurrences).compactMap(date).max() ?? .distantPast
             return a == b ? $0.name < $1.name : a > b

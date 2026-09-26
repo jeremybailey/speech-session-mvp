@@ -7,16 +7,23 @@ struct HealthSummaryView: View {
     @ObservedObject var model: HealthSummaryModel
     @ObservedObject var home: HomeViewModel
     let store: SessionStore
+    var canOpenSettings = true
+    var openSettings: () -> Void = {}
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     @EnvironmentObject private var auth: KindeAuthManager
     @AppStorage("speechSession.summaryBackend") private var backend = "openai"
     @AppStorage("speechSession.openaiAPIKey") private var apiKey = ""
     @AppStorage("collectivecare.cloudSummaryConsent") private var cloudConsent = false
+    @State private var accountActionError: String?
+    @State private var accountActionPending = false
+    @AppStorage("speechSession.skippedSignInGate") private var skippedSignInGate = false
     @State private var allExpanded = false
     @State private var expandedConditions = Set<String>()
     @State private var expanded: Set<String> = []
     #if DEBUG
     @State private var didOpenCareQA = false
+    @State private var didRunLiveStress = false
     #endif
     @State private var recordsExpanded = false
     @State private var pendingDeletion: Session?
@@ -27,6 +34,15 @@ struct HealthSummaryView: View {
     @State private var attemptedRepair: Set<String> = []
     @State private var preparationTask: Task<Void, Never>?
     @State private var isLaunchingPreparation = false
+
+    private var showingStoryPlaceholder: Bool {
+        if !model.hasLoaded { return true }
+        return model.needsConditionOrganization && model.conditionNotice == nil
+            && model.processingIssue == nil && model.error == nil
+            && backend != "onDevice" && cloudConsent
+            && (model.isProcessing || isLaunchingPreparation
+                || (pendingCount == 0 && !attemptedRepair.contains("conditions:" + ConditionSynthesis.fingerprint(model.facts))))
+    }
 
     private var pendingCount: Int {
         model.snapshot.sessions.filter(\.needsSummaryVerification).count
@@ -44,7 +60,7 @@ struct HealthSummaryView: View {
         let categories = SummaryEntryCategory.allCases
         ScrollViewReader { proxy in
         List {
-            if model.snapshot.sessions.isEmpty && model.snapshot.careTeam.isEmpty {
+            if model.hasLoaded && model.snapshot.sessions.isEmpty && model.snapshot.careTeam.isEmpty {
                 Section {
                     Text("Your health, in one place").font(.headline)
                     Text("Add a recording or document, or choose a category below to add a detail yourself.")
@@ -77,6 +93,12 @@ struct HealthSummaryView: View {
                     }
                 }
             }
+            if showingStoryPlaceholder {
+                Section {
+                    HealthStoryLoadingPlaceholder()
+                        .listRowInsets(EdgeInsets(top: 20, leading: 20, bottom: 20, trailing: 20))
+                }.transition(.opacity)
+            } else {
             if let overview = model.overview {
                 Section("Overview") {
                     Text(overview).textSelection(.enabled)
@@ -99,7 +121,17 @@ struct HealthSummaryView: View {
                     }
                 }
             }
+            if let notice = model.conditionNotice {
+                Section {
+                    Text(notice).foregroundStyle(.secondary)
+                    Button("Organize conditions", systemImage: "square.grid.2x2") {
+                        conditionsOnlyRequest = true
+                        prepare()
+                    }.disabled(model.isProcessing || backend == "onDevice")
+                }
+            }
             conditionSections
+            }
             if !categories.isEmpty {
                 Section {
                     DisclosureGroup(isExpanded: $allExpanded) {
@@ -170,12 +202,45 @@ struct HealthSummaryView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    Section(auth.isSignedIn ? (auth.userPreview.map { "Signed in · " + $0 } ?? "Signed in") : "Signed out") {
+                        if auth.isSignedIn {
+                            Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right") {
+                                accountActionPending = true
+                                Task {
+                                    defer { accountActionPending = false }
+                                    skippedSignInGate = false
+                                    await auth.logout()
+                                }
+                            }.disabled(accountActionPending)
+                        } else {
+                            Button("Sign in", systemImage: "person.crop.circle.badge.checkmark") {
+                                accountActionPending = true
+                                Task {
+                                    defer { accountActionPending = false }
+                                    do { try await auth.login() }
+                                    catch { accountActionError = error.localizedDescription }
+                                }
+                            }.disabled(accountActionPending)
+                        }
+                        Button("Settings", systemImage: "gearshape") { openSettings() }
+                            .disabled(!canOpenSettings)
+                    }
+                    Button("Organize conditions", systemImage: "square.grid.2x2") {
+                        conditionsOnlyRequest = true
+                        prepare()
+                    }.disabled(model.isProcessing || model.facts.isEmpty || backend == "onDevice")
                     Button("Regenerate summary", systemImage: "arrow.clockwise") {
                         regenerateAll = true
                         if backend == "onDevice" || cloudConsent { prepare() }
                         else { showProcessingConsent = true }
                     }.disabled(model.isProcessing || model.snapshot.sessions.isEmpty)
-                } label: { Image(systemName: "ellipsis") }.accessibilityLabel("Health story actions")
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: auth.isSignedIn ? "person.crop.circle.fill" : "person.crop.circle")
+                        if !auth.isSignedIn { Text("Sign in") }
+                    }
+                }
+                .accessibilityLabel(auth.isSignedIn ? "Profile, signed in" : "Profile, signed out. Sign in")
             }
             ToolbarItem(placement: .topBarLeading) {
                 Button("Share", systemImage: "square.and.arrow.up") { taskSheet = .share }
@@ -183,7 +248,30 @@ struct HealthSummaryView: View {
                     .disabled(model.facts.isEmpty)
             }
         }
+        .alert("Could not sign in", isPresented: Binding(get: { accountActionError != nil }, set: { if !$0 { accountActionError = nil } })) {
+            Button("OK", role: .cancel) { accountActionError = nil }
+        } message: { Text(accountActionError ?? "Please try again.") }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: showingStoryPlaceholder)
+        .task(id: "\(ConditionSynthesis.fingerprint(model.facts))|\(model.isProcessing)|\(cloudConsent)|\(backend)") {
+            guard !model.isProcessing, model.needsConditionOrganization, pendingCount == 0,
+                  backend != "onDevice", cloudConsent else { return }
+            let key = "conditions:" + ConditionSynthesis.fingerprint(model.facts)
+            guard attemptedRepair.insert(key).inserted else { return }
+            conditionsOnlyRequest = true
+            prepare()
+        }
         .task(id: home.revision) {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--live-condition-stress") {
+                guard !didRunLiveStress else { return }
+                didRunLiveStress = true
+                preparationTask = Task {
+                    let transport = await auth.openAIChatTransport(byokFallback: "")
+                    await model.runLiveConditionStress(transport: transport)
+                }
+                return
+            }
+            #endif
             await model.refresh()
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--condition-qa") {
@@ -247,15 +335,19 @@ struct HealthSummaryView: View {
             Button("Use cloud processing") { cloudConsent = true; prepare() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Text from your records will be sent through CollectiveCare’s service to OpenAI to prepare summaries. Original files stay on this iPhone. You can change processing options in Settings.")
+            Text("Text from your records and accepted health-summary history will be sent through CollectiveCare’s service to OpenAI to prepare summaries and organize conditions. Original files stay on this iPhone. You can change processing options in Settings.")
         }
         }
     }
 
     @ViewBuilder private var conditionSections: some View {
-        let conditions = ConditionSummaryProjection.groups(facts: model.facts, topics: model.snapshot.topics)
-        if conditions.isEmpty {
-            Section { Text("Add records to start organizing your health story by condition.").foregroundStyle(.secondary) }
+        let conditions = ConditionSummaryProjection.groups(facts: model.conditionFacts, topics: model.snapshot.topics)
+        if conditions.filter({ !$0.isUncategorized }).isEmpty {
+            Section { Text(model.facts.isEmpty
+                ? "Add records to start organizing your health story by condition."
+                : model.needsConditionOrganization
+                    ? (model.isProcessing ? "Organizing your conditions. Your saved details are available in All." : "Your conditions will appear here after organization. Your saved details are available in All.")
+                    : "Your saved details are available in All.").foregroundStyle(.secondary) }
         }
         Section {
         ForEach(conditions.filter { !$0.isUncategorized }) { condition in
@@ -440,6 +532,7 @@ struct HealthSummaryView: View {
     }
 
     @State private var overviewOnlyRequest = false
+    @State private var conditionsOnlyRequest = false
 
     private func prepare(retryUnfinished: Bool = false) {
         guard !isLaunchingPreparation && !model.isProcessing else { return }
@@ -450,6 +543,8 @@ struct HealthSummaryView: View {
             return
         }
         resumeAfterConsent = false
+        let conditionsOnly = conditionsOnlyRequest
+        conditionsOnlyRequest = false
         let overviewOnly = overviewOnlyRequest
         overviewOnlyRequest = false
         let forceAll = regenerateAll
@@ -458,7 +553,9 @@ struct HealthSummaryView: View {
         preparationTask = Task {
             defer { isLaunchingPreparation = false; preparationTask = nil }
             let transport = backend == "onDevice" ? nil : await auth.openAIChatTransport(byokFallback: apiKey)
-            if overviewOnly {
+            if conditionsOnly {
+                await model.organizeConditions(transport: transport, onDevice: backend == "onDevice")
+            } else if overviewOnly {
                 await model.createOverview(transport: transport, onDevice: backend == "onDevice")
             } else {
                 await model.prepareSummaries(transport: transport, onDevice: backend == "onDevice", forceAll: forceAll, retryUnfinished: resume)
@@ -768,7 +865,7 @@ private struct ConditionAssignmentSheet: View {
     @State private var saving = false
     @State private var error: String?
     private var conditions: [ConditionSummary] {
-        ConditionSummaryProjection.groups(facts: model.facts, topics: model.snapshot.topics).filter { !$0.isUncategorized }
+        ConditionSummaryProjection.groups(facts: model.conditionFacts, topics: model.snapshot.topics).filter { !$0.isUncategorized }
     }
     var body: some View {
         NavigationStack {
@@ -814,5 +911,50 @@ private struct ConditionAssignmentSheet: View {
         preference.topicIDs = Array(Set(links))
         if await model.save(preference) { dismiss() }
         else { error = "The condition link could not be saved. Please try again." }
+    }
+}
+
+/// Abstract content, never stale patient text, while the organized story becomes ready.
+private struct HealthStoryLoadingPlaceholder: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shimmer = false
+
+    private var shapes: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            RoundedRectangle(cornerRadius: 5).frame(width: 100, height: 16)
+            RoundedRectangle(cornerRadius: 5).frame(height: 12)
+            RoundedRectangle(cornerRadius: 5).frame(height: 12).padding(.trailing, 28)
+            RoundedRectangle(cornerRadius: 5).frame(height: 12).padding(.trailing, 75)
+            ForEach(0..<3) { index in
+                HStack(spacing: 14) {
+                    RoundedRectangle(cornerRadius: 12).frame(width: 42, height: 42)
+                    VStack(alignment: .leading, spacing: 9) {
+                        RoundedRectangle(cornerRadius: 5).frame(height: 14).padding(.trailing, CGFloat(index * 20 + 35))
+                        RoundedRectangle(cornerRadius: 4).frame(width: 65, height: 10)
+                    }
+                }.padding(.top, 12)
+            }
+        }
+    }
+
+    var body: some View {
+        shapes.foregroundStyle(.secondary.opacity(0.12))
+            .overlay {
+                if !reduceMotion {
+                    GeometryReader { geometry in
+                        LinearGradient(colors: [.clear, .white.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: geometry.size.width * 0.65)
+                            .offset(x: shimmer ? geometry.size.width : -geometry.size.width * 0.65)
+                    }.mask(shapes)
+                }
+            }
+            .clipped()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Loading your organized health story")
+            .task(id: reduceMotion) {
+                guard !reduceMotion else { shimmer = false; return }
+                shimmer = false
+                withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) { shimmer = true }
+            }
     }
 }

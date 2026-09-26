@@ -25,7 +25,8 @@ final class StoryOverviewTests: XCTestCase {
         XCTAssertEqual(initial.count, 1)
         XCTAssertEqual(initial.first?.occurrences.count, 2)
         let json: [String: Any] = ["sentences": [["text": "Eye drops were prescribed.", "factIDs": [try XCTUnwrap(initial.first?.id)]]]]
-        let overview = try JSONDecoder().decode(StoryOverview.self, from: JSONSerialization.data(withJSONObject: json))
+        var overview = try JSONDecoder().decode(StoryOverview.self, from: JSONSerialization.data(withJSONObject: json))
+        overview.conditionContext = await store.currentOverviewConditionContext(initial)
         try await store.saveStoryOverview(overview, expected: initial)
         for _ in 0..<3 {
             try await store.consolidateHealthFacts()
@@ -63,7 +64,8 @@ final class StoryOverviewTests: XCTestCase {
         try await store.upsert(Session(transcript: "Original", summaryEntries: [entry]))
         let facts = HealthMemoryProjection.facts(in: try await store.healthSnapshot())
         let json: [String: Any] = ["sentences": [["text": "A recorded concern is Example concern.", "factIDs": [facts[0].id]]]]
-        let overview = try JSONDecoder().decode(StoryOverview.self, from: JSONSerialization.data(withJSONObject: json))
+        var overview = try JSONDecoder().decode(StoryOverview.self, from: JSONSerialization.data(withJSONObject: json))
+        overview.conditionContext = await store.currentOverviewConditionContext(facts)
         try await store.saveStoryOverview(overview, expected: facts)
         let reopened = try SessionStore(storageDirectory: directory)
         let cached = await reopened.storyOverview(for: facts)
@@ -124,4 +126,30 @@ final class StoryOverviewTests: XCTestCase {
         do { _ = try await task.value; XCTFail("Cancellation must propagate") }
         catch { XCTAssertTrue(error is CancellationError) }
     }
+    func testOrganizedPriorityExcludesUnassignedSymptomAndInvalidatesOverview() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try SessionStore(storageDirectory: directory)
+        let eye = SummaryEntry(category: .symptoms, title: "Eye discomfort", origin: .userAdded)
+        let back = SummaryEntry(category: .symptoms, title: "Back tingling", origin: .userAdded)
+        try await store.upsert(Session(transcript: "Synthetic", summaryEntries: [eye, back]))
+        let facts = HealthMemoryProjection.facts(in: try await store.healthSnapshot(), verifiedOnly: true)
+        var grouping = ConditionSynthesis(groups: [.init(name: "Ongoing eye concern", bodySystem: "eye", isPrimary: true, reason: "Explicit concern", entryIDs: [eye.id])], unassigned: [back.id])
+        try await store.saveConditionSynthesis(grouping, expected: facts)
+        let context = await store.currentOverviewConditionContext(facts)
+        XCTAssertTrue(context.contains("Priority 1: Ongoing eye concern"))
+        XCTAssertFalse(context.contains("Back tingling"))
+        var overview = StoryOverview(text: "Your main concern is your eye discomfort.", facts: facts)
+        overview.conditionContext = context
+        try await store.saveStoryOverview(overview, expected: facts)
+        grouping.groups[0].name = "Reported eye discomfort"
+        try await store.saveConditionSynthesis(grouping, expected: facts)
+        let stale = await store.storyOverview(for: facts)
+        XCTAssertNil(stale)
+        do {
+            try await store.saveStoryOverview(overview, expected: facts)
+            XCTFail("An overview generated under outdated organization must not commit")
+        } catch { XCTAssertTrue(error is SummaryCommitError) }
+    }
+
 }

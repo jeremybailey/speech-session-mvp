@@ -5,6 +5,13 @@ public struct StoryOverview: Codable, Sendable {
         public var text: String
         public var factIDs: [String]
     }
+    public var conditionContext: String?
+    public static func conditionContext(facts: [HealthFact], topics: [HealthTopic]) -> String {
+        let groups = ConditionSummaryProjection.groups(facts: facts, topics: topics).filter { !$0.isUncategorized }
+        return groups.enumerated().map { index, group in
+            "Priority \(index + 1): \(group.name). Supporting entries: " + group.facts.sorted { $0.id < $1.id }.map { "[\($0.id)] \($0.displayEntry.title)" }.joined(separator: "; ")
+        }.joined(separator: "\n")
+    }
     public var sentences: [Sentence]
     public var text: String { sentences.map(\.text).joined(separator: " ") }
     /// The narrative is derived from the accepted snapshot as a whole. These are
@@ -16,10 +23,12 @@ public struct StoryOverview: Codable, Sendable {
     /// Converts short, request-only reference codes back to durable fact identities.
     /// Unknown codes deliberately remain invalid so they can never be published.
     public func replacingFactIDs(using references: [String: String]) -> StoryOverview {
-        StoryOverview(sentences: sentences.map { sentence in
+        var translated = StoryOverview(sentences: sentences.map { sentence in
             Sentence(text: sentence.text,
                      factIDs: sentence.factIDs.map { references[$0] ?? $0 })
         })
+        translated.conditionContext = conditionContext
+        return translated
     }
     public func hasValidReferences(in facts: [HealthFact]) -> Bool {
         let ids = Set(facts.map(\.id))
@@ -49,13 +58,18 @@ extension SessionStore {
     public func storyOverview(for facts: [HealthFact]) -> StoryOverview? {
         let url = storageDirectory.appendingPathComponent("story-overview.json")
         guard let data = try? Data(contentsOf: url), let saved = try? JSONDecoder().decode(StoredStoryOverview.self, from: data),
-              saved.fingerprint == StoryOverview.fingerprint(facts), saved.overview.hasValidReferences(in: facts) else { return nil }
+              saved.fingerprint == StoryOverview.fingerprint(facts), saved.overview.hasValidReferences(in: facts),
+              saved.overview.conditionContext == currentOverviewConditionContext(facts) else { return nil }
         return saved.overview
+    }
+    public func currentOverviewConditionContext(_ facts: [HealthFact]) -> String {
+        StoryOverview.conditionContext(facts: displayedConditionFacts(for: facts), topics: (try? healthSnapshot().topics) ?? [])
     }
     public func saveStoryOverview(_ overview: StoryOverview, expected: [HealthFact]) throws {
         try Task.checkCancellation()
         let current = HealthMemoryProjection.facts(in: try healthSnapshot())
-        guard StoryOverview.fingerprint(current) == StoryOverview.fingerprint(expected), overview.hasValidReferences(in: current) else {
+        guard StoryOverview.fingerprint(current) == StoryOverview.fingerprint(expected), overview.hasValidReferences(in: current),
+              overview.conditionContext == currentOverviewConditionContext(current) else {
             throw SummaryCommitError.patientChanged
         }
         let data = try JSONEncoder().encode(StoredStoryOverview(fingerprint: StoryOverview.fingerprint(current), overview: overview))

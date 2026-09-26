@@ -443,19 +443,16 @@ struct ScopedHealthSummaryView: View {
     }
 
     private var sharePDFItem: SummaryPDFShareItem? {
-        guard case .loaded(let payload) = summaryState else { return nil }
+        guard case .loaded = summaryState else { return nil }
         guard !scopedSessions.isEmpty else { return nil }
 
         let entries = scopedAtomicEntries
-        let legacy = entries.isEmpty ? payload.nonemptyDisplaySections : []
 
         guard let document = SummaryPDFDocumentBuilder.build(
             title: "Health Summary",
             subtitle: sharePreviewTitle,
-            overview: payload.overviewParagraph(),
-            entries: entries,
-            legacySections: legacy,
-            timelineSessions: scopedSessions.sorted { $0.date > $1.date }
+            overview: nil,
+            entries: entries
         ) else { return nil }
 
         return SummaryPDFShareItem(document: document)
