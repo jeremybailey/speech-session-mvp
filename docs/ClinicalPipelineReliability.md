@@ -62,3 +62,11 @@ organization, provenance preservation, and stale/contradicted exclusion. These t
 routing and contracts, not live model clinical quality; the actual patient result
 still needs device validation. Later manual review can guide conflict resolution,
 with prior dated history retained rather than erased.
+
+Device feedback on commit `1f6b618` (September 27): the user reports a much better
+version after restoring source-linked eligibility. This is partial validation,
+not confirmation of complete clinical coverage: the cholesterol concern is still
+missing. Follow-up must determine whether the cholesterol readings, flags, and
+reference ranges survived extraction and eligibility, or whether organization or
+condition verification omitted them. Do not mark that omission resolved without
+checking the actual evidence path.
