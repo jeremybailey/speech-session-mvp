@@ -47,6 +47,15 @@ public enum ClinicalResponseFormat {
                                    "coreSupported": ["type": "boolean"], "reason": ["type": "string"],
                                    "citations": ["type": "array", "items": citation], "exclusion": exclusion,
                                    "uncertainFields": ["type": "array", "items": ["type": "string"]]])
+            if !expectedCheckIDs.isEmpty {
+                var keyed: [String: Any] = [:]
+                for id in expectedCheckIDs {
+                    var properties = decision["properties"] as! [String: Any]
+                    properties["id"] = ["type": "string", "enum": [id.uuidString]]
+                    keyed[id.uuidString] = object(properties)
+                }
+                return strict("health_source_verification", object(["decisions": object(keyed)]))
+            }
             return strict("health_source_verification", object(["decisions": ["type": "array", "items": decision]]))
         default:
             return ["type": "json_object"]

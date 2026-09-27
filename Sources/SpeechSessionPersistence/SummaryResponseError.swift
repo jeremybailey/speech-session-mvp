@@ -32,6 +32,17 @@ public enum SummaryResponseError: Error, LocalizedError, Equatable {
         }
     }
 
+    /// Each required UUID property owns one decision; never associate results by array position.
+    public static func decodeKeyedChecks(_ value: Any?, expectedIDs: [UUID]) throws -> [SummaryCheck] {
+        guard let rows = value as? [String: Any] else { throw Self.invalidFormat }
+        let expected = Set(expectedIDs.map(\.uuidString))
+        guard Set(rows.keys).isSubset(of: expected) else { throw Self.wrongDecisions }
+        guard Set(rows.keys) == expected else { throw Self.missingDecisions }
+        return try expectedIDs.flatMap { id in
+            try decodeChecks([rows[id.uuidString]!], expectedIDs: [id])
+        }
+    }
+
     public static func decodeChecks(_ value: Any?, expectedIDs: [UUID]) throws -> [SummaryCheck] {
         guard let value, JSONSerialization.isValidJSONObject(value),
               let data = try? JSONSerialization.data(withJSONObject: value),

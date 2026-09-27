@@ -7,6 +7,8 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 source = (root / 'SpeechSessionApp/HealthSummaryModel.swift').read_text()
 assert 'timingStage' not in source
+assert r'expectedCheckIDs: batch.map(\.id)' in source
+assert 'decodeKeyedChecks(object["decisions"]' in source
 assert 'private func request(stage: String,' in source
 assert not re.search(r'\brequest\(system:', source)
 for function, stage in [('auditBatch', 'checking'), ('classifyForStory', 'classification'),

@@ -11,11 +11,14 @@ final class ClinicalResponseFormatTests: XCTestCase {
             let schema = try XCTUnwrap(wrapper["schema"] as? [String: Any])
             let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
             let decisions = try XCTUnwrap(properties["decisions"] as? [String: Any])
-            let items = try XCTUnwrap(decisions["items"] as? [String: Any])
+            XCTAssertEqual(Set(decisions["required"] as? [String] ?? []), Set(ids.map(\.uuidString)))
+            XCTAssertEqual(decisions["additionalProperties"] as? Bool, false)
+            let keyed = try XCTUnwrap(decisions["properties"] as? [String: Any])
+            let items = try XCTUnwrap(keyed[ids[0].uuidString] as? [String: Any])
             let fields = try XCTUnwrap(items["properties"] as? [String: Any])
             return try XCTUnwrap(fields["id"] as? [String: Any])
         }
-        XCTAssertEqual(try identifier([first, second])["enum"] as? [String], [first.uuidString, second.uuidString])
+        XCTAssertEqual(try identifier([first, second])["enum"] as? [String], [first.uuidString])
         XCTAssertEqual(try identifier([otherBatch])["enum"] as? [String], [otherBatch.uuidString])
         // Schema constraints supplement, never replace exact coverage validation.
         let row: [String: Any] = ["id": first.uuidString, "supported": true, "reason": "test", "citations": []]

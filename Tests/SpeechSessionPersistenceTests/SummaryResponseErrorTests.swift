@@ -18,6 +18,14 @@ final class SummaryResponseErrorTests: XCTestCase {
         }
         XCTAssertEqual(try SummaryResponseError.decodeChecks([row(a)], expectedIDs: [a]).count, 1)
     }
+    func testKeyedDecisionsRequireCoverageAndRejectSwappedIdentities() throws {
+        let a = UUID(), b = UUID()
+        let valid = [a.uuidString: row(a), b.uuidString: row(b)]
+        XCTAssertEqual(try SummaryResponseError.decodeKeyedChecks(valid, expectedIDs: [a,b]).map(\.id), [a,b])
+        XCTAssertThrowsError(try SummaryResponseError.decodeKeyedChecks([a.uuidString: row(a)], expectedIDs: [a,b]))
+        XCTAssertThrowsError(try SummaryResponseError.decodeKeyedChecks([a.uuidString: row(b), b.uuidString: row(a)], expectedIDs: [a,b]))
+        XCTAssertThrowsError(try SummaryResponseError.decodeKeyedChecks([a.uuidString: row(a), b.uuidString: row(a)], expectedIDs: [a,b]))
+    }
     func testInvalidResponseIsNotMistakenForUnsupportedHealthData() {
         XCTAssertThrowsError(try SummaryResponseError.decodeChecks(["unexpected": "value"], expectedIDs: [UUID()])) {
             XCTAssertEqual($0 as? SummaryResponseError, .invalidFormat)
