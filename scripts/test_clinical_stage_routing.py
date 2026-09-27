@@ -20,7 +20,7 @@ server = (root / 'vercel-openai-proxy/api/v1/health-processing/stages.ts').read_
 allowed = server.split('const allowedStages = new Set([', 1)[1].split(']);', 1)[0]
 for stage in re.findall(r'request\(stage: "([^"]+)"', source):
     assert f'"{stage}"' in allowed, stage
-schema = source.split('private enum ClinicalResponseFormat', 1)[1].split('\nactor RecordSummaryProcessor', 1)[0]
+schema = (root / 'Sources/SpeechSessionPersistence/ClinicalResponseFormat.swift').read_text().split('public enum ClinicalResponseFormat', 1)[1]
 program = '''import Foundation
 enum SummaryEntryCategory: String, CaseIterable { case symptoms }
 private enum ClinicalResponseFormat''' + schema + '''

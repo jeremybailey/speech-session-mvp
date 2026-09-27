@@ -412,56 +412,6 @@ enum SummaryProcessingError: LocalizedError {
     var errorDescription: String? { if case .unavailable(let message) = self { return message }; return nil }
 }
 
-private enum ClinicalResponseFormat {
-    private static func object(_ properties: [String: Any]) -> [String: Any] {
-        ["type": "object", "properties": properties,
-         "required": properties.keys.sorted(), "additionalProperties": false]
-    }
-    private static func strict(_ name: String, _ schema: [String: Any]) -> [String: Any] {
-        ["type": "json_schema", "json_schema": ["name": name, "strict": true, "schema": schema]]
-    }
-    static func forStage(_ stage: String) -> [String: Any] {
-        switch stage {
-        case "classification":
-            let category: [String: Any] = ["anyOf": [
-                ["type": "string", "enum": SummaryEntryCategory.allCases.map(\.rawValue)],
-                ["type": "null"]
-            ]]
-            return strict("health_category_classification", object(["decisions": ["type": "array", "items": object([
-                "id": ["type": "integer"], "category": category
-            ])]]))
-        case "duplicates":
-            return strict("health_duplicate_decision", object(["equivalent": ["type": "boolean"]]))
-        case "condition-synthesis":
-            let group = object(["name": ["type": "string"], "bodySystem": ["type": "string"],
-                                "isPrimary": ["type": "boolean"], "reason": ["type": "string"],
-                                "entryIDs": ["type": "array", "items": ["type": "string"]]])
-            return strict("health_condition_organization", object([
-                "groups": ["type": "array", "items": group],
-                "unassigned": ["type": "array", "items": ["type": "string"]]
-            ]))
-        case "condition-verification":
-            let decision = object(["name": ["type": "string"], "bodySystem": ["type": "string"],
-                                   "nameSupported": ["type": "boolean"],
-                                   "supportedEntryIDs": ["type": "array", "items": ["type": "string"]],
-                                   "reason": ["type": "string"]])
-            return strict("health_condition_verification", object(["decisions": ["type": "array", "items": decision]]))
-        case "checking":
-            let citation = object(["field": ["type": "string"], "excerpt": ["type": "string"]])
-            let exclusion: [String: Any] = ["anyOf": [
-                ["type": "string", "enum": ["wrong_patient", "contradicted", "not_patient_information", "unreadable"]],
-                ["type": "null"]
-            ]]
-            let decision = object(["id": ["type": "string"], "supported": ["type": "boolean"],
-                                   "coreSupported": ["type": "boolean"], "reason": ["type": "string"],
-                                   "citations": ["type": "array", "items": citation], "exclusion": exclusion,
-                                   "uncertainFields": ["type": "array", "items": ["type": "string"]]])
-            return strict("health_source_verification", object(["decisions": ["type": "array", "items": decision]]))
-        default:
-            return ["type": "json_object"]
-        }
-    }
-}
 
 actor RecordSummaryProcessor {
     static let version = SummaryVerification.version
@@ -818,7 +768,7 @@ actor RecordSummaryProcessor {
             \(contactName == nil ? "" : "This is a contact-completeness check. Each draft checks the same identity with at most one optional field. They are separate required decisions, NOT duplicate entries to omit. Use the original page to verify the explicit relationship between this provider, organization and any footer contact details. Proximity alone does not establish affiliation. Never borrow patient contact fields or another provider’s direct number. Only assess or correct that contact. A provider heading is sufficient evidence for a named contact, not evidence that this person interpreted or performed a test. Reporting/signing roles require explicit source wording. Missing optional metadata must not reject the name. Never attach patient demographic contact information. For name-only drafts, assess only identity and do not require specialty, phone, dates or other optional information. For each field draft, check the included field and identity only. Do not add or correct fields in this pass. Return corrections as an empty object.")
 
             """
-            let raw = try await request(stage: "checking", system: instructions, user: input, transport: transport, onDevice: onDevice)
+            let raw = try await request(stage: "checking", system: instructions, user: input, transport: transport, onDevice: onDevice, expectedCheckIDs: batch.map(\.id))
             guard let data = raw.data(using: .utf8), let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { throw invalidResponse }
             var checks = try SummaryResponseError.decodeChecks(object["decisions"], expectedIDs: batch.map(\.id))
             for index in checks.indices {
@@ -989,7 +939,7 @@ actor RecordSummaryProcessor {
         return verified
     }
 
-    private func request(stage: String, system: String, user: String, transport: OpenAIChatTransport?, onDevice: Bool, contract: OverviewResponseContract? = nil, model: String = "gpt-4o-mini") async throws -> String {
+    private func request(stage: String, system: String, user: String, transport: OpenAIChatTransport?, onDevice: Bool, contract: OverviewResponseContract? = nil, expectedCheckIDs: [UUID] = [], model: String = "gpt-4o-mini") async throws -> String {
         try Task.checkCancellation()
         let started = Date(), label = stage
         defer { timing.info("model_request stage=\(label, privacy: .public) seconds=\(Date().timeIntervalSince(started), privacy: .public)") }
@@ -1019,7 +969,7 @@ actor RecordSummaryProcessor {
             return response.content
         }
         guard let transport else { throw SummaryProcessingError.unavailable("Sign in in Settings to check cloud summaries.") }
-        let responseFormat = contract?.responseFormat ?? ClinicalResponseFormat.forStage(label)
+        let responseFormat = contract?.responseFormat ?? ClinicalResponseFormat.forStage(label, expectedCheckIDs: expectedCheckIDs)
         let typedPayload: [String: Any] = [
             "stage": label,
             "instructions": system,
