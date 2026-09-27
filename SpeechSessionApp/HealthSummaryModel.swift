@@ -446,8 +446,11 @@ actor RecordSummaryProcessor {
                 let extractionStarted = Date()
                 try Task.checkCancellation()
                 try await store.updateSummaryRun(sessionID: session.id, runID: run.id, stage: .drafting)
+                let parsedLabs = unit.flatMap { StructuredHealthReport.labDrafts(in: $0, session: session) }
                 let fields: VisitSummaryFields
-                if onDevice {
+                if parsedLabs != nil {
+                    fields = VisitSummaryFields()
+                } else if onDevice {
                     guard #available(iOS 26.0, *), OnDeviceSummaryService.isAvailable else {
                         throw SummaryProcessingError.unavailable("On-device summaries are unavailable. Check your processing option in Settings.")
                     }
@@ -459,7 +462,7 @@ actor RecordSummaryProcessor {
                     fields = parsed
                 }
                 timing.info("extraction seconds=\(Date().timeIntervalSince(extractionStarted), privacy: .public)")
-                let draft = SummaryEntryFactory.entries(from: fields, session: session).map { entry in unit.map { StructuredHealthReport.prepare(entry, for: $0) } ?? entry }.filter {
+                let draft = (parsedLabs ?? SummaryEntryFactory.entries(from: fields, session: session)).map { entry in unit.map { StructuredHealthReport.prepare(entry, for: $0) } ?? entry }.filter {
                     $0.category != .practitionerContact || !contactNames.contains(ProviderContactBlocks.nameKey($0.title))
                 }
                 stage = "Checking against the original"

@@ -70,3 +70,18 @@ missing. Follow-up must determine whether the cholesterol readings, flags, and
 reference ranges survived extraction and eligibility, or whether organization or
 condition verification omitted them. Do not mark that omission resolved without
 checking the actual evidence path.
+
+### Explicit lab-row preservation
+
+Recognized, fully labelled lab rows now produce drafts deterministically: test
+name, result, source reference range, explicit above/below-range flag, and dated
+order context. A dash for a missing range remains unset, including fasting-hours
+rows adjacent to lipid results. Ambiguous layouts use the existing model extractor.
+No diagnosis or treatment advice is derived from report boilerplate. Drafts still
+pass the existing classification and source-checking stages, with unchanged limits.
+
+Local parser validation against the supplied report retained both dated elevated
+LDL readings and did not flag either HDL reading. Only anonymized synthetic
+fixtures are committed. This validates extraction coverage, not live condition
+model output. Existing stored summaries need regeneration for that original report
+using its menu; the change does not force reprocessing of unrelated records.
