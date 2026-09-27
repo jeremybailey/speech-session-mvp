@@ -185,7 +185,7 @@ public enum HealthMemoryProjection {
         let preferences = Dictionary(snapshot.preferences.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         let entries = snapshot.sessions.flatMap { session in
             let sourceHash = verifiedOnly ? SummaryVerification.hash(session.transcript) : ""
-            return (session.summaryEntries ?? []).filter { !$0.isDeleted && (!verifiedOnly || SummaryVerification.isVisible($0, sourceHash: sourceHash)) }
+            return (session.summaryEntries ?? []).filter { !$0.isDeleted && (!verifiedOnly || SummaryVerification.isPortraitEligible($0, sourceHash: sourceHash)) }
         }
         var keys = HealthFactKeyCache()
         let facts = Dictionary(grouping: entries, by: { keys.key($0) }).compactMap { key, entries -> HealthFact? in

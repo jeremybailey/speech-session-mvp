@@ -2,15 +2,15 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class SummaryCategoryClassificationTests: XCTestCase {
-    func testRelatedSymptomsShareConcernWithoutRewritingSourceDetails() throws {
+    func testCategoryClassificationCannotCreateConditionRelationships() throws {
         let entries = [SummaryEntry(category: .symptoms, title: "Electric pain with backpack"),
                        SummaryEntry(category: .symptoms, title: "Tingling in back")]
         let raw = #"{"decisions":[{"id":0,"category":"symptoms","conditionGroup":"Back symptoms with backpack","conditionGroupReason":"The narrative links these descriptions to carrying a backpack."},{"id":1,"category":"symptoms","conditionGroup":"Back symptoms with backpack","conditionGroupReason":"The narrative links these descriptions to carrying a backpack."}]}"#
         let output = try SummaryCategoryClassification.apply(raw, to: entries)
         let facts = output.map { HealthFact(id: $0.id.uuidString, occurrences: [$0], preference: .init(id: $0.id.uuidString), topicIDs: []) }
         let groups = ConditionSummaryProjection.groups(facts: facts, topics: [])
-        XCTAssertEqual(groups.count, 1)
-        XCTAssertEqual(Set(groups[0].facts.map(\.title)), Set(entries.map(\.title)))
+        XCTAssertEqual(groups.count, 2)
+        XCTAssertTrue(output.allSatisfy { $0.evidence?.conditionGroup == nil })
         XCTAssertEqual(output.map(\.id), entries.map(\.id))
     }
     func testConditionAssociationWithoutExplanationIsIgnored() throws {
@@ -32,7 +32,7 @@ final class SummaryCategoryClassificationTests: XCTestCase {
         let result = try SummaryCategoryClassification.apply(#"{"decisions":[{"id":0,"category":"chiefComplaint","conditionGroup":"Migraine","conditionGroupReason":"Patient explicitly identifies migraines as the main reason for care.","conditionIsPrimary":true}]}"#, to: [entry])
         XCTAssertEqual(result[0].details, entry.details)
         XCTAssertEqual(result[0].category, .chiefComplaint)
-        XCTAssertEqual(result[0].evidence?.conditionIsPrimary, true)
+        XCTAssertNil(result[0].evidence?.conditionIsPrimary)
         let fact = HealthFact(id: entry.id.uuidString, occurrences: result, preference: .init(id: entry.id.uuidString), topicIDs: [])
         XCTAssertEqual(ConditionSummaryProjection.groups(facts: [fact], topics: []).first?.name, "Migraine")
     }

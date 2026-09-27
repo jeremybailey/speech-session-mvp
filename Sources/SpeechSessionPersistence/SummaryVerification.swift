@@ -1,6 +1,7 @@
 import Foundation
 
 public enum SummaryAdmission: String, Codable, Sendable { case supported, sourceLinked, sourceOnly, superseded }
+public enum ClinicalFactTrust: String, Codable, Sendable { case verified, patientConfirmed, reviewRequired }
 public struct SummaryCitation: Codable, Hashable, Sendable {
     public var field: String
     public var excerpt: String
@@ -26,9 +27,12 @@ public struct SummaryRun: Codable, Hashable, Sendable {
     public var stage: Stage
     public var version: Int
     public var updatedAt: Date
+    public var completedSourceChunks: Int?
+    public var promptVersion: String?
     public init(source: String, stage: Stage = .fetching) {
         id = UUID(); sourceHash = SummaryVerification.hash(source); self.stage = stage
         version = SummaryVerification.version; updatedAt = Date()
+        completedSourceChunks = 0; promptVersion = "clinical-pipeline-v1"
     }
 }
 public struct SummaryRevision: Codable, Hashable, Sendable {
@@ -51,7 +55,7 @@ public struct SummaryCheck: Codable, Sendable {
     }
 }
 public enum SummaryVerification {
-    public static let version = 17
+    public static let version = 18
     public static func hash(_ value: String) -> String {
         var result: UInt64 = 14695981039346656037
         for byte in value.utf8 { result = (result ^ UInt64(byte)) &* 1099511628211 }
@@ -78,6 +82,26 @@ public enum SummaryVerification {
         guard SummaryEntityStructure.exclusion(entry) == nil, let assessment = entry.evidence?.assessment else { return false }
         return [.supported, .sourceLinked].contains(assessment.admission) && assessment.sourceHash == sourceHash
             && assessment.contentHash == contentHash(entry)
+    }
+
+    /// Facts allowed to shape the longitudinal portrait. Source-linked drafts stay
+    /// visible in their original record for review, but are not treated as verified.
+    public static func isPortraitEligible(_ entry: SummaryEntry, source: String) -> Bool {
+        isPortraitEligible(entry, sourceHash: hash(source))
+    }
+    public static func isPortraitEligible(_ entry: SummaryEntry, sourceHash: String) -> Bool {
+        trust(of: entry, sourceHash: sourceHash) != .reviewRequired
+    }
+    public static func trust(of entry: SummaryEntry, sourceHash: String) -> ClinicalFactTrust {
+        guard !entry.isDeleted else { return .reviewRequired }
+        // Patient confirmation is provenance, not clinician confirmation.
+        if entry.origin == .userAdded || entry.origin == .userEdited { return .patientConfirmed }
+        guard SummaryEntityStructure.exclusion(entry) == nil,
+              let assessment = entry.evidence?.assessment,
+              assessment.admission == .supported,
+              assessment.sourceHash == sourceHash,
+              assessment.contentHash == contentHash(entry) else { return .reviewRequired }
+        return .verified
     }
     /// Patient-facing inclusion is distinct from strict automated verification.
     public static func sourceLinked(_ entry: SummaryEntry, source: String, evidence: String, exclusion: String? = nil) -> SummaryEntry {

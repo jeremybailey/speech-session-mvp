@@ -17,7 +17,7 @@ function getIssuerAndJwks(): { issuer: string; jwks: ReturnType<typeof createRem
 /**
  * Ensures Authorization is Bearer <Kinde access token> and JWT is valid for configured issuer + audience.
  */
-export async function verifyKindeBearer(authHeader: string | undefined): Promise<void> {
+export async function verifyKindeBearer(authHeader: string | undefined): Promise<string> {
   if (!authHeader?.startsWith("Bearer ")) {
     throw Object.assign(new Error("Missing bearer token"), { status: 401 });
   }
@@ -28,10 +28,12 @@ export async function verifyKindeBearer(authHeader: string | undefined): Promise
   }
   const { issuer, jwks } = getIssuerAndJwks();
   try {
-    await jwtVerify(token, jwks, {
+    const verified = await jwtVerify(token, jwks, {
       issuer,
       audience,
     });
+    if (!verified.payload.sub) throw new Error("Token has no subject");
+    return verified.payload.sub;
   } catch {
     throw Object.assign(new Error("Invalid or expired token"), { status: 401 });
   }

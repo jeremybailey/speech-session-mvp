@@ -3,10 +3,13 @@ import Foundation
 /// Chat completions endpoint + async `Authorization` header (BYOK or refreshed Kinde access token).
 struct OpenAIChatTransport: Sendable {
     let chatCompletionsURL: URL
+    let healthProcessingURL: URL?
     private let authorizationHeader: @Sendable () async throws -> String
 
-    init(chatCompletionsURL: URL, authorizationHeader: @escaping @Sendable () async throws -> String) {
+    init(chatCompletionsURL: URL, healthProcessingURL: URL? = nil,
+         authorizationHeader: @escaping @Sendable () async throws -> String) {
         self.chatCompletionsURL = chatCompletionsURL
+        self.healthProcessingURL = healthProcessingURL
         self.authorizationHeader = authorizationHeader
     }
 
@@ -19,7 +22,10 @@ struct OpenAIChatTransport: Sendable {
     }
 
     static func kindeProxy(chatURL: URL, accessToken: @escaping @Sendable () async throws -> String) -> Self {
-        Self(chatCompletionsURL: chatURL, authorizationHeader: accessToken)
+        let v1 = chatURL.deletingLastPathComponent().deletingLastPathComponent()
+        return Self(chatCompletionsURL: chatURL,
+                    healthProcessingURL: v1.appendingPathComponent("health-processing/stages"),
+                    authorizationHeader: accessToken)
     }
 
     func makeAuthorizationHeader() async throws -> String {

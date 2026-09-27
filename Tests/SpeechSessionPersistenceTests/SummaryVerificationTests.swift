@@ -99,6 +99,31 @@ final class SummaryVerificationTests: XCTestCase {
         XCTAssertEqual(snapshot.sessions[0].extractionVersion, SummaryVerification.version)
         XCTAssertEqual(snapshot.sessions[0].summary, "")
     }
+
+    func testInterruptedRunResumesCheckedChunksAfterRelaunch() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = "Patient reports migraine.\nFollow-up documents improvement."
+        let session = Session(transcript: source)
+        let firstStore = try SessionStore(storageDirectory: dir)
+        try await firstStore.upsert(session)
+        let run = try await firstStore.beginSummaryRun(sessionID: session.id, expected: session)
+        let checked = supported(SummaryEntry(category: .symptoms, title: "Migraine",
+            sourceSessionID: session.id), source: source)
+        try await firstStore.checkpointSummaryDraft(sessionID: session.id, runID: run.id,
+            entries: [checked], completedSourceChunks: 1)
+        try await firstStore.updateSummaryRun(sessionID: session.id, runID: run.id, stage: .interrupted)
+
+        let relaunchedStore = try SessionStore(storageDirectory: dir)
+        let restored = try await relaunchedStore.healthSnapshot().sessions.first!
+        let resumed = try await relaunchedStore.beginSummaryRun(sessionID: session.id, expected: restored)
+        let drafts = try await relaunchedStore.summaryDrafts(sessionID: session.id, runID: resumed.id)
+
+        XCTAssertEqual(resumed.id, run.id)
+        XCTAssertEqual(resumed.completedSourceChunks, 1)
+        XCTAssertEqual(resumed.promptVersion, "clinical-pipeline-v1")
+        XCTAssertEqual(drafts.map(\.id), [checked.id])
+    }
 }
 
 extension SummaryVerificationTests {

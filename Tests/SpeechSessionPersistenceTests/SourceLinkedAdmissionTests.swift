@@ -2,6 +2,19 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class SourceLinkedAdmissionTests: XCTestCase {
+    func testReviewRequiredFactStaysInRecordButCannotEnterPortrait() {
+        let source = "The patient reports tingling in the right hand."
+        let draft = SummaryEntry(category: .symptoms, title: "tingling", details: "Patient reports tingling in the right hand.")
+        let linked = SummaryVerification.sourceLinked(draft, source: source, evidence: source)
+        XCTAssertTrue(SummaryVerification.isVisible(linked, source: source))
+        XCTAssertFalse(SummaryVerification.isPortraitEligible(linked, source: source))
+        XCTAssertEqual(SummaryVerification.trust(of: linked, sourceHash: SummaryVerification.hash(source)), .reviewRequired)
+        let patient = SummaryEntry(category: .symptoms, title: "My tingling", origin: .userAdded)
+        XCTAssertEqual(SummaryVerification.trust(of: patient, sourceHash: SummaryVerification.hash(source)), .patientConfirmed)
+        let snapshot = HealthMemorySnapshot(sessions: [Session(transcript: source, summaryEntries: [linked])])
+        XCTAssertTrue(HealthMemoryProjection.facts(in: snapshot, verifiedOnly: true).isEmpty)
+        XCTAssertEqual(HealthMemoryProjection.facts(in: snapshot, verifiedOnly: false).count, 1)
+    }
     func testAttributedJournalParaphraseUsesItsOwnQuote() {
         let source = "My ankle injury still bothers me. Please include this in my health story."
         var draft = SummaryEntry(category: .chiefComplaint, title: "Persistent ankle injury", details: "Patient reports continuing difficulty from an ankle injury.")

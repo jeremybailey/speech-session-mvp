@@ -35,7 +35,7 @@ def assess(case, response):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run',action='store_true')
-    parser.add_argument('--models',nargs='+',default=['gpt-4o-mini','gpt-6-astra'])
+    parser.add_argument('--models',nargs='+',default=['gpt-4o-mini','gpt-6-luna','gpt-6-sol','gpt-6-astra'])
     parser.add_argument('--output',default='/tmp/condition-synthesis-evaluation.json')
     args=parser.parse_args()
     for case in CASES:
@@ -49,18 +49,22 @@ def main():
     results=[]
     for model in args.models:
         for case in CASES:
-            payload={'model':model,'response_format':{'type':'json_object'},'messages':[{'role':'system','content':PROMPT},{'role':'user','content':json.dumps({'entries':case['entries']})}]}
-            if model=='gpt-6-astra': payload.update(reasoning_effort='low',max_completion_tokens=16000)
-            else: payload.update(temperature=0,max_tokens=6000)
+            payload={'model':model,'store':False,'max_output_tokens':16000,
+                'input':[{'role':'system','content':PROMPT},{'role':'user','content':json.dumps({'entries':case['entries']})}],
+                'text':{'format':{'type':'json_object'}}}
+            if model.startswith('gpt-6-'): payload['reasoning']={'effort':'low'}
             started=time.monotonic()
             try:
-                request=urllib.request.Request('https://api.openai.com/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'})
+                request=urllib.request.Request('https://api.openai.com/v1/responses',data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'})
                 with urllib.request.urlopen(request,timeout=120) as response: raw=json.load(response)
-                choice=raw['choices'][0]
-                if choice.get('finish_reason')!='stop': raise ValueError('Incomplete response')
-                result=json.loads(choice['message']['content'])
+                if raw.get('status')!='completed': raise ValueError('Incomplete response')
+                text=next((part['text'] for item in raw.get('output',[]) if item.get('type')=='message'
+                    for part in item.get('content',[]) if part.get('type')=='output_text'),None)
+                if not text: raise ValueError('Missing structured output')
+                result=json.loads(text)
                 errors=assess(case,result)
-                results.append(dict(model=model,case=case['name'],seconds=time.monotonic()-started,errors=errors,response=result,usage=raw.get('usage')))
+                results.append(dict(model=model,case=case['name'],seconds=time.monotonic()-started,errors=errors,
+                    response=result,usage=raw.get('usage'),request_id=raw.get('id')))
                 print(model,case['name'],'PASS' if not errors else 'FAIL: '+ '; '.join(errors))
             except Exception as error:
                 results.append(dict(model=model,case=case['name'],error=str(error)))

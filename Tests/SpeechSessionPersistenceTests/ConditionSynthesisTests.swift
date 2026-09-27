@@ -2,6 +2,37 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class ConditionSynthesisTests: XCTestCase {
+    func testIndependentVerificationCanOnlyRemoveUnsupportedEdges() async throws {
+        let facts = [fact("Migraine", category: .symptoms), fact("Normal chest x-ray", category: .testsAndLabs)]
+        let ids = facts.flatMap(\.occurrences).map(\.id)
+        let proposed = ConditionSynthesis(groups: [
+            .init(name: "Migraine", bodySystem: "neurological", isPrimary: true,
+                  reason: "Proposed relationship", entryIDs: ids)
+        ], unassigned: [])
+        let verified = try await ConditionSynthesis.verified(proposed, facts: facts) { _ in
+            """
+            {"decisions":[{"name":"Migraine","bodySystem":"neurological","nameSupported":true,"supportedEntryIDs":["\(ids[0].uuidString)"],"reason":"The migraine entry explicitly names the concern."}]}
+            """
+        }
+        XCTAssertEqual(verified.groups.first?.entryIDs, [ids[0]])
+        XCTAssertEqual(verified.unassigned, [ids[1]])
+    }
+
+    func testIndependentVerificationRejectsInventedConditionName() async throws {
+        let facts = [fact("Dry eye", category: .symptoms)]
+        let id = facts[0].latest.id
+        let proposed = ConditionSynthesis(groups: [
+            .init(name: "Neurotrophic keratitis", bodySystem: "eye", isPrimary: false,
+                  reason: "Inferred diagnosis", entryIDs: [id])
+        ], unassigned: [])
+        let verified = try await ConditionSynthesis.verified(proposed, facts: facts) { _ in
+            """
+            {"decisions":[{"name":"Neurotrophic keratitis","bodySystem":"eye","nameSupported":false,"supportedEntryIDs":[],"reason":"The diagnosis is not explicitly supported."}]}
+            """
+        }
+        XCTAssertTrue(verified.groups.isEmpty)
+        XCTAssertEqual(verified.unassigned, [id])
+    }
     func testTransientRequestRecoversWithSamePayloadAndBoundedBackoff() async throws {
         var attempts = 0
         var delays: [UInt64] = []
@@ -71,6 +102,48 @@ final class ConditionSynthesisTests: XCTestCase {
         try result.validate(facts)
         XCTAssertEqual(result.unassigned.count, 61)
         XCTAssertEqual(calls.values.sorted(), [1, 2])
+    }
+
+    func testTokenEstimateSplitsBeforeByteLimit() async throws {
+        let largeDetail = String(repeating: "clinical context ", count: 1_150)
+        let facts = (0..<3).map { index -> HealthFact in
+            var entry = SummaryEntry(category: .otherNotes, title: "Concern \(index)", details: largeDetail,
+                                     origin: .userAdded)
+            entry.evidence = ClinicalEvidence()
+            return HealthFact(id: entry.id.uuidString, occurrences: [entry],
+                              preference: .init(id: entry.id.uuidString), topicIDs: [])
+        }
+        var payloadSizes: [Int] = []
+        let result = try await ConditionSynthesis.organize(facts: facts) { payload in
+            payloadSizes.append(payload.utf8.count)
+            let json = try JSONSerialization.jsonObject(with: Data(payload.utf8)) as! [String: Any]
+            let rows = json["entries"] as! [[String: Any]]
+            let ids = rows.map { $0["id"] as! String }
+            return String(decoding: try JSONSerialization.data(withJSONObject: ["groups": [], "unassigned": ids]),
+                          as: UTF8.self)
+        }
+        try result.validate(facts)
+        XCTAssertGreaterThan(payloadSizes.count, 1)
+        XCTAssertTrue(payloadSizes.allSatisfy { $0 < 60_000 })
+    }
+
+    func testCompletedConditionProposalResumesAfterRelaunch() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let entry = SummaryEntry(category: .symptoms, title: "Migraine", origin: .userAdded)
+        let session = Session(transcript: "Patient reports migraine.", summaryEntries: [entry])
+        let store = try SessionStore(storageDirectory: dir)
+        try await store.upsert(session)
+        let facts = HealthMemoryProjection.facts(in: try await store.healthSnapshot(), verifiedOnly: true)
+        let proposal = synthesis(facts, name: "Migraine")
+        try await store.saveConditionProposal(proposal, expected: facts, model: ConditionSynthesis.model,
+                                              promptVersion: ConditionSynthesis.promptVersion)
+
+        let relaunched = try SessionStore(storageDirectory: dir)
+        let restored = await relaunched.conditionProposal(for: facts, model: ConditionSynthesis.model,
+                                                           promptVersion: ConditionSynthesis.promptVersion)
+        XCTAssertEqual(restored?.groups.first?.name, "Migraine")
+        XCTAssertEqual(restored?.groups.first?.entryIDs, proposal.groups.first?.entryIDs)
     }
 
     private func fact(_ title: String, category: SummaryEntryCategory = .symptoms) -> HealthFact {

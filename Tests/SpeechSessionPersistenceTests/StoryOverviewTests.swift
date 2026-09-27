@@ -2,6 +2,12 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class StoryOverviewTests: XCTestCase {
+    func testSentenceNumbersMustAppearInReferencedFacts() {
+        let entry = SummaryEntry(category: .findings, title: "Pregnancy", details: "31 weeks pregnant", origin: .userAdded)
+        let fact = HealthFact(id: entry.id.uuidString, occurrences: [entry], preference: .init(id: entry.id.uuidString), topicIDs: [])
+        XCTAssertTrue(StoryOverview(sentences: [.init(text: "You are 31 weeks pregnant.", factIDs: [fact.id])]).hasGroundedNumbers(in: [fact]))
+        XCTAssertFalse(StoryOverview(sentences: [.init(text: "You are 34 weeks pregnant.", factIDs: [fact.id])]).hasGroundedNumbers(in: [fact]))
+    }
     func testMedicationHistoryDoesNotChangeIdentityOnEveryRefresh() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

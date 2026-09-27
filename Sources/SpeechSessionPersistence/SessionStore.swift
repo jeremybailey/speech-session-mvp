@@ -573,6 +573,18 @@ public actor SessionStore {
         var env = try loadEnvelope()
         guard let i = env.sessions.firstIndex(where: { $0.id == sessionID }),
               env.sessions[i].transcript == expected.transcript else { throw SummaryCommitError.sourceChanged }
+        if var existing = env.sessions[i].summaryRun,
+           existing.stage != .complete,
+           existing.sourceHash == SummaryVerification.hash(expected.transcript),
+           existing.version == SummaryVerification.version,
+           existing.promptVersion == "clinical-pipeline-v1",
+           env.sessions[i].summaryDrafts != nil {
+            existing.stage = .fetching
+            existing.updatedAt = Date()
+            env.sessions[i].summaryRun = existing
+            try saveEnvelope(env)
+            return existing
+        }
         let run = SummaryRun(source: expected.transcript)
         env.sessions[i].summaryRun = run
         env.sessions[i].summaryDrafts = []
@@ -580,11 +592,24 @@ public actor SessionStore {
         return run
     }
 
-    public func checkpointSummaryDraft(sessionID: UUID, runID: UUID, entries: [SummaryEntry]) throws {
+    public func summaryDrafts(sessionID: UUID, runID: UUID) throws -> [SummaryEntry] {
+        let env = try loadEnvelope()
+        guard let session = env.sessions.first(where: { $0.id == sessionID }), session.summaryRun?.id == runID,
+              session.summaryRun?.sourceHash == SummaryVerification.hash(session.transcript) else { throw SummaryCommitError.sourceChanged }
+        return session.summaryDrafts ?? []
+    }
+
+    public func checkpointSummaryDraft(sessionID: UUID, runID: UUID, entries: [SummaryEntry],
+                                       completedSourceChunks: Int? = nil) throws {
         var env = try loadEnvelope()
         guard let i = env.sessions.firstIndex(where: { $0.id == sessionID }), env.sessions[i].summaryRun?.id == runID,
               env.sessions[i].summaryRun?.sourceHash == SummaryVerification.hash(env.sessions[i].transcript) else { throw SummaryCommitError.sourceChanged }
         env.sessions[i].summaryDrafts = entries
+        if let completedSourceChunks {
+            let previous = env.sessions[i].summaryRun?.completedSourceChunks ?? 0
+            env.sessions[i].summaryRun?.completedSourceChunks = max(previous, completedSourceChunks)
+        }
+        env.sessions[i].summaryRun?.updatedAt = Date()
         try saveEnvelope(env)
     }
 

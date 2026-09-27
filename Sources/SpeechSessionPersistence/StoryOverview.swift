@@ -36,6 +36,24 @@ public struct StoryOverview: Codable, Sendable {
             !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !$0.factIDs.isEmpty && Set($0.factIDs).isSubset(of: ids)
         }
     }
+    /// IDs provide provenance; this additional guard prevents unsupported dates,
+    /// quantities, percentages, and doses from being introduced in presentation prose.
+    public func hasGroundedNumbers(in facts: [HealthFact]) -> Bool {
+        let factsByID = Dictionary(uniqueKeysWithValues: facts.map { ($0.id, $0) })
+        func numbers(_ text: String) -> Set<String> {
+            guard let regex = try? NSRegularExpression(pattern: #"(?<![A-Za-z])\d+(?:[.,]\d+)?(?:%|mg|mcg|ml|weeks?|days?|years?)?"#, options: [.caseInsensitive]) else { return [] }
+            let range = NSRange(text.startIndex..., in: text)
+            return Set(regex.matches(in: text, range: range).compactMap { match in
+                Range(match.range, in: text).map { String(text[$0]).lowercased().replacingOccurrences(of: ",", with: "") }
+            })
+        }
+        return sentences.allSatisfy { sentence in
+            let evidence = sentence.factIDs.compactMap { factsByID[$0] }.flatMap(\.occurrences).map { entry in
+                ([entry.title, entry.details, entry.supportingExcerpt ?? "", entry.evidence?.eventDate ?? ""] + entry.fields.flatMap { [$0.label, $0.value] }).joined(separator: " ")
+            }.joined(separator: " ")
+            return numbers(sentence.text).isSubset(of: numbers(evidence))
+        }
+    }
     public static func fingerprint(_ facts: [HealthFact]) -> String {
         SummaryVerification.hash("patient-story-v4|" + facts.sorted { $0.id < $1.id }.map { fact in
             // Session storage uses whole-second ISO dates. In-memory revision timestamps
