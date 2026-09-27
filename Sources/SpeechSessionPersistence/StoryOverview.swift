@@ -55,7 +55,7 @@ public struct StoryOverview: Codable, Sendable {
         }
     }
     public static func fingerprint(_ facts: [HealthFact]) -> String {
-        SummaryVerification.hash("patient-story-v4|" + facts.sorted { $0.id < $1.id }.map { fact in
+        SummaryVerification.hash("patient-story-v5-source-linked|" + facts.sorted { $0.id < $1.id }.map { fact in
             // Session storage uses whole-second ISO dates. In-memory revision timestamps
             // retain fractions, so using revision here invalidated unchanged saved stories.
             // Content hashes also catch edits made within the same second.

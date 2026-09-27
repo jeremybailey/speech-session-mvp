@@ -2,18 +2,41 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class SourceLinkedAdmissionTests: XCTestCase {
-    func testReviewRequiredFactStaysInRecordButCannotEnterPortrait() {
+    func testSourceLinkedFactCanInformPortraitWithoutManualConfirmation() {
         let source = "The patient reports tingling in the right hand."
         let draft = SummaryEntry(category: .symptoms, title: "tingling", details: "Patient reports tingling in the right hand.")
         let linked = SummaryVerification.sourceLinked(draft, source: source, evidence: source)
         XCTAssertTrue(SummaryVerification.isVisible(linked, source: source))
-        XCTAssertFalse(SummaryVerification.isPortraitEligible(linked, source: source))
+        XCTAssertTrue(SummaryVerification.isPortraitEligible(linked, source: source))
         XCTAssertEqual(SummaryVerification.trust(of: linked, sourceHash: SummaryVerification.hash(source)), .reviewRequired)
         let patient = SummaryEntry(category: .symptoms, title: "My tingling", origin: .userAdded)
         XCTAssertEqual(SummaryVerification.trust(of: patient, sourceHash: SummaryVerification.hash(source)), .patientConfirmed)
         let snapshot = HealthMemorySnapshot(sessions: [Session(transcript: source, summaryEntries: [linked])])
-        XCTAssertTrue(HealthMemoryProjection.facts(in: snapshot, verifiedOnly: true).isEmpty)
+        XCTAssertEqual(HealthMemoryProjection.facts(in: snapshot, verifiedOnly: true).count, 1)
         XCTAssertEqual(HealthMemoryProjection.facts(in: snapshot, verifiedOnly: false).count, 1)
+    }
+    func testUnreviewedJournalAndFlaggedLabReachOrganizationWithProvenance() throws {
+        let journal = "I have a chronic corneal injury and dry eye."
+        let report = "LDL cholesterol 4.8 mmol/L HIGH. Reference: below 3.5 mmol/L."
+        var eye = SummaryEntry(category: .symptoms, title: "Chronic corneal injury", details: "Patient reports a chronic corneal injury and dry eye.")
+        eye.sourceExcerpt = journal
+        eye = SummaryVerification.sourceLinked(eye, source: journal, evidence: journal)
+        let lab = SummaryVerification.sourceLinked(.init(category: .testsAndLabs, title: "LDL cholesterol",
+            fields: [.init(label: "Result", value: "4.8 mmol/L HIGH")]), source: report, evidence: report)
+        let snapshot = HealthMemorySnapshot(sessions: [Session(transcript: journal, summaryEntries: [eye]),
+            Session(transcript: report, summaryEntries: [lab])])
+        let facts = HealthMemoryProjection.facts(in: snapshot)
+        XCTAssertEqual(facts.count, 2)
+        XCTAssertTrue(facts.allSatisfy { !$0.isReviewed })
+        let payload = try ConditionSynthesis.input(facts)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any])
+        let entries = try XCTUnwrap(object["entries"] as? [[String: Any]])
+        XCTAssertEqual(Set(entries.compactMap { $0["id"] as? String }), Set([eye.id.uuidString, lab.id.uuidString]))
+        XCTAssertTrue(entries.allSatisfy { $0["sourceAdmission"] as? String == "sourceLinked" && $0["manualReviewed"] as? Bool == false })
+        XCTAssertEqual(Set(entries.compactMap { $0["excerpt"] as? String }), Set([journal, report]))
+        XCTAssertFalse(SummaryVerification.isPortraitEligible(lab, source: report + " corrected"))
+        let excluded = SummaryVerification.sourceLinked(eye, source: journal, evidence: journal, exclusion: "contradicted")
+        XCTAssertFalse(SummaryVerification.isPortraitEligible(excluded, source: journal))
     }
     func testAttributedJournalParaphraseUsesItsOwnQuote() {
         let source = "My ankle injury still bothers me. Please include this in my health story."

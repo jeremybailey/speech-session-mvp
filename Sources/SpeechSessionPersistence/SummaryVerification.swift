@@ -85,13 +85,13 @@ public enum SummaryVerification {
             && assessment.contentHash == contentHash(entry)
     }
 
-    /// Facts allowed to shape the longitudinal portrait. Source-linked drafts stay
-    /// visible in their original record for review, but are not treated as verified.
+    /// Eligibility is distinct from confirmation: source-linked observations may inform
+    /// descriptive concerns without becoming manually or clinically verified.
     public static func isPortraitEligible(_ entry: SummaryEntry, source: String) -> Bool {
         isPortraitEligible(entry, sourceHash: hash(source))
     }
     public static func isPortraitEligible(_ entry: SummaryEntry, sourceHash: String) -> Bool {
-        trust(of: entry, sourceHash: sourceHash) != .reviewRequired
+        isVisible(entry, sourceHash: sourceHash)
     }
     public static func trust(of entry: SummaryEntry, sourceHash: String) -> ClinicalFactTrust {
         guard !entry.isDeleted else { return .reviewRequired }

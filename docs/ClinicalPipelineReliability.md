@@ -42,3 +42,23 @@ Required failure tests cover simultaneous 429s, quota exhaustion, expired sign-i
 3. Compare accepted fact IDs and condition edges before comparing prose.
 4. Roll back a flag on any unsupported fact, attribution loss, status error, request-size regression, or sustained p95 regression.
 5. Remove legacy transport and unreachable summary code only after behavioral equivalence is established. Until then, direct/BYOK mode retains the legacy compatibility path.
+
+### Source-linked concern eligibility (September 27 correction)
+
+Manual review and automated source checking are separate. At the user's request,
+source-linked entries with current source/content hashes may inform descriptive
+condition organization and the overview without manual confirmation. This restores
+the pre-refactor inclusion behavior; it does not change their review status.
+Source-only, contradicted, deleted, superseded, and stale entries remain excluded.
+
+Organization and overview inputs include checking status and source excerpts.
+Patient reports must remain attributed; lab flags/ranges may support descriptive
+concerns without implying a diagnosed disease. Unsupported edges remain subject to
+condition verification. Models and request limits are unchanged. Condition and
+narrative cache versions change, not the record extraction version.
+
+Offline regression fixtures cover unreviewed eye history and flagged LDL reaching
+organization, provenance preservation, and stale/contradicted exclusion. These test
+routing and contracts, not live model clinical quality; the actual patient result
+still needs device validation. Later manual review can guide conflict resolution,
+with prior dated history retained rather than erased.
