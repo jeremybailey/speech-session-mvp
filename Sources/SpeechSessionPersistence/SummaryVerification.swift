@@ -55,7 +55,8 @@ public struct SummaryCheck: Codable, Sendable {
     }
 }
 public enum SummaryVerification {
-    public static let version = 18
+    // Recheck records affected by the checker request-schema routing regression.
+    public static let version = 19
     public static func hash(_ value: String) -> String {
         var result: UInt64 = 14695981039346656037
         for byte in value.utf8 { result = (result ^ UInt64(byte)) &* 1099511628211 }
