@@ -48,6 +48,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body,
     });
 
+    // Preserve cooldown guidance so clients do not immediately repeat throttled requests.
+    const retryAfter = r.headers.get("retry-after");
+    if (retryAfter) res.setHeader("Retry-After", retryAfter);
     const text = await r.text();
     const outCt = r.headers.get("content-type");
     if (outCt) {

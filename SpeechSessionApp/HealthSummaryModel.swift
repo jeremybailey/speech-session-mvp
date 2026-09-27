@@ -957,10 +957,13 @@ actor RecordSummaryProcessor {
             payload["max_tokens"] = 6000
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try Task.checkCancellation()
-        guard let http = response as? HTTPURLResponse else { throw SummaryResponseError.network }
-        try SummaryResponseError.validateHTTPStatus(http.statusCode)
+        let data = try await SummaryRateLimitRecovery.run {
+            // Refresh authorization on each attempt, including after a cooldown.
+            request.setValue(try await transport.makeAuthorizationHeader(), forHTTPHeaderField: "Authorization")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else { throw SummaryResponseError.network }
+            return (data, http.statusCode, http.value(forHTTPHeaderField: "Retry-After"), data)
+        }
         guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let choices = json["choices"] as? [[String: Any]], let choice = choices.first else { throw invalidResponse }
         try SummaryResponseError.validateFinishReason(choice["finish_reason"] as? String)

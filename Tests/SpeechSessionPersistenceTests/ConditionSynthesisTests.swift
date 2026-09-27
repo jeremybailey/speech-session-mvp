@@ -2,6 +2,77 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class ConditionSynthesisTests: XCTestCase {
+    func testTransientRequestRecoversWithSamePayloadAndBoundedBackoff() async throws {
+        var attempts = 0
+        var delays: [UInt64] = []
+        let result = try await ConditionSynthesis.requestWithTransientRetry("accepted entries", sleep: { delays.append($0) }) { payload in
+            XCTAssertEqual(payload, "accepted entries")
+            attempts += 1
+            if attempts < 3 { throw URLError(.networkConnectionLost) }
+            return "completed"
+        }
+        XCTAssertEqual(result, "completed")
+        XCTAssertEqual(attempts, 3)
+        XCTAssertEqual(delays, [2_000_000_000, 4_000_000_000])
+    }
+
+    func testPersistentNetworkFailureStopsAfterThreeAttempts() async {
+        var attempts = 0
+        do {
+            _ = try await ConditionSynthesis.requestWithTransientRetry("input", sleep: { _ in }) { _ in
+                attempts += 1
+                throw URLError(.timedOut)
+            }
+            XCTFail("Must report persistent failure")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .timedOut)
+        }
+        XCTAssertEqual(attempts, 3)
+    }
+
+    func testNonTransientErrorsAreNotRetried() async {
+        for error in [URLError(.cancelled) as Error, URLError(.userAuthenticationRequired), ConditionSynthesis.SynthesisError.invalid] {
+            var attempts = 0
+            do {
+                _ = try await ConditionSynthesis.requestWithTransientRetry("input", sleep: { _ in XCTFail("Must not delay") }) { _ in
+                    attempts += 1
+                    throw error
+                }
+                XCTFail("Must propagate error")
+            } catch { }
+            XCTAssertEqual(attempts, 1)
+        }
+    }
+
+    func testCancellationDuringBackoffStopsRetry() async {
+        var attempts = 0
+        do {
+            _ = try await ConditionSynthesis.requestWithTransientRetry("input", sleep: { _ in throw CancellationError() }) { _ in
+                attempts += 1
+                throw URLError(.networkConnectionLost)
+            }
+            XCTFail("Must cancel")
+        } catch { XCTAssertTrue(error is CancellationError) }
+        XCTAssertEqual(attempts, 1)
+    }
+
+    func testDroppedConnectionInLaterBatchDoesNotRepeatCompletedBatch() async throws {
+        let facts = (0..<61).map { fact("Synthetic concern \($0)") }
+        var calls: [String: Int] = [:]
+        let result = try await ConditionSynthesis.organize(facts: facts) { payload in
+            calls[payload, default: 0] += 1
+            let json = try JSONSerialization.jsonObject(with: Data(payload.utf8)) as! [String: Any]
+            let rows = json["entries"] as! [[String: Any]]
+            if rows.count == 1 && calls[payload] == 1 { throw URLError(.networkConnectionLost) }
+            let ids = rows.map { $0["id"] as! String }
+            let response: [String: Any] = ["groups": [], "unassigned": ids]
+            return String(decoding: try JSONSerialization.data(withJSONObject: response), as: UTF8.self)
+        }
+        try result.validate(facts)
+        XCTAssertEqual(result.unassigned.count, 61)
+        XCTAssertEqual(calls.values.sorted(), [1, 2])
+    }
+
     private func fact(_ title: String, category: SummaryEntryCategory = .symptoms) -> HealthFact {
         let entry = SummaryEntry(category: category, title: title, origin: .userAdded)
         return HealthFact(id: entry.id.uuidString, occurrences: [entry], preference: .init(id: entry.id.uuidString), topicIDs: [])

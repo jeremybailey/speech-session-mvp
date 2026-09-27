@@ -59,7 +59,39 @@ public struct ConditionSynthesis: Codable, Sendable {
     }
 
     public static func organize(facts: [HealthFact], request: (String) async throws -> String) async throws -> Self {
-        try await organize(facts: facts, depth: 0, request: request)
+        try await organize(facts: facts, depth: 0) { payload in
+            try await requestWithTransientRetry(payload, request: request)
+        }
+    }
+
+    /// Retry only the interrupted inference request, retaining completed portions in this run.
+    /// A lost response can mean the server completed inference, so retries are bounded.
+    static func requestWithTransientRetry(
+        _ payload: String,
+        sleep: (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) },
+        request: (String) async throws -> String
+    ) async throws -> String {
+        for attempt in 0..<3 {
+            try Task.checkCancellation()
+            do {
+                let response = try await request(payload)
+                try Task.checkCancellation()
+                return response
+            } catch {
+                try Task.checkCancellation()
+                let networkError = error as NSError
+                let transientCodes = [URLError.networkConnectionLost.rawValue,
+                                      URLError.timedOut.rawValue,
+                                      URLError.notConnectedToInternet.rawValue,
+                                      URLError.cannotConnectToHost.rawValue,
+                                      URLError.dnsLookupFailed.rawValue]
+                guard attempt < 2, networkError.domain == NSURLErrorDomain,
+                      transientCodes.contains(networkError.code) else { throw error }
+                // Cancellation interrupts the delay as well as the next request.
+                try await sleep(UInt64(attempt + 1) * 2_000_000_000)
+            }
+        }
+        preconditionFailure("The final attempt always returns or throws")
     }
 
     private static func organize(facts: [HealthFact], depth: Int, request: (String) async throws -> String) async throws -> Self {

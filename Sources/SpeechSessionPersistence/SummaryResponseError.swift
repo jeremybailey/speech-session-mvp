@@ -3,7 +3,7 @@ import Foundation
 /// Technical processing failures, separate from decisions about clinical support.
 public enum SummaryResponseError: Error, LocalizedError, Equatable {
     case invalidFormat, missingDecisions, duplicateDecisions, wrongDecisions
-    case responseTooLong, responseStopped, signInRequired, busy, serviceUnavailable, network, unknown
+    case responseTooLong, responseStopped, signInRequired, busy, quotaExceeded, serviceUnavailable, network, unknown
 
     public var errorDescription: String? {
         switch self {
@@ -14,7 +14,8 @@ public enum SummaryResponseError: Error, LocalizedError, Equatable {
         case .responseTooLong: return "The summary service reached its response limit before finishing."
         case .responseStopped: return "The summary service stopped before completing its response."
         case .signInRequired: return "The summary service could not authorize this request."
-        case .busy: return "The summary service is temporarily limiting requests."
+        case .busy: return "The summary service is busy. Please wait a minute before trying again. Your saved details are unchanged."
+        case .quotaExceeded: return "The summary service has reached its usage allowance. Please contact support; retrying will not resolve this. Your saved details are unchanged."
         case .serviceUnavailable: return "The summary service is unavailable right now."
         case .network: return "The app could not finish connecting to the summary service."
         case .unknown: return "The app could not finish processing this record."
@@ -25,6 +26,7 @@ public enum SummaryResponseError: Error, LocalizedError, Equatable {
         switch self {
         case .signInRequired: return "Open Settings and check your sign-in or API key, then retry."
         case .network: return "Check your internet connection, then retry."
+        case .quotaExceeded: return "Contact support to restore the summary service allowance."
         case .busy, .serviceUnavailable: return "Wait a few minutes, then retry."
         default: return "Retry the unfinished work. If this happens again, keep the original record and contact support with this message."
         }

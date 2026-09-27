@@ -30,3 +30,33 @@ Ran the actual app `RecordSummaryProcessor` and signed-in Kinde proxy on the iso
 A fourth diagnostic trial (94.65 seconds) identified the unassigned items as all 60 “Hormone testing” entries. These merely mention testing, with no result or explicit ongoing concern; leaving them in All is defensible. The three named concerns (migraine, left knee injury, right knee pain) remained separate. This fixture does not establish performance on abnormal hormone panels, pregnancy histories, ambiguous diagnoses, or the tester's real history. Four successful service completions are not a reliable population failure-rate estimate.
 
 Reports: `docs/test-results/condition-live-2026-09-26.json` and `docs/test-results/condition-live-diagnostic-2026-09-26.json`. The signed build was necessary for simulator keychain session persistence. An initial debug runner attempt was cancelled by the view's refresh task before meaningful model testing; the runner was moved to an independent task before these reported trials.
+
+### Interrupted condition requests
+
+Condition organization retries a transient URL loading failure at most twice (three
+attempts total), after cancellable two- and four-second delays. This applies to
+initial batches, link-repair requests, and cross-batch reconciliation. Completed
+batches stay in memory during these retries. Authentication, cancellation, malformed
+responses, and other non-transport errors do not enter this retry policy.
+
+Regression coverage injects a lost connection into the second of two batches and
+checks full ID coverage without repeating the first batch. Separate tests cover
+persistent failure, cancellation during backoff, and non-transient errors.
+This is fault injection, not proof of reliability on the tester's cellular network.
+An exhausted retry or app termination still requires restarting organization;
+intermediate batches are not persisted. A lost response may already have completed
+on the server, so retrying can incur another inference charge.
+
+### HTTP rate limits
+
+Summary model requests now share bounded HTTP 429 recovery: two retries, honoring
+Retry-After up to 60 seconds per wait, otherwise waiting 15 then 30 seconds when no
+header is provided. Longer requested cooldowns stop rather than retry early.
+Cancellation stops the wait. Explicit insufficient_quota/billing_hard_limit_reached
+errors report an allowance problem without retries. The chat proxy forwards
+Retry-After; deploying that proxy change enables provider-directed timing.
+Without deployment, clients still use bounded default delays.
+
+Five fault-injection tests cover recovery, exhaustion, quota/authentication,
+cancellation and long/date-based cooldowns. These do not establish the cause of
+any specific tester's HTTP 429 or guarantee available provider capacity.
