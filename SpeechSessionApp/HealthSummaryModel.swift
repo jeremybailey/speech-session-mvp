@@ -1038,36 +1038,55 @@ actor RecordSummaryProcessor {
             return response.content
         }
         guard let transport else { throw SummaryProcessingError.unavailable("Sign in in Settings to check cloud summaries.") }
-        let usesTypedEndpoint = transport.healthProcessingURL != nil
-        var request = URLRequest(url: transport.healthProcessingURL ?? transport.chatCompletionsURL)
-        request.httpMethod = "POST"; request.timeoutInterval = 120
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(try await transport.makeAuthorizationHeader(), forHTTPHeaderField: "Authorization")
-        var payload: [String: Any]
-        if usesTypedEndpoint {
-            payload = ["stage": label,
-                       "instructions": system,
-                       "input": user,
-                       "response_format": contract?.responseFormat ?? ClinicalResponseFormat.forStage(label),
-                       "request_id": UUID().uuidString]
+        let responseFormat = contract?.responseFormat ?? ClinicalResponseFormat.forStage(label)
+        let typedPayload: [String: Any] = [
+            "stage": label,
+            "instructions": system,
+            "input": user,
+            "response_format": responseFormat,
+            "request_id": UUID().uuidString
+        ]
+        var legacyPayload: [String: Any] = [
+            "model": model,
+            "response_format": responseFormat,
+            "messages": [["role": "system", "content": system], ["role": "user", "content": user]]
+        ]
+        if model == ConditionSynthesis.model {
+            legacyPayload["reasoning_effort"] = "low"
+            legacyPayload["max_completion_tokens"] = 16000
         } else {
-            payload = ["model": model,
-                       "response_format": contract?.responseFormat ?? ClinicalResponseFormat.forStage(label),
-                       "messages": [["role": "system", "content": system], ["role": "user", "content": user]]]
-            if model == ConditionSynthesis.model {
-                payload["reasoning_effort"] = "low"
-                payload["max_completion_tokens"] = 16000
-            } else {
-                payload["temperature"] = 0
-                payload["max_tokens"] = 6000
-            }
+            legacyPayload["temperature"] = 0
+            legacyPayload["max_tokens"] = 6000
         }
-        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-        let data = try await SummaryRateLimitRecovery.run(jobID: activeJobID) {
-            // Refresh authorization on each attempt, including after a cooldown.
+        var usesTypedEndpoint = transport.healthProcessingURL != nil
+
+        func send(to url: URL, payload: [String: Any]) async throws -> (Data, HTTPURLResponse) {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.timeoutInterval = 120
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue(try await transport.makeAuthorizationHeader(), forHTTPHeaderField: "Authorization")
+            request.httpBody = try JSONSerialization.data(withJSONObject: payload)
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else { throw SummaryResponseError.network }
+            return (data, http)
+        }
+
+        let data = try await SummaryRateLimitRecovery.run(jobID: activeJobID) {
+            var result: (Data, HTTPURLResponse)
+            if usesTypedEndpoint, let typedURL = transport.healthProcessingURL {
+                result = try await send(to: typedURL, payload: typedPayload)
+                // A phone build can reach production before its matching backend deployment.
+                // Only a missing route falls back; authorization, quota, schema and
+                // clinical-validation failures remain fail-closed.
+                if result.1.statusCode == 404 || result.1.statusCode == 405 {
+                    usesTypedEndpoint = false
+                    result = try await send(to: transport.chatCompletionsURL, payload: legacyPayload)
+                }
+            } else {
+                result = try await send(to: transport.chatCompletionsURL, payload: legacyPayload)
+            }
+            let (data, http) = result
             let retry = http.value(forHTTPHeaderField: "Retry-After")
                 ?? http.value(forHTTPHeaderField: "x-ratelimit-reset-requests")
                 ?? http.value(forHTTPHeaderField: "x-ratelimit-reset-tokens")
