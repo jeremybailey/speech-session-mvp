@@ -834,6 +834,12 @@ actor RecordSummaryProcessor {
             var notes: [String] = []
             for (index, batch) in batches.enumerated() {
                 try Task.checkCancellation()
+                let allowed = Set(batch.flatMap { line -> [String] in
+                    guard let data = line.data(using: .utf8),
+                          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+                    if let id = object["id"] as? String { return [id] }
+                    return object["factIDs"] as? [String] ?? []
+                })
                 let response = try await request(stage: "overview_condense", system: """
                 \(ConditionSynthesis.evidenceGuidance)
                 Condense this portion of already accepted health-summary entries into concise narrative notes.
@@ -843,14 +849,8 @@ actor RecordSummaryProcessor {
                 every sentence must include the exact factIDs that support it. Never emit an unknown ID.
                 Use at most 120 words total. These notes feed a final overview.
                 """, user: "Portion \(index + 1) of \(batches.count):\n" + batch.joined(separator: "\n"),
-                transport: transport, onDevice: onDevice, contract: .narrative)
+                transport: transport, onDevice: onDevice, contract: .narrative, allowedFactIDs: Array(allowed))
                 let narrative = try OverviewResponseContract.decodeNarrative(response)
-                let allowed = Set(batch.flatMap { line -> [String] in
-                    guard let data = line.data(using: .utf8),
-                          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
-                    if let id = object["id"] as? String { return [id] }
-                    return object["factIDs"] as? [String] ?? []
-                })
                 guard narrative.sentences.allSatisfy({ !$0.factIDs.isEmpty && Set($0.factIDs).isSubset(of: allowed) }) else {
                     throw OverviewFailure.invalidReferences
                 }
@@ -912,12 +912,11 @@ actor RecordSummaryProcessor {
         An old prescription fill does not prove present use, and default Current is a patient UI setting, not proof.
         Do not describe completed/past care steps as future plans. Distinguish patient reports from clinical findings.
         Do not imply clinical confirmation.
-        """, user: input, transport: transport, onDevice: onDevice, contract: .narrative)
+        """, user: input, transport: transport, onDevice: onDevice, contract: .narrative, allowedFactIDs: facts.map(\.id))
         var overview = try OverviewResponseContract.decodeNarrative(raw)
         overview.conditionContext = conditionContext
-        guard overview.hasValidReferences(in: facts), overview.hasGroundedNumbers(in: facts) else {
-            throw OverviewFailure.invalidReferences
-        }
+        guard overview.hasValidReferences(in: facts) else { throw OverviewFailure.invalidReferences }
+        guard overview.hasGroundedNumbers(in: facts) else { throw OverviewFailure.unsupported }
         await SummaryRequestCoordinator.shared.finishJob(jobID)
         return overview
     }
@@ -947,7 +946,7 @@ actor RecordSummaryProcessor {
         return verified
     }
 
-    private func request(stage: String, system: String, user: String, transport: OpenAIChatTransport?, onDevice: Bool, contract: OverviewResponseContract? = nil, expectedCheckIDs: [UUID] = [], model: String = "gpt-4o-mini") async throws -> String {
+    private func request(stage: String, system: String, user: String, transport: OpenAIChatTransport?, onDevice: Bool, contract: OverviewResponseContract? = nil, allowedFactIDs: [String] = [], expectedCheckIDs: [UUID] = [], model: String = "gpt-4o-mini") async throws -> String {
         try Task.checkCancellation()
         let started = Date(), label = stage
         defer { timing.info("model_request stage=\(label, privacy: .public) seconds=\(Date().timeIntervalSince(started), privacy: .public)") }
@@ -977,7 +976,7 @@ actor RecordSummaryProcessor {
             return response.content
         }
         guard let transport else { throw SummaryProcessingError.unavailable("Sign in in Settings to check cloud summaries.") }
-        let responseFormat = contract?.responseFormat ?? ClinicalResponseFormat.forStage(label, expectedCheckIDs: expectedCheckIDs)
+        let responseFormat = contract?.responseFormat(allowedFactIDs: allowedFactIDs) ?? ClinicalResponseFormat.forStage(label, expectedCheckIDs: expectedCheckIDs)
         let typedPayload: [String: Any] = [
             "stage": label,
             "instructions": system,

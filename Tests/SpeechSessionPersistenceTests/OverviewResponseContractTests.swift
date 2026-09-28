@@ -62,3 +62,23 @@ final class OverviewResponseContractTests: XCTestCase {
         XCTAssertEqual(Set(schema["required"] as? [String] ?? []), Set(properties.keys))
     }
 }
+
+extension OverviewResponseContractTests {
+    func testNarrativeSchemaBoundsReferencesToEachRequest() throws {
+        for ids in [["fact-a", "fact-b"], ["fact-c"]] {
+            let format = OverviewResponseContract.narrative.responseFormat(allowedFactIDs: ids)
+            let wrapper = try XCTUnwrap(format["json_schema"] as? [String: Any])
+            let schema = try XCTUnwrap(wrapper["schema"] as? [String: Any])
+            let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
+            let sentences = try XCTUnwrap(properties["sentences"] as? [String: Any])
+            XCTAssertEqual(sentences["minItems"] as? Int, 1)
+            XCTAssertEqual(sentences["maxItems"] as? Int, 10)
+            let item = try XCTUnwrap(sentences["items"] as? [String: Any])
+            let fields = try XCTUnwrap(item["properties"] as? [String: Any])
+            let references = try XCTUnwrap(fields["factIDs"] as? [String: Any])
+            XCTAssertEqual(references["minItems"] as? Int, 1)
+            let reference = try XCTUnwrap(references["items"] as? [String: Any])
+            XCTAssertEqual(reference["enum"] as? [String], ids)
+        }
+    }
+}

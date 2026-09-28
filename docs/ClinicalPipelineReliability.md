@@ -85,3 +85,14 @@ LDL readings and did not flag either HDL reading. Only anonymized synthetic
 fixtures are committed. This validates extraction coverage, not live condition
 model output. Existing stored summaries need regeneration for that original report
 using its menu; the change does not force reprocessing of unrelated records.
+
+### Overview reference contract
+
+Device feedback confirms the LDL concern now appears alongside the eye concern,
+but overview generation reported invalid sentence links. Narrative schemas now
+restrict factIDs to the submitted request's IDs, including each condensation batch,
+and require at least one reference per sentence. Local reference and numeric checks
+remain in place. Numeric grounding failures now report unsupported content rather
+than incorrectly reporting invalid links. No record extraction or condition cache
+migration is needed; retry Create overview after rebuilding. Offline schema tests
+and compilation do not substitute for verifying the next device-generated narrative.

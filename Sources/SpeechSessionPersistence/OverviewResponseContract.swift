@@ -26,6 +26,16 @@ public enum OverviewResponseContract: Sendable {
         ]]
     }
 
+    /// Bound references to the current request, including each condensation batch.
+    public func responseFormat(allowedFactIDs: [String]) -> [String: Any] {
+        guard self == .narrative, !allowedFactIDs.isEmpty else { return responseFormat }
+        let schema = Self.object(["sentences": ["type": "array", "minItems": 1, "maxItems": 10,
+            "items": Self.object(["text": ["type": "string"],
+                "factIDs": ["type": "array", "minItems": 1,
+                    "items": ["type": "string", "enum": Array(Set(allowedFactIDs)).sorted()]]])]])
+        return ["type": "json_schema", "json_schema": ["name": "health_story_overview", "strict": true, "schema": schema]]
+    }
+
     public static func decodeProse(_ raw: String) throws -> String {
         struct Prose: Decodable { let text: String }
         guard let result = try? JSONDecoder().decode(Prose.self, from: jsonData(raw)),
