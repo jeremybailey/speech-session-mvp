@@ -17,6 +17,8 @@ Overview generation receives only portrait-eligible facts and organized conditio
 - One persisted cooldown is shared by a summary job. `Retry-After` and request/token reset headers are honored with jitter.
 - A request gets at most two retries; a job gets at most six. Connection loss, timeout, DNS, and 429 responses are retryable. Cancellation, authorization, quota, schema, and clinical-validation failures are not.
 - Checked source chunks are checkpointed with source hash, verification version, prompt version, run ID, and completed chunk count. Relaunch resumes those chunks instead of repeating accepted work. The full condition result is written atomically only after proposal verification and whole-history validation; no partial organization is displayed.
+- Interactive processing requests iOS's finite background execution allowance. The active stage is persisted as `summary`, `conditions`, or `overview`. If the allowance expires or the process is terminated, the app resumes that stage when it next becomes active; existing record and condition checkpoints prevent completed stages and batches from restarting. Choosing **Stop preparing summary** clears this resume intent.
+- Condition organization and overview writing are separate user-visible jobs. Conditions are persisted and shown as soon as organization finishes. Overview generation starts only from **Create overview**, so a slow or failed narrative cannot hold back completed conditions.
 - Concurrent patient edits or source changes invalidate stale work before publication.
 
 ## Server transport and privacy
@@ -25,7 +27,7 @@ Overview generation receives only portrait-eligible facts and organized conditio
 
 Production defaults remain unchanged until evaluation gates pass: `gpt-4o-mini` for routine stages and `gpt-6-astra` for condition proposal and verification. Server flags `CLINICAL_ROUTINE_MODEL`, `CLINICAL_CONDITION_MODEL`, and `CLINICAL_OVERVIEW_MODEL` accept only `gpt-4o-mini`, `gpt-6-luna`, `gpt-6-sol`, or `gpt-6-astra`. Candidate rollout is Luna for routine extraction/classification, Sol for condition organization and overview, and Astra only for ambiguous escalation. Change one flag at a time and revert the flag immediately if a quality gate regresses.
 
-The OpenAI project must separately be approved and configured for the applicable Healthcare Addendum and Zero Data Retention or Modified Abuse Monitoring. `store:false` prevents Responses application-state retention but does not by itself activate those account controls. Do not use background mode, remote MCP tools, web search, assistants/threads, or Batch API for live health processing. Batch is reserved for synthetic or properly de-identified offline evaluation.
+The OpenAI project must separately be approved and configured for the applicable Healthcare Addendum and Zero Data Retention or Modified Abuse Monitoring. `store:false` prevents Responses application-state retention but does not by itself activate those account controls. Do not use a server-side autonomous agent, remote MCP tools, web search, assistants/threads, or Batch API for live health processing. The app may continue its same synchronous request during iOS's bounded background allowance; it does not create a detached server job. Batch is reserved for synthetic or properly de-identified offline evaluation.
 
 ## Quality gates and evaluation
 

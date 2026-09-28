@@ -2,6 +2,33 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class StoryOverviewTests: XCTestCase {
+    func testConditionsRemainAvailableBeforeOverviewIsCreated() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try SessionStore(storageDirectory: directory)
+        let entry = SummaryEntry(category: .symptoms, title: "Persistent eye discomfort", origin: .userAdded)
+        try await store.upsert(Session(transcript: "Patient reports persistent eye discomfort.", summaryEntries: [entry]))
+        let facts = HealthMemoryProjection.facts(in: try await store.healthSnapshot(), verifiedOnly: true)
+        let grouping = ConditionSynthesis(
+            groups: [.init(name: "Persistent eye concern", bodySystem: "eye", isPrimary: true,
+                           reason: "The patient describes this concern directly.", entryIDs: [entry.id])],
+            unassigned: []
+        )
+        try await store.saveConditionSynthesis(grouping, expected: facts)
+
+        let relaunched = try SessionStore(storageDirectory: directory)
+        let savedConditions = await relaunched.conditionSynthesis(for: facts)
+        let overviewBeforeCreation = await relaunched.storyOverview(for: facts)
+        XCTAssertEqual(savedConditions?.groups.first?.name, "Persistent eye concern")
+        XCTAssertNil(overviewBeforeCreation)
+
+        var overview = StoryOverview(text: "You reported persistent eye discomfort.", facts: facts)
+        overview.conditionContext = await relaunched.currentOverviewConditionContext(facts)
+        try await relaunched.saveStoryOverview(overview, expected: facts)
+        let savedOverview = await relaunched.storyOverview(for: facts)
+        XCTAssertEqual(savedOverview?.text, overview.text)
+    }
+
     func testSentenceNumbersMustAppearInReferencedFacts() {
         let entry = SummaryEntry(category: .findings, title: "Pregnancy", details: "31 weeks pregnant", origin: .userAdded)
         let fact = HealthFact(id: entry.id.uuidString, occurrences: [entry], preference: .init(id: entry.id.uuidString), topicIDs: [])

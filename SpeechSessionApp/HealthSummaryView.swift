@@ -11,6 +11,7 @@ struct HealthSummaryView: View {
     var openSettings: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var auth: KindeAuthManager
     @AppStorage("speechSession.summaryBackend") private var backend = "openai"
     @AppStorage("speechSession.openaiAPIKey") private var apiKey = ""
@@ -34,6 +35,7 @@ struct HealthSummaryView: View {
     @State private var attemptedRepair: Set<String> = []
     @State private var preparationTask: Task<Void, Never>?
     @State private var isLaunchingPreparation = false
+    @AppStorage("speechSession.pendingSummaryJob") private var pendingSummaryJob = ""
 
     private var showingStoryPlaceholder: Bool {
         if !model.hasLoaded { return true }
@@ -76,7 +78,10 @@ struct HealthSummaryView: View {
             if model.isProcessing || isLaunchingPreparation {
                 Section {
                     HStack { ProgressView(); Text(model.progress.isEmpty ? "Starting summary…" : model.progress) }
-                    Button("Stop preparing summary") { preparationTask?.cancel() }
+                    Button("Stop preparing summary") {
+                        pendingSummaryJob = ""
+                        preparationTask?.cancel()
+                    }
                 }
             } else if let issue = model.processingIssue {
                 Section {
@@ -252,7 +257,8 @@ struct HealthSummaryView: View {
             Button("OK", role: .cancel) { accountActionError = nil }
         } message: { Text(accountActionError ?? "Please try again.") }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: showingStoryPlaceholder)
-        .task(id: "\(ConditionSynthesis.fingerprint(model.facts))|\(model.isProcessing)|\(cloudConsent)|\(backend)") {
+        .task(id: "\(ConditionSynthesis.fingerprint(model.facts))|\(model.isProcessing)|\(model.hasLoaded)|\(cloudConsent)|\(backend)|\(pendingSummaryJob)") {
+            if resumePendingSummaryJobIfPossible() { return }
             guard !model.isProcessing, model.needsConditionOrganization, pendingCount == 0,
                   backend != "onDevice", cloudConsent else { return }
             let key = "conditions:" + ConditionSynthesis.fingerprint(model.facts)
@@ -273,6 +279,7 @@ struct HealthSummaryView: View {
             }
             #endif
             await model.refresh()
+            if resumePendingSummaryJobIfPossible() { return }
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--condition-qa") {
                 expandedConditions = ["migraine|"]
@@ -302,6 +309,10 @@ struct HealthSummaryView: View {
                 if ProcessInfo.processInfo.arguments.contains("--verification-qa-record"), let session = model.snapshot.sessions.first { taskSheet = .record(session) }
             }
             #endif
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            _ = resumePendingSummaryJobIfPossible()
         }
         .sheet(item: $taskSheet) { sheet in
             switch sheet {
@@ -549,9 +560,19 @@ struct HealthSummaryView: View {
         overviewOnlyRequest = false
         let forceAll = regenerateAll
         regenerateAll = false
+        let job = conditionsOnly ? "conditions" : (overviewOnly ? "overview" : "summary")
+        pendingSummaryJob = job
         isLaunchingPreparation = true
         preparationTask = Task {
-            defer { isLaunchingPreparation = false; preparationTask = nil }
+            let backgroundLease = SummaryBackgroundTaskLease(name: overviewOnly ? "Create health overview" : "Prepare health summary") {
+                preparationTask?.cancel()
+            }
+            defer { backgroundLease.end() }
+            defer {
+                if !Task.isCancelled, pendingSummaryJob == job { pendingSummaryJob = "" }
+                isLaunchingPreparation = false
+                preparationTask = nil
+            }
             let transport = backend == "onDevice" ? nil : await auth.openAIChatTransport(byokFallback: apiKey)
             if conditionsOnly {
                 await model.organizeConditions(transport: transport, onDevice: backend == "onDevice")
@@ -562,6 +583,23 @@ struct HealthSummaryView: View {
                 await home.loadSessions()
             }
         }
+    }
+
+    @discardableResult
+    private func resumePendingSummaryJobIfPossible() -> Bool {
+        guard model.hasLoaded, !pendingSummaryJob.isEmpty,
+              !isLaunchingPreparation, !model.isProcessing,
+              backend == "onDevice" || cloudConsent else { return false }
+        switch pendingSummaryJob {
+        case "conditions": conditionsOnlyRequest = true
+        case "overview": overviewOnlyRequest = true
+        case "summary": break
+        default:
+            pendingSummaryJob = ""
+            return false
+        }
+        prepare(retryUnfinished: pendingSummaryJob == "summary")
+        return true
     }
 }
 

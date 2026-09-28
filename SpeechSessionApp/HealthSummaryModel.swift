@@ -1,8 +1,36 @@
 import SwiftUI
+import UIKit
 import SpeechSessionPersistence
 import UserNotifications
 import FoundationModels
 import OSLog
+
+/// Requests the finite continuation time iOS offers when an interactive summary
+/// operation moves to the background. Clinical stages still checkpoint their own
+/// work because iOS may suspend or terminate the app after this allowance expires.
+@MainActor
+final class SummaryBackgroundTaskLease {
+    private var identifier: UIBackgroundTaskIdentifier = .invalid
+    private var expirationHandler: (() -> Void)?
+
+    init(name: String, expirationHandler: @escaping () -> Void) {
+        self.expirationHandler = expirationHandler
+        identifier = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.expirationHandler?()
+                self.end()
+            }
+        }
+    }
+
+    func end() {
+        expirationHandler = nil
+        guard identifier != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(identifier)
+        identifier = .invalid
+    }
+}
 
 @MainActor
 final class HealthSummaryModel: ObservableObject {
@@ -232,14 +260,11 @@ final class HealthSummaryModel: ObservableObject {
         defer { isProcessing = false; progress = "" }
         await refresh()
         await synthesizeAcceptedConditions(transport: transport, onDevice: onDevice, force: true)
-        guard !Task.isCancelled, !needsConditionOrganization, !facts.isEmpty else { return }
-        do {
-            progress = "Updating your health story…"
-            let expected = facts
-            let narrative = try await processor.makeOverview(facts: expected, conditionContext: StoryOverview.conditionContext(facts: conditionFacts, topics: snapshot.topics), transport: transport, onDevice: onDevice)
-            try await store.saveStoryOverview(narrative, expected: expected)
-            await refresh()
-        } catch { overviewNotice = error.localizedDescription }
+        // Overview writing is intentionally separate. Conditions are useful on
+        // their own and must remain available if the narrative request stalls.
+        if !Task.isCancelled, !needsConditionOrganization, !facts.isEmpty, overview == nil {
+            overviewNotice = "Your conditions are organized. Create an overview when you're ready."
+        }
     }
 
     private func synthesizeAcceptedConditions(transport: OpenAIChatTransport?, onDevice: Bool, force: Bool = false) async {
@@ -310,20 +335,13 @@ final class HealthSummaryModel: ObservableObject {
         if !onDevice {
             await synthesizeAcceptedConditions(transport: transport, onDevice: onDevice)
         }
-        if !Task.isCancelled && !facts.isEmpty {
-            progress = "Writing your health story…"
-            do {
-                let overviewFacts = facts
-                let narrative = try await processor.makeOverview(facts: overviewFacts, conditionContext: StoryOverview.conditionContext(facts: conditionFacts, topics: snapshot.topics), transport: transport, onDevice: onDevice)
-                try await store.saveStoryOverview(narrative, expected: overviewFacts)
-                await refresh()
-            } catch {
-                if error is CancellationError || Task.isCancelled { return }
-                overviewNotice = (error as? LocalizedError)?.errorDescription ?? "The overview request failed. Check your connection and try again. Your health details are saved."
-                overviewCheckerExplanation = (error as? OverviewFailure)?.checkerExplanation
-                // Valid category entries remain available if narrative generation is unavailable.
-                Logger(subsystem: "com.CollectiveCare.pilot", category: "SummaryPerformance").notice("Overview unavailable; awaiting retry")
-            }
+        if !Task.isCancelled, !facts.isEmpty, overview == nil, overviewNotice == nil {
+            // Finish and expose the durable structured result before starting an
+            // independent overview request. This also keeps a slow narrative from
+            // making record processing or condition organization appear unfinished.
+            overviewNotice = needsConditionOrganization
+                ? "Your saved details are ready. Organize conditions before creating an overview."
+                : "Your conditions are organized. Create an overview when you're ready."
         }
         if let first = failures.first {
             processingIssue = SummaryProcessingIssue(error: first.1, session: first.0, completed: completed, remaining: retryRecordIDs.count)
