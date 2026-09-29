@@ -78,7 +78,35 @@ struct HealthSummaryView: View {
             }
             if model.isProcessing || isLaunchingPreparation {
                 Section {
-                    HStack { ProgressView(); Text(model.progress.isEmpty ? "Starting summary…" : model.progress) }
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(model.isProcessing && !model.progressTitle.isEmpty ? model.progressTitle : "Preparing your health story")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        if model.isProcessing && model.progressTotal > 0 {
+                            ProgressView(
+                                value: Double(model.progressCurrent),
+                                total: Double(model.progressTotal)
+                            )
+                            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                Text(model.progress.isEmpty ? "Starting…" : model.progress)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                                Spacer(minLength: 8)
+                                Text("\(model.progressCurrent) of \(model.progressTotal) records")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize()
+                            }
+                        } else {
+                            ProgressView()
+                                .progressViewStyle(.linear)
+                            Text(model.progress.isEmpty ? "Starting…" : model.progress)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
                     Button("Stop preparing summary") {
                         pendingSummaryJob = ""
                         preparationTask?.cancel()

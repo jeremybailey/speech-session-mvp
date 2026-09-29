@@ -47,6 +47,9 @@ final class HealthSummaryModel: ObservableObject {
     @Published private(set) var undoRemoval: HealthFactPreference?
     @Published private(set) var isProcessing = false
     @Published private(set) var progress = ""
+    @Published private(set) var progressTitle = ""
+    @Published private(set) var progressCurrent = 0
+    @Published private(set) var progressTotal = 0
     @Published var error: String?
     @Published private(set) var processingIssue: SummaryProcessingIssue?
     private var retryRecordIDs: Set<UUID> = []
@@ -257,6 +260,9 @@ final class HealthSummaryModel: ObservableObject {
     func organizeConditions(transport: OpenAIChatTransport?, onDevice: Bool) async {
         guard !isProcessing else { return }
         isProcessing = true
+        progressTitle = "Organizing conditions"
+        progressCurrent = 0
+        progressTotal = 0
         defer { isProcessing = false; progress = "" }
         await refresh()
         await synthesizeAcceptedConditions(transport: transport, onDevice: onDevice, force: true)
@@ -314,14 +320,18 @@ final class HealthSummaryModel: ObservableObject {
             }
             return forceAll || (forceSessionID == nil ? session.needsSummaryVerification : session.id == forceSessionID)
         }
+        progressTitle = pending.isEmpty ? "Finishing health details" : "Processing health details"
+        progressCurrent = pending.isEmpty ? 0 : 1
+        progressTotal = pending.count
         if !overviewOnly { retryRecordIDs = Set(pending.map(\.id)) }
         var failures: [(Session, Error)] = []
         var completed = 0
         do {
             try await SummaryRecordBatch.run(records: pending) { session, index in
-                progress = "Preparing record \(index + 1) of \(pending.count)…"
+                progressCurrent = index + 1
+                progress = "Preparing this record…"
                 try await processor.process(session, related: snapshot.sessions.flatMap { $0.summaryEntries ?? [] }, store: store, transport: transport, onDevice: onDevice) { [self] stage in
-                    await MainActor.run { self.progress = "Record \(index + 1) of \(pending.count) · \(stage)" }
+                    await MainActor.run { self.progress = stage }
                 }
                 retryRecordIDs.remove(session.id)
                 completed += 1
@@ -332,6 +342,9 @@ final class HealthSummaryModel: ObservableObject {
         } catch is CancellationError { return }
         catch { self.error = error.localizedDescription; return }
         if !overviewOnly && !Task.isCancelled && (!pending.isEmpty || retryUnfinished) {
+            progressTitle = "Finishing health details"
+            progressCurrent = 0
+            progressTotal = 0
             progress = "Checking related symptoms…"
             do {
                 try await processor.reconcileSymptoms(store: store, transport: transport, onDevice: onDevice, force: forceAll || forceSessionID != nil)
@@ -360,6 +373,9 @@ final class HealthSummaryModel: ObservableObject {
     func createOverview(transport: OpenAIChatTransport?, onDevice: Bool) async {
         guard !isProcessing else { return }
         isProcessing = true
+        progressTitle = "Creating overview"
+        progressCurrent = 0
+        progressTotal = 0
         progress = "Preparing your health story…"
         overviewNotice = nil
         overviewCheckerExplanation = nil
