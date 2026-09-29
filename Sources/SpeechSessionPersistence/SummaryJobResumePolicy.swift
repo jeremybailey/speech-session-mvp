@@ -22,4 +22,16 @@ public enum SummaryJobResumePolicy {
     ) -> Bool {
         hasPendingJob && hasLoaded && !isLaunching && !isProcessing && appIsActive && processingIsAllowed
     }
+
+    /// A record-processing pass is complete only when its durable records agree.
+    /// The absence of an in-memory error is insufficient because cancellation can
+    /// return after checkpointing an interrupted run without presenting an error.
+    public static func recordJobCompleted(
+        hasProcessingIssue: Bool,
+        hasError: Bool,
+        unfinishedRecordCount: Int,
+        conditionOrganizationFailed: Bool
+    ) -> Bool {
+        !hasProcessingIssue && !hasError && unfinishedRecordCount == 0 && !conditionOrganizationFailed
+    }
 }

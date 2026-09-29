@@ -610,8 +610,16 @@ struct HealthSummaryView: View {
                     organizeConditionsAfterRecords: !recordsOnly
                 )
                 await home.loadSessions()
-                completedSuccessfully = model.processingIssue == nil && model.error == nil
-                    && (recordsOnly || model.conditionNotice == nil)
+                // Read the checkpointed run state before deciding that a background
+                // job is done. Cancellation can leave no visible error while one or
+                // more records correctly remain marked for continuation.
+                await model.refresh()
+                completedSuccessfully = SummaryJobResumePolicy.recordJobCompleted(
+                    hasProcessingIssue: model.processingIssue != nil,
+                    hasError: model.error != nil,
+                    unfinishedRecordCount: pendingCount,
+                    conditionOrganizationFailed: !recordsOnly && model.conditionNotice != nil
+                )
             }
         }
     }

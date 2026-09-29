@@ -55,4 +55,28 @@ final class SummaryJobResumePolicyTests: XCTestCase {
             isProcessing: false, appIsActive: true, processingIsAllowed: true
         ))
     }
+
+    func testRecordJobCannotFinishWhileDurableRecordsRemainPending() {
+        XCTAssertFalse(SummaryJobResumePolicy.recordJobCompleted(
+            hasProcessingIssue: false,
+            hasError: false,
+            unfinishedRecordCount: 1,
+            conditionOrganizationFailed: false
+        ))
+        XCTAssertTrue(SummaryJobResumePolicy.recordJobCompleted(
+            hasProcessingIssue: false,
+            hasError: false,
+            unfinishedRecordCount: 0,
+            conditionOrganizationFailed: false
+        ))
+    }
+
+    func testCombinedRecordJobRequiresConditionOrganizationToFinish() {
+        XCTAssertFalse(SummaryJobResumePolicy.recordJobCompleted(
+            hasProcessingIssue: false,
+            hasError: false,
+            unfinishedRecordCount: 0,
+            conditionOrganizationFailed: true
+        ))
+    }
 }
