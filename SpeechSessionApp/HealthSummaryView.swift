@@ -35,6 +35,7 @@ struct HealthSummaryView: View {
     @State private var attemptedRepair: Set<String> = []
     @State private var preparationTask: Task<Void, Never>?
     @State private var isLaunchingPreparation = false
+    @State private var preparationWasBackgrounded = false
     @AppStorage("speechSession.pendingSummaryJob") private var pendingSummaryJob = ""
 
     private var showingStoryPlaceholder: Bool {
@@ -314,7 +315,16 @@ struct HealthSummaryView: View {
             #endif
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
+            guard phase == .active else {
+                if isLaunchingPreparation || model.isProcessing {
+                    preparationWasBackgrounded = true
+                }
+                return
+            }
+            _ = resumePendingSummaryJobIfPossible()
+        }
+        .onChange(of: isLaunchingPreparation) { _, isLaunching in
+            guard !isLaunching else { return }
             _ = resumePendingSummaryJobIfPossible()
         }
         .sheet(item: $taskSheet) { sheet in
@@ -565,22 +575,32 @@ struct HealthSummaryView: View {
         reprocessAllRecordsRequest = false
         let job = conditionsOnly ? "conditions" : (overviewOnly ? "overview" : (recordsOnly ? "records" : "summary"))
         pendingSummaryJob = job
+        preparationWasBackgrounded = scenePhase != .active
         isLaunchingPreparation = true
         preparationTask = Task {
+            var completedSuccessfully = false
             let backgroundLease = SummaryBackgroundTaskLease(name: overviewOnly ? "Create health overview" : "Prepare health summary") {
                 preparationTask?.cancel()
             }
             defer { backgroundLease.end() }
             defer {
-                if !Task.isCancelled, pendingSummaryJob == job { pendingSummaryJob = "" }
+                let retainPendingJob = SummaryJobResumePolicy.shouldRetainPendingJob(
+                    completedSuccessfully: completedSuccessfully,
+                    taskWasCancelled: Task.isCancelled,
+                    wasBackgrounded: preparationWasBackgrounded,
+                    appIsActive: scenePhase == .active
+                )
+                if !retainPendingJob, pendingSummaryJob == job { pendingSummaryJob = "" }
                 isLaunchingPreparation = false
                 preparationTask = nil
             }
             let transport = backend == "onDevice" ? nil : await auth.openAIChatTransport(byokFallback: apiKey)
             if conditionsOnly {
                 await model.organizeConditions(transport: transport, onDevice: backend == "onDevice")
+                completedSuccessfully = model.conditionNotice == nil && !model.needsConditionOrganization
             } else if overviewOnly {
                 await model.createOverview(transport: transport, onDevice: backend == "onDevice")
+                completedSuccessfully = model.overview != nil && model.overviewNotice == nil
             } else {
                 await model.prepareSummaries(
                     transport: transport,
@@ -590,15 +610,22 @@ struct HealthSummaryView: View {
                     organizeConditionsAfterRecords: !recordsOnly
                 )
                 await home.loadSessions()
+                completedSuccessfully = model.processingIssue == nil && model.error == nil
+                    && (recordsOnly || model.conditionNotice == nil)
             }
         }
     }
 
     @discardableResult
     private func resumePendingSummaryJobIfPossible() -> Bool {
-        guard model.hasLoaded, !pendingSummaryJob.isEmpty,
-              !isLaunchingPreparation, !model.isProcessing,
-              backend == "onDevice" || cloudConsent else { return false }
+        guard SummaryJobResumePolicy.canResume(
+            hasPendingJob: !pendingSummaryJob.isEmpty,
+            hasLoaded: model.hasLoaded,
+            isLaunching: isLaunchingPreparation,
+            isProcessing: model.isProcessing,
+            appIsActive: scenePhase == .active,
+            processingIsAllowed: backend == "onDevice" || cloudConsent
+        ) else { return false }
         switch pendingSummaryJob {
         case "conditions": conditionsOnlyRequest = true
         case "overview": overviewOnlyRequest = true
