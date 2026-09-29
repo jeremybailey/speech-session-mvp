@@ -86,7 +86,8 @@ struct HealthSummaryView: View {
                         value: model.isProcessing && model.progressTotal > 0 ? model.progressValue : nil,
                         total: model.isProcessing && model.progressTotal > 0 ? Double(model.progressTotal) : nil,
                         currentRecord: model.progressCurrent,
-                        totalRecords: model.progressTotal
+                        totalRecords: model.progressTotal,
+                        showsRecordCount: model.progressShowsRecordCount
                     )
                     Button("Stop preparing summary") {
                         pendingSummaryJob = ""
@@ -669,6 +670,7 @@ private struct HealthProcessingProgressView: View {
     let total: Double?
     let currentRecord: Int
     let totalRecords: Int
+    let showsRecordCount: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -698,7 +700,7 @@ private struct HealthProcessingProgressView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 8)
-            if totalRecords > 1 {
+            if showsRecordCount && totalRecords > 1 {
                 Text("Record \(currentRecord) of \(totalRecords)")
                     .monospacedDigit()
                     .fixedSize()

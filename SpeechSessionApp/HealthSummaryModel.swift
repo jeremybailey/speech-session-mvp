@@ -51,6 +51,7 @@ final class HealthSummaryModel: ObservableObject {
     @Published private(set) var progressCurrent = 0
     @Published private(set) var progressTotal = 0
     @Published private(set) var progressValue = 0.0
+    @Published private(set) var progressShowsRecordCount = false
     @Published var error: String?
     @Published private(set) var processingIssue: SummaryProcessingIssue?
     private var retryRecordIDs: Set<UUID> = []
@@ -265,6 +266,7 @@ final class HealthSummaryModel: ObservableObject {
         progressCurrent = 0
         progressTotal = 0
         progressValue = 0
+        progressShowsRecordCount = false
         defer { isProcessing = false; progress = "" }
         await refresh()
         await synthesizeAcceptedConditions(transport: transport, onDevice: onDevice, force: true)
@@ -326,6 +328,7 @@ final class HealthSummaryModel: ObservableObject {
         progressCurrent = 0
         progressTotal = pending.count
         progressValue = 0
+        progressShowsRecordCount = !pending.isEmpty
         if !overviewOnly { retryRecordIDs = Set(pending.map(\.id)) }
         var failures: [(Session, Error)] = []
         var completed = 0
@@ -355,6 +358,7 @@ final class HealthSummaryModel: ObservableObject {
             progressCurrent = 0
             progressTotal = 0
             progressValue = 0
+            progressShowsRecordCount = false
             progress = "Checking related symptoms…"
             do {
                 try await processor.reconcileSymptoms(store: store, transport: transport, onDevice: onDevice, force: forceAll || forceSessionID != nil)
@@ -385,9 +389,10 @@ final class HealthSummaryModel: ObservableObject {
         isProcessing = true
         progressTitle = "Creating overview"
         progressCurrent = 0
-        progressTotal = 0
+        progressTotal = 100
         progressValue = 0
-        progress = "Preparing your health story…"
+        progressShowsRecordCount = false
+        progress = "Preparing accepted health details…"
         overviewNotice = nil
         overviewCheckerExplanation = nil
         error = nil
@@ -404,9 +409,19 @@ final class HealthSummaryModel: ObservableObject {
         do {
             try Task.checkCancellation()
             let expected = facts
-            progress = "Writing your health story…"
-            let narrative = try await processor.makeOverview(facts: expected, conditionContext: StoryOverview.conditionContext(facts: conditionFacts, topics: snapshot.topics), transport: transport, onDevice: onDevice)
+            let narrative = try await processor.makeOverview(
+                facts: expected,
+                conditionContext: StoryOverview.conditionContext(facts: conditionFacts, topics: snapshot.topics),
+                transport: transport,
+                onDevice: onDevice
+            ) { [self] update in
+                await MainActor.run {
+                    self.progress = update.message
+                    self.progressValue = max(self.progressValue, update.fraction * 100)
+                }
+            }
             progress = "Saving your overview…"
+            progressValue = 96
             try await store.saveStoryOverview(narrative, expected: expected)
             // Read back the exact saved snapshot before declaring success.
             guard let saved = await store.storyOverview(for: expected) else {
@@ -414,6 +429,8 @@ final class HealthSummaryModel: ObservableObject {
                 return
             }
             overview = saved.text
+            progress = "Finishing your overview…"
+            progressValue = 100
             await refresh()
             if overview == nil && overviewNotice == nil {
                 overviewNotice = "Your health details changed while the overview was being saved. Create overview again to use the latest details."
@@ -484,6 +501,11 @@ private struct SummaryStageFailure: Error {
 enum SummaryProcessingError: LocalizedError {
     case unavailable(String)
     var errorDescription: String? { if case .unavailable(let message) = self { return message }; return nil }
+}
+
+struct OverviewProgressUpdate: Sendable {
+    let message: String
+    let fraction: Double
 }
 
 
@@ -871,10 +893,12 @@ actor RecordSummaryProcessor {
         return SummaryReview(assessed: assessed, corrections: corrections)
     }
 
-    func makeOverview(facts: [HealthFact], conditionContext: String, transport: OpenAIChatTransport?, onDevice: Bool) async throws -> StoryOverview {
+    func makeOverview(facts: [HealthFact], conditionContext: String, transport: OpenAIChatTransport?, onDevice: Bool,
+                      progress: @escaping @Sendable (OverviewProgressUpdate) async -> Void = { _ in }) async throws -> StoryOverview {
         let jobID = "overview-" + SummaryVerification.hash(StoryOverview.fingerprint(facts))
         activeJobID = jobID
         await SummaryRequestCoordinator.shared.beginJob(jobID)
+        await progress(OverviewProgressUpdate(message: "Preparing accepted health details…", fraction: 0.08))
         let sortedFacts = facts.sorted { $0.id < $1.id }
         // Stable IDs link supporting entries to the organized priority map.
         let rows: [[String: Any]] = sortedFacts.map { fact in
@@ -908,6 +932,11 @@ actor RecordSummaryProcessor {
             var notes: [String] = []
             for (index, batch) in batches.enumerated() {
                 try Task.checkCancellation()
+                let batchFraction = 0.15 + (0.35 * Double(index) / Double(max(1, batches.count)))
+                await progress(OverviewProgressUpdate(
+                    message: "Condensing details \(index + 1) of \(batches.count)…",
+                    fraction: batchFraction
+                ))
                 let allowed = Set(batch.flatMap { line -> [String] in
                     guard let data = line.data(using: .utf8),
                           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
@@ -938,6 +967,7 @@ actor RecordSummaryProcessor {
         }
         // Keep the priority map outside condensation so long histories cannot erase it.
         let input = "Organized conditions (in display priority order):\n" + (conditionContext.isEmpty ? "No organized conditions yet." : conditionContext) + "\n\nAccepted supporting details:\n" + units.joined(separator: "\n")
+        await progress(OverviewProgressUpdate(message: "Writing a short overview…", fraction: 0.58))
         let raw = try await request(stage: "overview", system: """
         \(ConditionSynthesis.evidenceGuidance)
         Write the patient-friendly introduction to this person's health story: a short story they can
@@ -987,9 +1017,11 @@ actor RecordSummaryProcessor {
         Do not describe completed/past care steps as future plans. Distinguish patient reports from clinical findings.
         Do not imply clinical confirmation.
         """, user: input, transport: transport, onDevice: onDevice, contract: .narrative, allowedFactIDs: facts.map(\.id))
+        await progress(OverviewProgressUpdate(message: "Checking supporting details…", fraction: 0.82))
         var overview = try OverviewResponseContract.decodeNarrative(raw)
         overview.conditionContext = conditionContext
         guard overview.hasValidReferences(in: facts) else { throw OverviewFailure.invalidReferences }
+        await progress(OverviewProgressUpdate(message: "Checking dates and numbers…", fraction: 0.9))
         guard overview.hasGroundedNumbers(in: facts) else { throw OverviewFailure.unsupported }
         await SummaryRequestCoordinator.shared.finishJob(jobID)
         return overview
