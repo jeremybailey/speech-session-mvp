@@ -18,9 +18,11 @@ public enum SummaryJobResumePolicy {
         isLaunching: Bool,
         isProcessing: Bool,
         appIsActive: Bool,
-        processingIsAllowed: Bool
+        processingIsAllowed: Bool,
+        automaticResumeAlreadyAttempted: Bool = false
     ) -> Bool {
-        hasPendingJob && hasLoaded && !isLaunching && !isProcessing && appIsActive && processingIsAllowed
+        hasPendingJob && hasLoaded && !isLaunching && !isProcessing && appIsActive
+            && processingIsAllowed && !automaticResumeAlreadyAttempted
     }
 
     /// A record-processing pass is complete only when its durable records agree.

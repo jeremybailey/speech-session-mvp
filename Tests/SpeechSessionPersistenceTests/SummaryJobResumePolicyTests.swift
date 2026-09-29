@@ -54,6 +54,11 @@ final class SummaryJobResumePolicyTests: XCTestCase {
             hasPendingJob: true, hasLoaded: true, isLaunching: false,
             isProcessing: false, appIsActive: true, processingIsAllowed: true
         ))
+        XCTAssertFalse(SummaryJobResumePolicy.canResume(
+            hasPendingJob: true, hasLoaded: true, isLaunching: false,
+            isProcessing: false, appIsActive: true, processingIsAllowed: true,
+            automaticResumeAlreadyAttempted: true
+        ))
     }
 
     func testRecordJobCannotFinishWhileDurableRecordsRemainPending() {

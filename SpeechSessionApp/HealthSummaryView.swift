@@ -36,6 +36,7 @@ struct HealthSummaryView: View {
     @State private var preparationTask: Task<Void, Never>?
     @State private var isLaunchingPreparation = false
     @State private var preparationWasBackgrounded = false
+    @State private var automaticResumeAlreadyAttempted = false
     @AppStorage("speechSession.pendingSummaryJob") private var pendingSummaryJob = ""
 
     private var showingStoryPlaceholder: Bool {
@@ -345,12 +346,14 @@ struct HealthSummaryView: View {
             #endif
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else {
+            if phase == .background {
                 if isLaunchingPreparation || model.isProcessing {
                     preparationWasBackgrounded = true
                 }
+                automaticResumeAlreadyAttempted = false
                 return
             }
+            guard phase == .active else { return }
             _ = resumePendingSummaryJobIfPossible()
         }
         .onChange(of: isLaunchingPreparation) { _, isLaunching in
@@ -588,8 +591,9 @@ struct HealthSummaryView: View {
     @State private var overviewOnlyRequest = false
     @State private var conditionsOnlyRequest = false
 
-    private func prepare(retryUnfinished: Bool = false) {
+    private func prepare(retryUnfinished: Bool = false, automaticResume: Bool = false) {
         guard !isLaunchingPreparation && !model.isProcessing else { return }
+        if !automaticResume { automaticResumeAlreadyAttempted = false }
         let resume = retryUnfinished || resumeAfterConsent
         if backend != "onDevice" && !cloudConsent {
             resumeAfterConsent = resume
@@ -605,7 +609,7 @@ struct HealthSummaryView: View {
         reprocessAllRecordsRequest = false
         let job = conditionsOnly ? "conditions" : (overviewOnly ? "overview" : (recordsOnly ? "records" : "summary"))
         pendingSummaryJob = job
-        preparationWasBackgrounded = scenePhase != .active
+        preparationWasBackgrounded = scenePhase == .background
         isLaunchingPreparation = true
         preparationTask = Task {
             var completedSuccessfully = false
@@ -662,8 +666,10 @@ struct HealthSummaryView: View {
             isLaunching: isLaunchingPreparation,
             isProcessing: model.isProcessing,
             appIsActive: scenePhase == .active,
-            processingIsAllowed: backend == "onDevice" || cloudConsent
+            processingIsAllowed: backend == "onDevice" || cloudConsent,
+            automaticResumeAlreadyAttempted: automaticResumeAlreadyAttempted
         ) else { return false }
+        automaticResumeAlreadyAttempted = true
         switch pendingSummaryJob {
         case "conditions": conditionsOnlyRequest = true
         case "overview": overviewOnlyRequest = true
@@ -673,7 +679,7 @@ struct HealthSummaryView: View {
             pendingSummaryJob = ""
             return false
         }
-        prepare(retryUnfinished: pendingSummaryJob == "records" || pendingSummaryJob == "summary")
+        prepare(retryUnfinished: pendingSummaryJob == "records" || pendingSummaryJob == "summary", automaticResume: true)
         return true
     }
 }
