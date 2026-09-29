@@ -230,6 +230,10 @@ struct HealthSummaryView: View {
                         Button("Settings", systemImage: "gearshape") { openSettings() }
                             .disabled(!canOpenSettings)
                     }
+                    Button("Regenerate overview", systemImage: "text.bubble") {
+                        overviewOnlyRequest = true
+                        prepare()
+                    }.disabled(model.isProcessing || model.facts.isEmpty)
                     Button("Regenerate conditions", systemImage: "square.grid.2x2") {
                         conditionsOnlyRequest = true
                         prepare()
@@ -238,10 +242,6 @@ struct HealthSummaryView: View {
                         reprocessAllRecordsRequest = true
                         prepare()
                     }.disabled(model.isProcessing || model.snapshot.sessions.isEmpty)
-                    Button("Regenerate overview", systemImage: "text.bubble") {
-                        overviewOnlyRequest = true
-                        prepare()
-                    }.disabled(model.isProcessing || model.facts.isEmpty)
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: auth.isSignedIn ? "person.crop.circle.fill" : "person.crop.circle")
