@@ -30,7 +30,7 @@ struct HealthSummaryView: View {
     @State private var pendingDeletion: Session?
     @State private var taskSheet: HealthSheet?
     @State private var showProcessingConsent = false
-    @State private var regenerateAll = false
+    @State private var reprocessAllRecordsRequest = false
     @State private var resumeAfterConsent = false
     @State private var attemptedRepair: Set<String> = []
     @State private var preparationTask: Task<Void, Never>?
@@ -230,15 +230,18 @@ struct HealthSummaryView: View {
                         Button("Settings", systemImage: "gearshape") { openSettings() }
                             .disabled(!canOpenSettings)
                     }
-                    Button("Organize conditions", systemImage: "square.grid.2x2") {
+                    Button("Regenerate conditions", systemImage: "square.grid.2x2") {
                         conditionsOnlyRequest = true
                         prepare()
                     }.disabled(model.isProcessing || model.facts.isEmpty || backend == "onDevice")
-                    Button("Regenerate summary", systemImage: "arrow.clockwise") {
-                        regenerateAll = true
-                        if backend == "onDevice" || cloudConsent { prepare() }
-                        else { showProcessingConsent = true }
+                    Button("Reprocess health details", systemImage: "doc.text.magnifyingglass") {
+                        reprocessAllRecordsRequest = true
+                        prepare()
                     }.disabled(model.isProcessing || model.snapshot.sessions.isEmpty)
+                    Button("Regenerate overview", systemImage: "text.bubble") {
+                        overviewOnlyRequest = true
+                        prepare()
+                    }.disabled(model.isProcessing || model.facts.isEmpty)
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: auth.isSignedIn ? "person.crop.circle.fill" : "person.crop.circle")
@@ -558,9 +561,9 @@ struct HealthSummaryView: View {
         conditionsOnlyRequest = false
         let overviewOnly = overviewOnlyRequest
         overviewOnlyRequest = false
-        let forceAll = regenerateAll
-        regenerateAll = false
-        let job = conditionsOnly ? "conditions" : (overviewOnly ? "overview" : "summary")
+        let recordsOnly = reprocessAllRecordsRequest
+        reprocessAllRecordsRequest = false
+        let job = conditionsOnly ? "conditions" : (overviewOnly ? "overview" : (recordsOnly ? "records" : "summary"))
         pendingSummaryJob = job
         isLaunchingPreparation = true
         preparationTask = Task {
@@ -579,7 +582,13 @@ struct HealthSummaryView: View {
             } else if overviewOnly {
                 await model.createOverview(transport: transport, onDevice: backend == "onDevice")
             } else {
-                await model.prepareSummaries(transport: transport, onDevice: backend == "onDevice", forceAll: forceAll, retryUnfinished: resume)
+                await model.prepareSummaries(
+                    transport: transport,
+                    onDevice: backend == "onDevice",
+                    forceAll: recordsOnly,
+                    retryUnfinished: resume,
+                    organizeConditionsAfterRecords: !recordsOnly
+                )
                 await home.loadSessions()
             }
         }
@@ -593,12 +602,13 @@ struct HealthSummaryView: View {
         switch pendingSummaryJob {
         case "conditions": conditionsOnlyRequest = true
         case "overview": overviewOnlyRequest = true
+        case "records": reprocessAllRecordsRequest = true
         case "summary": break
         default:
             pendingSummaryJob = ""
             return false
         }
-        prepare(retryUnfinished: pendingSummaryJob == "summary")
+        prepare(retryUnfinished: pendingSummaryJob == "records" || pendingSummaryJob == "summary")
         return true
     }
 }

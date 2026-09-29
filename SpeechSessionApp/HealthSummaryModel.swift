@@ -289,7 +289,9 @@ final class HealthSummaryModel: ObservableObject {
         }
     }
 
-    func prepareSummaries(transport: OpenAIChatTransport?, onDevice: Bool, forceSessionID: UUID? = nil, forceAll: Bool = false, retryUnfinished: Bool = false, overviewOnly: Bool = false) async {
+    func prepareSummaries(transport: OpenAIChatTransport?, onDevice: Bool, forceSessionID: UUID? = nil,
+                          forceAll: Bool = false, retryUnfinished: Bool = false,
+                          organizeConditionsAfterRecords: Bool = true, overviewOnly: Bool = false) async {
         if overviewOnly {
             await createOverview(transport: transport, onDevice: onDevice)
             return
@@ -302,10 +304,15 @@ final class HealthSummaryModel: ObservableObject {
         overviewCheckerExplanation = nil
         await refresh()
         defer { isProcessing = false; progress = "" }
-        let pending = overviewOnly ? [] : snapshot.sessions.filter {
-            $0.processingState != .failed && $0.processingState != .transcribing &&
-            !$0.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            (retryUnfinished ? retryRecordIDs.contains($0.id) : (forceAll || (forceSessionID == nil ? $0.needsSummaryVerification : $0.id == forceSessionID)))
+        let pending = overviewOnly ? [] : snapshot.sessions.filter { session in
+            guard session.processingState != .failed, session.processingState != .transcribing,
+                  !session.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+            if retryUnfinished {
+                // In-memory IDs give an exact same-process resume. After process
+                // termination, the durable incomplete run marks the remaining record.
+                return retryRecordIDs.isEmpty ? session.needsSummaryVerification : retryRecordIDs.contains(session.id)
+            }
+            return forceAll || (forceSessionID == nil ? session.needsSummaryVerification : session.id == forceSessionID)
         }
         if !overviewOnly { retryRecordIDs = Set(pending.map(\.id)) }
         var failures: [(Session, Error)] = []
@@ -332,7 +339,7 @@ final class HealthSummaryModel: ObservableObject {
             } catch is CancellationError { }
             catch { if failures.isEmpty { processingIssue = SummaryProcessingIssue(error: error, session: nil, completed: completed, remaining: retryRecordIDs.count) } }
         }
-        if !onDevice {
+        if organizeConditionsAfterRecords && !onDevice {
             await synthesizeAcceptedConditions(transport: transport, onDevice: onDevice)
         }
         if !Task.isCancelled, !facts.isEmpty, overview == nil, overviewNotice == nil {

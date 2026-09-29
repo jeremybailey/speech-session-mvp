@@ -90,7 +90,7 @@ struct SessionDetailView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("Regenerate summary", systemImage: "arrow.clockwise") {
+                    Button("Reprocess record", systemImage: "arrow.clockwise") {
                         if summaryBackend == "onDevice" || cloudSummaryConsent { regenerate() }
                         else { summaryConsent = true }
                     }.disabled(health.isProcessing || session.transcript.isEmpty)
