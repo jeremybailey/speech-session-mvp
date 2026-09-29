@@ -84,7 +84,7 @@ struct HealthSummaryView: View {
                             .foregroundStyle(.secondary)
                         if model.isProcessing && model.progressTotal > 0 {
                             ProgressView(
-                                value: Double(model.progressCurrent),
+                                value: model.progressValue,
                                 total: Double(model.progressTotal)
                             )
                             HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -93,10 +93,12 @@ struct HealthSummaryView: View {
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
                                 Spacer(minLength: 8)
-                                Text("\(model.progressCurrent) of \(model.progressTotal) records")
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize()
+                                if model.progressTotal > 1 {
+                                    Text("Record \(model.progressCurrent) of \(model.progressTotal)")
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize()
+                                }
                             }
                         } else {
                             ProgressView()

@@ -50,6 +50,7 @@ final class HealthSummaryModel: ObservableObject {
     @Published private(set) var progressTitle = ""
     @Published private(set) var progressCurrent = 0
     @Published private(set) var progressTotal = 0
+    @Published private(set) var progressValue = 0.0
     @Published var error: String?
     @Published private(set) var processingIssue: SummaryProcessingIssue?
     private var retryRecordIDs: Set<UUID> = []
@@ -263,6 +264,7 @@ final class HealthSummaryModel: ObservableObject {
         progressTitle = "Organizing conditions"
         progressCurrent = 0
         progressTotal = 0
+        progressValue = 0
         defer { isProcessing = false; progress = "" }
         await refresh()
         await synthesizeAcceptedConditions(transport: transport, onDevice: onDevice, force: true)
@@ -321,20 +323,27 @@ final class HealthSummaryModel: ObservableObject {
             return forceAll || (forceSessionID == nil ? session.needsSummaryVerification : session.id == forceSessionID)
         }
         progressTitle = pending.isEmpty ? "Finishing health details" : "Processing health details"
-        progressCurrent = pending.isEmpty ? 0 : 1
+        progressCurrent = 0
         progressTotal = pending.count
+        progressValue = 0
         if !overviewOnly { retryRecordIDs = Set(pending.map(\.id)) }
         var failures: [(Session, Error)] = []
         var completed = 0
         do {
             try await SummaryRecordBatch.run(records: pending) { session, index in
                 progressCurrent = index + 1
+                progressValue = Double(index)
                 progress = "Preparing this record…"
                 try await processor.process(session, related: snapshot.sessions.flatMap { $0.summaryEntries ?? [] }, store: store, transport: transport, onDevice: onDevice) { [self] stage in
-                    await MainActor.run { self.progress = stage }
+                    await MainActor.run {
+                        self.progress = stage
+                        let recordProgress = Self.progressWithinRecord(for: stage)
+                        self.progressValue = Double(index) + recordProgress
+                    }
                 }
                 retryRecordIDs.remove(session.id)
                 completed += 1
+                progressValue = Double(index + 1)
                 await refresh()
             } failed: { session, error in
                 failures.append((session, error))
@@ -345,6 +354,7 @@ final class HealthSummaryModel: ObservableObject {
             progressTitle = "Finishing health details"
             progressCurrent = 0
             progressTotal = 0
+            progressValue = 0
             progress = "Checking related symptoms…"
             do {
                 try await processor.reconcileSymptoms(store: store, transport: transport, onDevice: onDevice, force: forceAll || forceSessionID != nil)
@@ -376,6 +386,7 @@ final class HealthSummaryModel: ObservableObject {
         progressTitle = "Creating overview"
         progressCurrent = 0
         progressTotal = 0
+        progressValue = 0
         progress = "Preparing your health story…"
         overviewNotice = nil
         overviewCheckerExplanation = nil
@@ -415,6 +426,28 @@ final class HealthSummaryModel: ObservableObject {
                 overviewCheckerExplanation = (error as? OverviewFailure)?.checkerExplanation
             }
         }
+    }
+
+    /// Estimates progress within one record from the processor's durable stages.
+    /// Reading and checking are the repeated expensive steps. The remaining range
+    /// is reserved for optional enrichment, final checks, and the durable save so
+    /// the bar does not appear complete while work is still running.
+    private static func progressWithinRecord(for stage: String) -> Double {
+        let pattern = #"^(Reading|Checking) section (\d+) of (\d+)"#
+        if let expression = try? NSRegularExpression(pattern: pattern),
+           let match = expression.firstMatch(in: stage, range: NSRange(stage.startIndex..., in: stage)),
+           let phaseRange = Range(match.range(at: 1), in: stage),
+           let currentRange = Range(match.range(at: 2), in: stage),
+           let totalRange = Range(match.range(at: 3), in: stage),
+           let current = Double(stage[currentRange]),
+           let total = Double(stage[totalRange]), total > 0 {
+            let completedSteps = 2 * max(0, current - 1) + (stage[phaseRange] == "Checking" ? 1 : 0)
+            return 0.85 * min(1, completedSteps / (2 * total))
+        }
+        if stage.hasPrefix("Organizing care-team") { return 0.88 }
+        if stage.hasPrefix("Identifying the reason") { return 0.92 }
+        if stage.hasPrefix("Saving summary") { return 0.97 }
+        return 0
     }
 }
 
