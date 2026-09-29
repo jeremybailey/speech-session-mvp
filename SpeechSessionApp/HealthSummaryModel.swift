@@ -540,7 +540,7 @@ actor RecordSummaryProcessor {
                     $0.category != .practitionerContact || !contactNames.contains(ProviderContactBlocks.nameKey($0.title))
                 }
                 stage = "Checking against the original"
-                await progress("Checking section \(chunkIndex + 1) of \(chunks.count) · \(draft.count) details…")
+                await progress("Checking section \(chunkIndex + 1) of \(chunks.count)…")
                 allEntries += try await checkForStory(draft, source: chunk, kind: kind, session: session, transport: transport, onDevice: onDevice)
                 try await store.checkpointSummaryDraft(sessionID: session.id, runID: run.id, entries: allEntries,
                                                        completedSourceChunks: chunkIndex + 1)

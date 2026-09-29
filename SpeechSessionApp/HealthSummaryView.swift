@@ -79,37 +79,15 @@ struct HealthSummaryView: View {
             }
             if model.isProcessing || isLaunchingPreparation {
                 Section {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(model.isProcessing && !model.progressTitle.isEmpty ? model.progressTitle : "Preparing your health story")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        if model.isProcessing && model.progressTotal > 0 {
-                            ProgressView(
-                                value: model.progressValue,
-                                total: Double(model.progressTotal)
-                            )
-                            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                Text(model.progress.isEmpty ? "Starting…" : model.progress)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                                Spacer(minLength: 8)
-                                if model.progressTotal > 1 {
-                                    Text("Record \(model.progressCurrent) of \(model.progressTotal)")
-                                        .font(.caption.monospacedDigit())
-                                        .foregroundStyle(.secondary)
-                                        .fixedSize()
-                                }
-                            }
-                        } else {
-                            ProgressView()
-                                .progressViewStyle(.linear)
-                            Text(model.progress.isEmpty ? "Starting…" : model.progress)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.vertical, 4)
+                    HealthProcessingProgressView(
+                        title: model.isProcessing && !model.progressTitle.isEmpty
+                            ? model.progressTitle : "Preparing your health story",
+                        status: model.progress.isEmpty ? "Starting…" : model.progress,
+                        value: model.isProcessing && model.progressTotal > 0 ? model.progressValue : nil,
+                        total: model.isProcessing && model.progressTotal > 0 ? Double(model.progressTotal) : nil,
+                        currentRecord: model.progressCurrent,
+                        totalRecords: model.progressTotal
+                    )
                     Button("Stop preparing summary") {
                         pendingSummaryJob = ""
                         preparationTask?.cancel()
@@ -681,6 +659,51 @@ struct HealthSummaryView: View {
         }
         prepare(retryUnfinished: pendingSummaryJob == "records" || pendingSummaryJob == "summary", automaticResume: true)
         return true
+    }
+}
+
+private struct HealthProcessingProgressView: View {
+    let title: String
+    let status: String
+    let value: Double?
+    let total: Double?
+    let currentRecord: Int
+    let totalRecords: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            titleLabel
+            if let value, let total {
+                ProgressView(value: value, total: total)
+            } else {
+                ProgressView()
+            }
+            statusLabel
+        }
+        .progressViewStyle(.linear)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.vertical, 6)
+    }
+
+    private var titleLabel: some View {
+        Text(title)
+            .fontWeight(.semibold)
+            .lineLimit(1)
+    }
+
+    private var statusLabel: some View {
+        HStack(spacing: 8) {
+            Text(status)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 8)
+            if totalRecords > 1 {
+                Text("Record \(currentRecord) of \(totalRecords)")
+                    .monospacedDigit()
+                    .fixedSize()
+            }
+        }
     }
 }
 
