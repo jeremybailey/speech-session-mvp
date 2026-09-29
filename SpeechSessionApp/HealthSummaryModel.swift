@@ -288,9 +288,27 @@ final class HealthSummaryModel: ObservableObject {
             let accepted = facts
             let cached = await store.conditionSynthesis(for: accepted)
             if force || cached == nil {
-                let synthesis = try await processor.synthesizeConditions(facts: accepted, transport: transport, store: store)
+                progressTitle = "Organizing conditions"
+                progressCurrent = 0
+                progressTotal = 100
+                progressValue = 0
+                progressShowsRecordCount = false
+                let synthesis = try await processor.synthesizeConditions(
+                    facts: accepted,
+                    transport: transport,
+                    store: store
+                ) { [self] update in
+                    await MainActor.run {
+                        self.progress = update.message
+                        self.progressValue = max(self.progressValue, update.fraction * 100)
+                    }
+                }
+                progress = "Saving organized conditions…"
+                progressValue = 96
                 try await store.saveConditionSynthesis(synthesis, expected: accepted)
                 await refresh()
+                progress = "Finishing condition organization…"
+                progressValue = 100
             }
             conditionNotice = nil
         } catch {
@@ -504,6 +522,11 @@ enum SummaryProcessingError: LocalizedError {
 }
 
 struct OverviewProgressUpdate: Sendable {
+    let message: String
+    let fraction: Double
+}
+
+struct ConditionProgressUpdate: Sendable {
     let message: String
     let fraction: Double
 }
@@ -1027,27 +1050,53 @@ actor RecordSummaryProcessor {
         return overview
     }
 
-    func synthesizeConditions(facts: [HealthFact], transport: OpenAIChatTransport?, store: SessionStore? = nil) async throws -> ConditionSynthesis {
+    func synthesizeConditions(facts: [HealthFact], transport: OpenAIChatTransport?, store: SessionStore? = nil,
+                              progress: @escaping @Sendable (ConditionProgressUpdate) async -> Void = { _ in }) async throws -> ConditionSynthesis {
         let jobID = "conditions-" + ConditionSynthesis.fingerprint(facts)
         activeJobID = jobID
         await SummaryRequestCoordinator.shared.beginJob(jobID)
+        await progress(ConditionProgressUpdate(message: "Preparing accepted health details…", fraction: 0.06))
         let cached = await store?.conditionProposal(for: facts, model: ConditionSynthesis.model,
                                                     promptVersion: ConditionSynthesis.promptVersion)
         let proposed: ConditionSynthesis
         if let cached {
+            await progress(ConditionProgressUpdate(message: "Loading saved condition candidates…", fraction: 0.52))
             proposed = cached
         } else {
-            proposed = try await ConditionSynthesis.organizeWithExternalRecovery(facts: facts) { input in
+            proposed = try await ConditionSynthesis.organizeWithExternalRecovery(facts: facts, progress: { phase in
+                let update: ConditionProgressUpdate
+                switch phase {
+                case .groupingBatch(let current, let total):
+                    let fraction = 0.12 + 0.30 * Double(current - 1) / Double(max(1, total))
+                    update = ConditionProgressUpdate(message: "Grouping details \(current) of \(total)…", fraction: fraction)
+                case .reconcilingBatch(let current, let total):
+                    let fraction = 0.43 + 0.07 * Double(current - 1) / Double(max(1, total))
+                    update = ConditionProgressUpdate(message: "Combining related groups \(current) of \(total)…", fraction: fraction)
+                case .verificationBatch:
+                    return
+                }
+                await progress(update)
+            }) { input in
                 return try await self.request(stage: "condition-synthesis", system: ConditionSynthesis.instruction, user: input,
                     transport: transport, onDevice: false, model: ConditionSynthesis.model)
             }
+            await progress(ConditionProgressUpdate(message: "Saving condition candidates…", fraction: 0.52))
             try await store?.saveConditionProposal(proposed, expected: facts, model: ConditionSynthesis.model,
                                                    promptVersion: ConditionSynthesis.promptVersion)
         }
-        let verified = try await ConditionSynthesis.verified(proposed, facts: facts) { input in
+        await progress(ConditionProgressUpdate(message: "Preparing independent verification…", fraction: 0.57))
+        let verified = try await ConditionSynthesis.verified(proposed, facts: facts, progress: { phase in
+            guard case .verificationBatch(let current, let total) = phase else { return }
+            let fraction = 0.6 + 0.28 * Double(current - 1) / Double(max(1, total))
+            await progress(ConditionProgressUpdate(
+                message: "Verifying condition links \(current) of \(total)…",
+                fraction: fraction
+            ))
+        }) { input in
             return try await self.request(stage: "condition-verification", system: ConditionSynthesis.verificationInstruction, user: input,
                 transport: transport, onDevice: false, model: ConditionSynthesis.verifierModel)
         }
+        await progress(ConditionProgressUpdate(message: "Finalizing supported condition links…", fraction: 0.92))
         await SummaryRequestCoordinator.shared.finishJob(jobID)
         return verified
     }

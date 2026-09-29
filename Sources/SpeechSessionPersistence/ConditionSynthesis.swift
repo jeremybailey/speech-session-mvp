@@ -2,6 +2,12 @@ import Foundation
 
 /// Cached presentation metadata over accepted entries, not a replacement clinical record.
 public struct ConditionSynthesis: Codable, Sendable {
+    public enum Progress: Sendable {
+        case groupingBatch(current: Int, total: Int)
+        case reconcilingBatch(current: Int, total: Int)
+        case verificationBatch(current: Int, total: Int)
+    }
+
     public struct Group: Codable, Sendable {
         public var name: String
         public var bodySystem: String
@@ -100,13 +106,16 @@ public struct ConditionSynthesis: Codable, Sendable {
     /// A separate pass may only remove unsupported names or edges. It cannot add,
     /// rename, or move facts, which keeps verification fail-closed and deterministic.
     public static func verified(_ proposal: Self, facts: [HealthFact],
+                                progress: (Progress) async -> Void = { _ in },
                                 request: (String) async throws -> String) async throws -> Self {
         try proposal.validate(facts)
         let entries = Dictionary(uniqueKeysWithValues: facts.flatMap(\.occurrences).map { ($0.id, $0) })
         var accepted: [Group] = []
         var rejected = Set(proposal.unassigned)
-        for batch in try verificationPayloads(proposal.groups, entries: entries) {
+        let payloads = try verificationPayloads(proposal.groups, entries: entries)
+        for (index, batch) in payloads.enumerated() {
             try Task.checkCancellation()
+            await progress(.verificationBatch(current: index + 1, total: payloads.count))
             let raw = try await request(batch.payload)
             struct Response: Decodable {
                 struct Decision: Decodable {
@@ -185,8 +194,9 @@ public struct ConditionSynthesis: Codable, Sendable {
         ConditionSummaryProjection.conditionKey(name) + "|" + bodySystem.lowercased()
     }
 
-    public static func organize(facts: [HealthFact], request: (String) async throws -> String) async throws -> Self {
-        try await organize(facts: facts, depth: 0) { payload in
+    public static func organize(facts: [HealthFact], progress: (Progress) async -> Void = { _ in },
+                                request: (String) async throws -> String) async throws -> Self {
+        try await organize(facts: facts, depth: 0, progress: progress) { payload in
             try await requestWithTransientRetry(payload, request: request)
         }
     }
@@ -194,8 +204,9 @@ public struct ConditionSynthesis: Codable, Sendable {
     /// Use when the transport already owns the bounded retry budget. This avoids
     /// multiplying inference attempts across the clinical and transport layers.
     public static func organizeWithExternalRecovery(facts: [HealthFact],
+                                                     progress: (Progress) async -> Void = { _ in },
                                                      request: (String) async throws -> String) async throws -> Self {
-        try await organize(facts: facts, depth: 0, request: request)
+        try await organize(facts: facts, depth: 0, progress: progress, request: request)
     }
 
     /// Retry only the interrupted inference request, retaining completed portions in this run.
@@ -228,12 +239,16 @@ public struct ConditionSynthesis: Codable, Sendable {
         preconditionFailure("The final attempt always returns or throws")
     }
 
-    private static func organize(facts: [HealthFact], depth: Int, request: (String) async throws -> String) async throws -> Self {
+    private static func organize(facts: [HealthFact], depth: Int, progress: (Progress) async -> Void,
+                                 request: (String) async throws -> String) async throws -> Self {
         let portions = try batches(facts)
         guard !portions.isEmpty else { return Self(groups: [], unassigned: []) }
         var groups: [Group] = [], unassigned: [UUID] = []
-        for portion in portions {
+        for (index, portion) in portions.enumerated() {
             try Task.checkCancellation()
+            await progress(depth == 0
+                ? .groupingBatch(current: index + 1, total: portions.count)
+                : .reconcilingBatch(current: index + 1, total: portions.count))
             let result = try await organizePortion(portion, request: request)
             groups += result.groups; unassigned += result.unassigned
         }
@@ -250,7 +265,7 @@ public struct ConditionSynthesis: Codable, Sendable {
                 mapping[entry.id] = group
                 return HealthFact(id: entry.id.uuidString, occurrences: [entry], preference: .init(id: entry.id.uuidString), topicIDs: [])
             }
-            let merged = try await organize(facts: candidates, depth: depth + 1, request: request)
+            let merged = try await organize(facts: candidates, depth: depth + 1, progress: progress, request: request)
             groups = merged.groups.map { proposed in
                 var group = proposed
                 group.entryIDs = proposed.entryIDs.flatMap { mapping[$0]?.entryIDs ?? [] }
