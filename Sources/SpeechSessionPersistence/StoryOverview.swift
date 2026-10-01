@@ -36,9 +36,33 @@ public struct StoryOverview: Codable, Sendable {
             !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !$0.factIDs.isEmpty && Set($0.factIDs).isSubset(of: ids)
         }
     }
+    /// Some writers repeat opaque citation identifiers in prose as well as factIDs.
+    /// Remove only exact, known, sentence-cited identifiers; clinical values and
+    /// unknown identifiers still pass through the normal validation unchanged.
+    public func removingInlineReferenceIDs(in facts: [HealthFact]) -> StoryOverview {
+        let known = Set(facts.map(\.id))
+        var result = self
+        for index in result.sentences.indices {
+            var text = result.sentences[index].text
+            for id in Set(result.sentences[index].factIDs).intersection(known) where id.count >= 16 {
+                let escaped = NSRegularExpression.escapedPattern(for: id)
+                text = text.replacingOccurrences(of: #"(?<![A-Za-z0-9_-])"# + escaped + #"(?![A-Za-z0-9_-])"#,
+                                                with: "", options: .regularExpression)
+            }
+            // Remove now-empty citation wrappers, not arbitrary parenthetical prose.
+            text = text.replacingOccurrences(of: #"\[[\s,;]*\]|\([\s,;]*\)"#, with: "", options: .regularExpression)
+            text = text.replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
+            text = text.replacingOccurrences(of: #" +([.,;:!?])"#, with: "$1", options: .regularExpression)
+            result.sentences[index].text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return result
+    }
     /// IDs provide provenance; this additional guard prevents unsupported dates,
     /// quantities, percentages, and doses from being introduced in presentation prose.
     public func hasGroundedNumbers(in facts: [HealthFact]) -> Bool {
+        ungroundedNumbers(in: facts).isEmpty
+    }
+    public func ungroundedNumbers(in facts: [HealthFact]) -> [String] {
         let factsByID = Dictionary(uniqueKeysWithValues: facts.map { ($0.id, $0) })
         func numbers(_ text: String) -> Set<String> {
             guard let regex = try? NSRegularExpression(pattern: #"(?<![A-Za-z])\d+(?:[.,]\d+)?(?:%|mg|mcg|ml|weeks?|days?|years?)?"#, options: [.caseInsensitive]) else { return [] }
@@ -47,11 +71,11 @@ public struct StoryOverview: Codable, Sendable {
                 Range(match.range, in: text).map { String(text[$0]).lowercased().replacingOccurrences(of: ",", with: "") }
             })
         }
-        return sentences.allSatisfy { sentence in
+        return sentences.flatMap { sentence in
             let evidence = sentence.factIDs.compactMap { factsByID[$0] }.flatMap(\.occurrences).map { entry in
                 ([entry.title, entry.details, entry.supportingExcerpt ?? "", entry.evidence?.eventDate ?? ""] + entry.fields.flatMap { [$0.label, $0.value] }).joined(separator: " ")
             }.joined(separator: " ")
-            return numbers(sentence.text).isSubset(of: numbers(evidence))
+            return numbers(sentence.text).subtracting(numbers(evidence)).sorted()
         }
     }
     public static func fingerprint(_ facts: [HealthFact]) -> String {

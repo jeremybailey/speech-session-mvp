@@ -2,6 +2,21 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class StoryOverviewTests: XCTestCase {
+    func testInlineReferenceCleanupPreservesClinicalNumbersAndProvenance() {
+        let entry = SummaryEntry(category: .findings, title: "Pregnancy", details: "31 weeks pregnant", origin: .userAdded)
+        let id = "ABCDEF12-3456-7890-ABCD-123456789012"
+        let fact = HealthFact(id: id, occurrences: [entry], preference: .init(id: id), topicIDs: [])
+        let original = StoryOverview(sentences: [.init(text: "You are 31 weeks pregnant [\(id)].", factIDs: [id])])
+        XCTAssertFalse(original.hasGroundedNumbers(in: [fact]))
+        let cleaned = original.removingInlineReferenceIDs(in: [fact])
+        XCTAssertEqual(cleaned.text, "You are 31 weeks pregnant.")
+        XCTAssertEqual(cleaned.sentences[0].factIDs, [id])
+        XCTAssertTrue(cleaned.hasGroundedNumbers(in: [fact]))
+        let invented = StoryOverview(sentences: [.init(text: "You are 34 weeks pregnant (\(id)).", factIDs: [id])]).removingInlineReferenceIDs(in: [fact])
+        XCTAssertFalse(invented.hasGroundedNumbers(in: [fact]))
+        let uncited = StoryOverview(sentences: [.init(text: "Unknown ABCDEF12-3456-7890-ABCD-123456789099.", factIDs: [id])])
+        XCTAssertEqual(uncited.removingInlineReferenceIDs(in: [fact]).text, uncited.text)
+    }
     func testConditionsRemainAvailableBeforeOverviewIsCreated() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

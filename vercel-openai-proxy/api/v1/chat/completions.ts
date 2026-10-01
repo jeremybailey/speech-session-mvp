@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { verifyKindeBearer } from "../../_lib/verifyKinde";
+import { durableEnabledForOwner } from '../../_lib/pilot';
 
 function jsonError(res: VercelResponse, status: number, message: string) {
   return res.status(status).json({ error: { message } });
@@ -11,7 +12,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    await verifyKindeBearer(req.headers.authorization);
+    const owner = await verifyKindeBearer(req.headers.authorization);
+    if (durableEnabledForOwner(owner)) return res.status(409).json({error:{code:"durable_endpoint_required",message:"Use budgeted processing jobs."}});
   } catch (e: unknown) {
     const err = e as { status?: number; message?: string };
     return jsonError(res, err.status ?? 401, err.message ?? "Unauthorized");

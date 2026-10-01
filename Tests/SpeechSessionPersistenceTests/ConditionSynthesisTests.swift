@@ -2,6 +2,121 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class ConditionSynthesisTests: XCTestCase {
+    func testLegacyCompletedCacheMigratesWithoutInference() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try SessionStore(storageDirectory: directory)
+        try await store.upsert(Session(transcript: "Synthetic", summaryEntries: [fact("Pregnancy").latest]))
+        let facts = HealthMemoryProjection.facts(in: try await store.healthSnapshot(), verifiedOnly: true)
+        struct Legacy: Encodable { let fingerprint: String; let synthesis: ConditionSynthesis }
+        let saved = Legacy(fingerprint: ConditionSynthesis.legacyFingerprint(facts), synthesis: synthesis(facts))
+        try JSONEncoder().encode(saved).write(to: directory.appendingPathComponent("condition-synthesis.json"))
+        let reused = await store.conditionSynthesis(for: facts)
+        XCTAssertNotNil(reused)
+        var reviewed = facts
+        reviewed[0].preference.reviewedRevision = "reviewed"
+        let afterReview = await store.conditionSynthesis(for: reviewed)
+        XCTAssertNotNil(afterReview)
+    }
+    func testReviewAndVisibilityDoNotInvalidateClinicalProcessing() {
+        let original = fact("Pregnancy")
+        var changed = original
+        changed.preference.hidden = true
+        changed.preference.reviewedRevision = "new-review"
+        XCTAssertEqual(ConditionSynthesis.fingerprint([original]), ConditionSynthesis.fingerprint([changed]))
+        changed.preference.topicIDs = []
+        XCTAssertNotEqual(ConditionSynthesis.fingerprint([original]), ConditionSynthesis.fingerprint([changed]))
+    }
+    func testEditedRecoveredEntryDoesNotHideUnchangedConditionMembers() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try SessionStore(storageDirectory: directory)
+        let first = fact("Pregnancy"), second = fact("Pregnancy care")
+        try await store.upsert(Session(transcript: "Synthetic", summaryEntries: [first.latest, second.latest]))
+        let facts = HealthMemoryProjection.facts(in: try await store.healthSnapshot(), verifiedOnly: true)
+        var result = synthesis(facts)
+        result.groups[0].entryReasons = [first.latest.id: "Reported pregnancy"]
+        try await store.saveConditionSynthesis(result, expected: facts)
+        var changed = facts
+        let index = changed.firstIndex { $0.latest.id == first.latest.id }!
+        changed[index].occurrences[0].title = "Edited"
+        let displayed = await store.displayedConditionFacts(for: changed)
+        XCTAssertNotNil(displayed.first { $0.latest.id == second.latest.id }?.latest.evidence?.conditionGroup)
+        XCTAssertEqual(displayed[index].latest.evidence?.conditionSynthesisUnassigned, true)
+    }
+    func testRecoveryUsesBoundedBatches() async throws {
+        let anchor = fact("Pregnancy")
+        let candidates = (0..<65).map { fact("Care detail \($0)") }
+        let facts = [anchor] + candidates
+        let proposal = ConditionSynthesis(groups: [.init(name: "Pregnancy", bodySystem: "reproductive", isPrimary: false, reason: "Reported pregnancy", entryIDs: [anchor.latest.id])], unassigned: candidates.map { $0.latest.id })
+        var counts: [Int] = []
+        let result = try await ConditionSynthesis.recoveringContext(proposal, facts: facts) { input in
+            let object = try JSONSerialization.jsonObject(with: Data(input.utf8)) as! [String: Any]
+            let rows = object["entries"] as! [[String: Any]]
+            counts.append(rows.count)
+            return String(decoding: try JSONSerialization.data(withJSONObject: ["links": [], "unassigned": rows.map { $0["id"] as! String }]), as: UTF8.self)
+        }
+        XCTAssertEqual(counts, [30, 30, 5])
+        try result.validate(facts)
+    }
+
+    func testExactRequestSurvivesRelaunchAndUnrelatedHistoryChanges() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try SessionStore(storageDirectory: directory)
+        try await store.upsert(Session(transcript: "Synthetic", summaryEntries: [fact("Pregnancy").latest]))
+        let facts = HealthMemoryProjection.facts(in: try await store.healthSnapshot(), verifiedOnly: true)
+        try await store.saveConditionResponse("completed", for: facts, key: "verification-payload")
+        let reopened = try SessionStore(storageDirectory: directory)
+        let restored = await reopened.conditionResponse(for: facts, key: "verification-payload")
+        XCTAssertEqual(restored, "completed")
+        let changed = await reopened.conditionResponse(for: facts + [fact("New detail")], key: "verification-payload")
+        XCTAssertEqual(changed, "completed")
+        let editedRequest = await reopened.conditionResponse(for: facts, key: "different-verification-payload")
+        XCTAssertNil(editedRequest)
+        try await reopened.upsert(Session(transcript: "Additional synthetic", summaryEntries: [fact("Migraine").latest]))
+        let expanded = HealthMemoryProjection.facts(in: try await reopened.healthSnapshot(), verifiedOnly: true)
+        try await reopened.saveConditionResponse("new completed", for: expanded, key: "new-payload")
+        let retained = await reopened.conditionResponse(for: expanded, key: "verification-payload")
+        XCTAssertEqual(retained, "completed", "Saving a new request must preserve unaffected completed requests")
+        try await reopened.discardConditionResponse(for: facts + [fact("New detail")], key: "verification-payload")
+        let discarded = await reopened.conditionResponse(for: facts, key: "verification-payload")
+        XCTAssertNil(discarded)
+    }
+
+    func testExactRequestExpiresAndDoesNotPersistClinicalRequestKeys() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try SessionStore(storageDirectory: directory)
+        try await store.upsert(Session(transcript: "Synthetic", summaryEntries: [fact("Pregnancy").latest]))
+        let facts = HealthMemoryProjection.facts(in: try await store.healthSnapshot(), verifiedOnly: true)
+        let key = "synthetic confidential source request"
+        try await store.saveConditionResponse("completed", for: facts, key: key)
+        let url = directory.appendingPathComponent("condition-exact-requests.json")
+        let data = try Data(contentsOf: url)
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains(key))
+        struct Cached: Codable { var response: String; var expiresAt: Date }
+        var cache = try JSONDecoder().decode([String: Cached].self, from: data)
+        for id in Array(cache.keys) { cache[id]?.expiresAt = Date(timeIntervalSince1970: 0) }
+        try JSONEncoder().encode(cache).write(to: url)
+        let expired = await store.conditionResponse(for: facts, key: key)
+        XCTAssertNil(expired)
+        XCTAssertEqual(try JSONDecoder().decode([String: Cached].self, from: Data(contentsOf: url)).count, 0)
+    }
+
+    func testChangedPatientDataCannotSaveAnInFlightResponse() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try SessionStore(storageDirectory: directory)
+        let session = Session(transcript: "Synthetic", summaryEntries: [fact("Pregnancy").latest])
+        try await store.upsert(session)
+        let facts = HealthMemoryProjection.facts(in: try await store.healthSnapshot(), verifiedOnly: true)
+        try await store.upsert(Session(transcript: "Additional", summaryEntries: [fact("Migraine").latest]))
+        do {
+            try await store.saveConditionResponse("stale", for: facts, key: "payload")
+            XCTFail("Must not save an in-flight response after the patient's data changes")
+        } catch { XCTAssertTrue(error is SummaryCommitError) }
+    }
     func testIndependentVerificationCanOnlyRemoveUnsupportedEdges() async throws {
         let facts = [fact("Migraine", category: .symptoms), fact("Normal chest x-ray", category: .testsAndLabs)]
         let ids = facts.flatMap(\.occurrences).map(\.id)
@@ -32,6 +147,57 @@ final class ConditionSynthesisTests: XCTestCase {
         }
         XCTAssertTrue(verified.groups.isEmpty)
         XCTAssertEqual(verified.unassigned, [id])
+    }
+
+    func testContextRecoveryAddsSourceBackedPregnancyCareAndPreservesReason() async throws {
+        var pregnancy = fact("Pregnancy", category: .symptoms)
+        pregnancy.occurrences[0].details = "Currently pregnant."
+        var aspirin = fact("Continue taking baby aspirin until 36 weeks.", category: .carePlan)
+        aspirin.occurrences[0].details = "Continue during pregnancy until 36 weeks."
+        let pregnancyID = pregnancy.latest.id, aspirinID = aspirin.latest.id
+        let initial = ConditionSynthesis(groups: [
+            .init(name: "Pregnancy", bodySystem: "reproductive", isPrimary: true,
+                  reason: "The patient reports pregnancy.", entryIDs: [pregnancyID])
+        ], unassigned: [aspirinID])
+
+        let recovered = try await ConditionSynthesis.recoveringContext(initial, facts: [pregnancy, aspirin]) { payload in
+            XCTAssertTrue(payload.contains("Continue taking baby aspirin"))
+            XCTAssertTrue(payload.contains("Pregnancy"))
+            return """
+            {"links":[{"name":"Pregnancy","bodySystem":"reproductive","entryID":"\(aspirinID.uuidString)","reason":"The plan explicitly says to continue it during pregnancy."}],"unassigned":[]}
+            """
+        }
+        XCTAssertEqual(Set(recovered.groups[0].entryIDs), Set([pregnancyID, aspirinID]))
+        XCTAssertEqual(recovered.groups[0].entryReasons?[aspirinID], "The plan explicitly says to continue it during pregnancy.")
+        let projected = recovered.applying(to: [pregnancy, aspirin])
+        XCTAssertEqual(projected[1].latest.evidence?.conditionGroupReason, "The plan explicitly says to continue it during pregnancy.")
+
+        let verified = try await ConditionSynthesis.verified(recovered, facts: [pregnancy, aspirin]) { _ in
+            """
+            {"decisions":[{"name":"Pregnancy","bodySystem":"reproductive","nameSupported":true,"supportedEntryIDs":["\(pregnancyID.uuidString)"],"reason":"Only the reported pregnancy is supported by this source."}]}
+            """
+        }
+        XCTAssertEqual(verified.groups[0].entryIDs, [pregnancyID])
+        XCTAssertEqual(verified.unassigned, [aspirinID])
+    }
+
+    func testContextRecoveryRejectsUnknownConcernAndLeavesRecordUnassigned() async throws {
+        let pregnancy = fact("Pregnancy", category: .symptoms)
+        let unrelated = fact("Routine eye examination", category: .testsAndLabs)
+        let initial = ConditionSynthesis(groups: [
+            .init(name: "Pregnancy", bodySystem: "reproductive", isPrimary: true,
+                  reason: "The patient reports pregnancy.", entryIDs: [pregnancy.latest.id])
+        ], unassigned: [unrelated.latest.id])
+        do {
+            _ = try await ConditionSynthesis.recoveringContext(initial, facts: [pregnancy, unrelated]) { _ in
+                """
+                {"links":[{"name":"Unrelated eye concern","bodySystem":"eye","entryID":"\(unrelated.latest.id.uuidString)","reason":"Not an established concern."}],"unassigned":[]}
+                """
+            }
+            XCTFail("A context recovery response must use an established concern.")
+        } catch {
+            XCTAssertTrue(error is ConditionSynthesis.SynthesisError)
+        }
     }
     func testTransientRequestRecoversWithSamePayloadAndBoundedBackoff() async throws {
         var attempts = 0
@@ -102,6 +268,36 @@ final class ConditionSynthesisTests: XCTestCase {
         try result.validate(facts)
         XCTAssertEqual(result.unassigned.count, 61)
         XCTAssertEqual(calls.values.sorted(), [1, 2])
+    }
+
+    func testCheckpointedGroupingResumesAtFirstUnfinishedBatch() async throws {
+        let facts = (0..<61).map { fact("Checkpoint concern \($0)") }
+        var checkpoint: ConditionSynthesis.GroupingCheckpoint?
+        var firstRunCalls = 0
+        do {
+            _ = try await ConditionSynthesis.organizeWithExternalRecovery(
+                facts: facts,
+                saveCheckpoint: { checkpoint = $0 }
+            ) { payload in
+                firstRunCalls += 1
+                if firstRunCalls == 2 { throw CancellationError() }
+                let rows = (try JSONSerialization.jsonObject(with: Data(payload.utf8)) as! [String: Any])["entries"] as! [[String: Any]]
+                let ids = rows.map { $0["id"] as! String }
+                return String(decoding: try JSONSerialization.data(withJSONObject: ["groups": [], "unassigned": ids]), as: UTF8.self)
+            }
+            XCTFail("The second batch should be interrupted")
+        } catch is CancellationError { }
+        XCTAssertEqual(checkpoint?.completed.count, 1)
+
+        var resumedPayloadSizes: [Int] = []
+        let result = try await ConditionSynthesis.organizeWithExternalRecovery(facts: facts, checkpoint: checkpoint) { payload in
+            let rows = (try JSONSerialization.jsonObject(with: Data(payload.utf8)) as! [String: Any])["entries"] as! [[String: Any]]
+            resumedPayloadSizes.append(rows.count)
+            let ids = rows.map { $0["id"] as! String }
+            return String(decoding: try JSONSerialization.data(withJSONObject: ["groups": [], "unassigned": ids]), as: UTF8.self)
+        }
+        try result.validate(facts)
+        XCTAssertEqual(resumedPayloadSizes, [1])
     }
 
     func testTokenEstimateSplitsBeforeByteLimit() async throws {

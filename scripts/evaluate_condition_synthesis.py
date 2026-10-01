@@ -1,11 +1,9 @@
 """Compare condition organization on synthetic accepted histories. No patient records.
-Default validates fixtures offline. --run needs OPENAI_API_KEY and incurs API usage.
+Default validates fixtures offline. Direct paid runs are disabled pending the budgeted production harness.
 """
-import argparse, json, os, re, time, urllib.request
+import argparse, json
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
-source = (ROOT/'Sources/SpeechSessionPersistence/ConditionSynthesis.swift').read_text()
-PROMPT = re.search(r'public static let instruction = """\n(.*?)\n    """',source,re.S).group(1)
 CASES = json.loads((ROOT/'Tests/Fixtures/ConditionSynthesis/evaluation.json').read_text())
 
 def assess(case, response):
@@ -38,38 +36,13 @@ def main():
     parser.add_argument('--models',nargs='+',default=['gpt-4o-mini','gpt-6-luna','gpt-6-sol','gpt-6-astra'])
     parser.add_argument('--output',default='/tmp/condition-synthesis-evaluation.json')
     args=parser.parse_args()
+    if args.run:
+        parser.error('Direct paid evaluation is disabled: use the durable server ledger and shared $1 evaluation budget. No request sent.')
     for case in CASES:
         assert len({e['id'] for e in case['entries']})==len(case['entries'])
         assert assess(case,{'groups':[],'unassigned':[]}), 'Empty output must fail'
     if not args.run:
-        print(f'Validated {len(CASES)} synthetic evaluation cases. No API requests made. Use --run to compare models.')
+        print(f'Validated {len(CASES)} synthetic evaluation cases. No API requests made. Paid evaluation remains gated.')
         return
-    key=os.environ.get('OPENAI_API_KEY')
-    if not key: parser.error('OPENAI_API_KEY is required for --run; no request sent')
-    results=[]
-    for model in args.models:
-        for case in CASES:
-            payload={'model':model,'store':False,'max_output_tokens':16000,
-                'input':[{'role':'system','content':PROMPT},{'role':'user','content':json.dumps({'entries':case['entries']})}],
-                'text':{'format':{'type':'json_object'}}}
-            if model.startswith('gpt-6-'): payload['reasoning']={'effort':'low'}
-            started=time.monotonic()
-            try:
-                request=urllib.request.Request('https://api.openai.com/v1/responses',data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'})
-                with urllib.request.urlopen(request,timeout=120) as response: raw=json.load(response)
-                if raw.get('status')!='completed': raise ValueError('Incomplete response')
-                text=next((part['text'] for item in raw.get('output',[]) if item.get('type')=='message'
-                    for part in item.get('content',[]) if part.get('type')=='output_text'),None)
-                if not text: raise ValueError('Missing structured output')
-                result=json.loads(text)
-                errors=assess(case,result)
-                results.append(dict(model=model,case=case['name'],seconds=time.monotonic()-started,errors=errors,
-                    response=result,usage=raw.get('usage'),request_id=raw.get('id')))
-                print(model,case['name'],'PASS' if not errors else 'FAIL: '+ '; '.join(errors))
-            except Exception as error:
-                results.append(dict(model=model,case=case['name'],error=str(error)))
-                print(model,case['name'],'REQUEST FAILED')
-    Path(args.output).write_text(json.dumps(results,indent=2)+'\n')
-    print('Results:',args.output)
 
 if __name__=='__main__': main()

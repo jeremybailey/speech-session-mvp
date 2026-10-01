@@ -1,0 +1,215 @@
+{
+  "generatedAt": "2026-09-30T18:45:43.473Z",
+  "deployment": "https://speech-session-j69ack26t-jeremy-baileys-projects.vercel.app",
+  "contractDigest": "07be802e98fbc76b1e62302fed495ef4ee2dc1a38586d903c2c0712a90faedaf",
+  "model": "gpt-6-luna",
+  "reasoning": "medium",
+  "cases": [
+    {
+      "id": "62453183-1b58-45f5-b7fc-570de4f20f1d",
+      "fixture": "chronology_and_unrelated_negative_findings",
+      "state": "completed",
+      "errors": []
+    },
+    {
+      "id": "74013d19-4742-48c1-ad9a-8eef21cc5744",
+      "fixture": "named_eye_condition",
+      "state": "completed",
+      "errors": []
+    },
+    {
+      "id": "05e3cb03-0d02-4c16-a7e8-c661307c94ca",
+      "fixture": "unnamed_eye_concern",
+      "state": "completed",
+      "errors": []
+    },
+    {
+      "id": "f458f5f1-be83-45b3-aa99-0aa7e4cc19fe",
+      "fixture": "migraine_and_hormone_testing",
+      "state": "completed",
+      "errors": []
+    },
+    {
+      "id": "b3d7aee5-6ff1-436d-ac34-8f5990e07181",
+      "fixture": "distinct_laterality",
+      "state": "completed",
+      "errors": []
+    },
+    {
+      "id": "1d9463b5-9d8f-4d6f-ae6a-06fc1d1e1397",
+      "fixture": "context_not_diagnosis",
+      "state": "completed",
+      "errors": []
+    },
+    {
+      "id": "4b1e494b-1c0a-43cd-93e8-f16302b0990b",
+      "fixture": "shared_context_is_not_evidence",
+      "state": "completed",
+      "errors": []
+    },
+    {
+      "id": "d304466e-1027-4004-808a-0a13202b64be",
+      "fixture": "pregnancy_episode_context",
+      "state": "completed",
+      "errors": []
+    }
+  ],
+  "budget": {
+    "limit_nusd": "1000000000",
+    "used_nusd": "12503900",
+    "reserved_nusd": "0"
+  },
+  "usage": {
+    "tracking_start": "2026-09-30T18:42:08.516Z",
+    "updated_at": "2026-09-30T18:45:43.327Z",
+    "lifetime_nusd": "3366400",
+    "unresolved_charges": 0,
+    "entries": [
+      {
+        "id": "6b93e581-71be-48ce-8de7-6b72c9446b26",
+        "stage": "condition-verification",
+        "model": "gpt-6-luna",
+        "workload_type": "development",
+        "state": "completed",
+        "cost_nusd": "201100",
+        "retry_count": 0
+      },
+      {
+        "id": "7b2eccbf-0de7-4e45-a30f-790fd2536ebd",
+        "stage": "condition-synthesis",
+        "model": "gpt-6-luna",
+        "workload_type": "development",
+        "state": "completed",
+        "cost_nusd": "281200",
+        "retry_count": 0
+      },
+      {
+        "id": "965eb4f9-c3c3-4e0a-a82b-5f555b4951ab",
+        "stage": "condition-verification",
+        "model": "gpt-6-luna",
+        "workload_type": "development",
+        "state": "completed",
+        "cost_nusd": "149800",
+        "retry_count": 0
+      },
+      {
+        "id": "3a8444d5-96ee-4853-99ca-d9c361d179f3",
+        "stage": "condition-synthesis",
+        "model": "gpt-6-luna",
+        "workload_type": "development",
+        "state": "completed",
+        "cost_nusd": "195500",
+        "retry_count": 0
+      },
+      {
+        "id": "ee12a6d9-5b29-4e4c-af5d-bab29e6e497c",
+        "stage": "condition-verification",
+        "model": "gpt-6-luna",
+        "workload_type": "development",
+        "state": "completed",
+        "cost_nusd": "163200",
+        "retry_count": 0
+      },
+      {
+        "id": "7b24b392-b3fe-470f-af4b-1a27e1204b7b",
+        "stage": "condition-synthesis",
+        "model": "gpt-6-luna",
+        "workload_type": "development",
+        "state": "completed",
+        "cost_nusd": "220000",
+        "retry_count": 0
+      },
+      {
+        "id": "09171587-f612-4fb5-a9b0-f57fc2ea6433",
+        "stage": "condition-verification",
+        "model": "gpt-6-luna",
+        "workload_type": "development",
+        "state": "completed",
+        "cost_nusd": "182300",
+        "retry_count": 0
+      },
+      {
+        "id": "b606ec51-a54d-4190-ba2e-999010b011d3",
+        "stage": "condition-verification",
+        "model": "gpt-6-luna",
+        "workload_type": "development",
+        "state": "completed",
+        "cost_nusd": "217500",
+        "retry_count": 0
+      },
+      {
+        "id": "99af608a-6967-4fcd-a53a-669deedd81a3",
+        "stage": "condition-synthesis",
+        "model": "gpt-6-luna",
+        "workload_type": "development",
+        "state": "completed",
+        "cost_nusd": "223100",
+        "retry_count": 0
+      },
+      {
+        "id": "088be5cb-b903-4a2b-82e6-e1daaa513e30",
+        "stage": "condition-synthesis",
+        "model": "gpt-6-luna",
+        "workload_type": "development",
+        "state": "completed",
+        "cost_nusd": "255200",
+        "retry_count": 0
+      },
+      {
+        "id": "d325b9be-afae-42f7-8071-528caecf2c41",
+        "stage": "condition-verification",
+        "model": "gpt-6-luna",
+        "workload_type": "development",
+        "state": "completed",
+        "cost_nusd": "211700",
+        "retry_count": 0
+      },
+      {
+        "id": "858c5312-a97e-41db-8145-0b54c2d02394",
+        "stage": "condition-verification",
+        "model": "gpt-6-luna",
+        "workload_type": "development",
+        "state": "completed",
+        "cost_nusd": "239300",
+        "retry_count": 0
+      },
+      {
+        "id": "7fc69e6a-d0dd-4633-859c-e955eb20a8b2",
+        "stage": "condition-synthesis",
+        "model": "gpt-6-luna",
+        "workload_type": "development",
+        "state": "completed",
+        "cost_nusd": "206400",
+        "retry_count": 0
+      },
+      {
+        "id": "2e975fac-1fed-4bc4-9268-025573d0f2af",
+        "stage": "condition-verification",
+        "model": "gpt-6-luna",
+        "workload_type": "development",
+        "state": "completed",
+        "cost_nusd": "143800",
+        "retry_count": 0
+      },
+      {
+        "id": "cdb90f46-3759-498e-94ae-bb1ba75f95bc",
+        "stage": "condition-synthesis",
+        "model": "gpt-6-luna",
+        "workload_type": "development",
+        "state": "completed",
+        "cost_nusd": "248000",
+        "retry_count": 0
+      },
+      {
+        "id": "f3f6ff9c-dfd5-4cba-9759-154136558022",
+        "stage": "condition-synthesis",
+        "model": "gpt-6-luna",
+        "workload_type": "development",
+        "state": "completed",
+        "cost_nusd": "228300",
+        "retry_count": 0
+      }
+    ]
+  },
+  "notice": "Synthetic cases only. Estimated API cost; provider billing is authoritative. Shared budget includes previous iterations. No attributable historical baseline; no verified 10x claim."
+}

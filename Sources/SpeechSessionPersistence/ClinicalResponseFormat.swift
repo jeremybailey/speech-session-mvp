@@ -29,6 +29,13 @@ public enum ClinicalResponseFormat {
                 "groups": ["type": "array", "items": group],
                 "unassigned": ["type": "array", "items": ["type": "string"]]
             ]))
+        case "condition-context-recovery":
+            let link = object(["name": ["type": "string"], "bodySystem": ["type": "string"],
+                               "entryID": ["type": "string"], "reason": ["type": "string"]])
+            return strict("health_condition_context_recovery", object([
+                "links": ["type": "array", "items": link],
+                "unassigned": ["type": "array", "items": ["type": "string"]]
+            ]))
         case "condition-verification":
             let decision = object(["name": ["type": "string"], "bodySystem": ["type": "string"],
                                    "nameSupported": ["type": "boolean"],

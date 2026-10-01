@@ -1,5 +1,20 @@
 # CollectiveCare TestFlight Notes
 
+## Version 1.0993 (5) — What to Test
+
+Condition organization now saves progress on the server and can continue while
+the app is closed. Reopening unchanged records reuses saved results. This build
+also fixes an overview error caused by internal reference IDs appearing in text.
+
+Please check that conditions finish organizing, remain saved after reopening, and
+keep related medications, tests, and follow-ups with the right condition. Tap
+Create overview when ready; overview generation is intentionally manual. Review
+the results against your records and report missing or incorrect associations.
+Settings → AI usage shows estimated API spending. Cloud processing requires the
+existing Kinde sign-in; no separate tester enrollment is required. The alpha uses
+a shared $1 processing budget; if exhausted, processing stops rather than silently
+incurring more charges. Your saved records remain available.
+
 ## Beta App Description
 
 CollectiveCare helps testers record medical appointments or scan visit documents, transcribe the content, and generate organized visit summaries. This beta is intended to evaluate capture quality, transcription reliability, and summary usefulness.
@@ -8,7 +23,7 @@ CollectiveCare helps testers record medical appointments or scan visit documents
 
 This app is a medical note-taking assistant, not a provider of medical advice, diagnosis, or treatment. Summaries are generated from user-provided recordings or scanned documents and should be reviewed by the user for accuracy before use or sharing.
 
-Audio transcription can run on device with Apple Speech or WhisperKit. OpenAI Whisper (cloud) and OpenAI-backed summaries require signing in with the provided authentication flow (Kinde). When those features are used, audio or transcript text is sent from the app to your organization’s API, which forwards requests to OpenAI using a server-side key. **Testers do not paste or store OpenAI API keys in release builds.** Sessions, transcripts, and summaries remain stored locally on the device except for what is sent for each cloud request.
+Audio transcription defaults to on-device WhisperKit; Apple Speech is also available. OpenAI Whisper (cloud) and OpenAI-backed summaries require signing in with the provided authentication flow (Kinde). When those features are used, audio or transcript text is sent from the app to your organization’s API, which forwards requests to OpenAI using a server-side key. **Testers do not paste or store OpenAI API keys in release builds.** Sessions, transcripts, and summaries remain stored locally on the device. Durable cloud jobs temporarily retain clinical processing payloads and results with a seven-day expiry/cleanup policy, while nonclinical usage accounting is retained.
 
 ## Suggested Tester Instructions
 

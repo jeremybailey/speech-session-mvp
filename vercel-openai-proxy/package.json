@@ -1,16 +1,25 @@
 {
   "name": "collectivecare-openai-proxy",
   "private": true,
+  "scripts": {
+    "vercel-build": "npm run typecheck && node --import tsx scripts/preview-check.ts && node --import tsx scripts/production-check.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts"
+  },
   "engines": {
     "node": ">=22.12"
   },
   "dependencies": {
+    "@vercel/queue": "^0.7.0",
     "jose": "^4.15.9",
-    "openai": "^6.9.1"
+    "openai": "^6.9.1",
+    "pg": "^8.23.0"
   },
   "devDependencies": {
-    "@vercel/node": "^16.0.1",
     "@types/node": "^20.11.0",
+    "@types/pg": "^8.23.1",
+    "@vercel/node": "^16.0.1",
+    "tsx": "^4.23.15",
     "typescript": "^5.4.0"
   }
 }

@@ -9,6 +9,12 @@ xcuserdata/
 *.xcscmblueprint
 *.xccheckout
 DerivedData/
+build/
+*.xcarchive/
+*.ipa
+.env
+.env.*
+!.env.example
 .derivedData/
 .debug-derived-data/
 *.moved-aside
@@ -35,3 +41,4 @@ Pods/
 # Node (Vercel proxy and other JS)
 node_modules/
 .vercel/
+.vercel

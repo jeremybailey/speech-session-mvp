@@ -16,6 +16,9 @@ struct SettingsView: View {
     @AppStorage("speechSession.skippedSignInGate") private var skippedSignInGate = false
     @EnvironmentObject private var kindeAuth: KindeAuthManager
     @State private var accountActionError: String?
+    @State private var aiUsage: AIUsageSnapshot?
+    @State private var usageIsStale = false
+    @State private var usageRequestID = UUID()
 
     private var selectedBackend: TranscriptionBackend {
         TranscriptionBackend(rawValue: backendRaw) ?? .onDeviceWhisperKit
@@ -111,6 +114,46 @@ struct SettingsView: View {
                     Text("Transcription Engine")
                 } footer: {
                     Text(transcriptionPrivacyNote)
+                }
+
+                Section {
+                    LabeledContent("Today", value: usageAmount(aiUsage?.tracking_start == nil ? nil : aiUsage?.today_nusd))
+                    LabeledContent("Last 48 hours", value: usageAmount(aiUsage?.tracking_start == nil ? nil : aiUsage?.last48_nusd))
+                    LabeledContent("Since tracking began", value: usageAmount(aiUsage?.tracking_start == nil ? nil : aiUsage?.lifetime_nusd))
+                    if let usage = aiUsage {
+                        NavigationLink("Usage details") {
+                            List {
+                                Section("Latest processing job") {
+                                    if let latest = usage.latest_job {
+                                        Text(latest.state)
+                                        LabeledContent("Workload", value: latest.workload_type ?? "Unknown")
+                                        LabeledContent("Estimated API cost", value: usageAmount(latest.cost_nusd))
+                                        LabeledContent("Records", value: latest.record_count.map(String.init) ?? "Unavailable")
+                                        LabeledContent("Retries", value: String(latest.retry_count))
+                                    } else { Text("No tracked processing yet") }
+                                }
+                                Section("By stage and model — since tracking began") {
+                                    ForEach(usage.breakdown, id: \.self) { Text($0).font(.footnote) }
+                                }
+                                Section("Shared pilot budgets") {
+                                    ForEach(usage.budgets, id: \.id) { budget in
+                                        Text(budget.id)
+                                        LabeledContent("Used", value: usageAmount(budget.used_nusd))
+                                        LabeledContent("Reserved", value: usageAmount(budget.reserved_nusd))
+                                        LabeledContent("Remaining", value: usageAmount(budget.remaining_nusd))
+                                    }
+                                }
+                                Text("Unresolved charges: \(usage.unresolved_charges). These are not included in known costs; their budget remains reserved.")
+                            }.navigationTitle("AI usage")
+                        }
+                        Button("Copy usage report") { UIPasteboard.general.string = usage.report }
+                    }
+                    Button("Refresh usage") { Task { await refreshUsage() } }
+                } header: { Text("AI usage · Estimated API cost") }
+                footer: {
+                    Text("USD. Known costs exclude unresolved charges. Provider billing is authoritative. Infrastructure charges are separate. " +
+                         (aiUsage.map { "Tracking began: \($0.tracking_start ?? "Not started"). Last updated: \($0.updated_at)." } ?? "Unavailable. Historical costs have not been reconstructed.") +
+                         (usageIsStale ? " Cached figures; refresh unavailable." : ""))
                 }
 
                 if !capabilityProfile.supportsWhisperKit {
@@ -220,6 +263,10 @@ struct SettingsView: View {
         .presentationDragIndicator(.visible)
         .task {
             normalizeSettingsForDevice()
+            await refreshUsage()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("AIProcessingCompleted"))) { _ in
+            Task { await refreshUsage() }
         }
         .onChange(of: backendRaw) { _, _ in
             normalizeSettingsForDevice()
@@ -231,11 +278,40 @@ struct SettingsView: View {
             normalizeSettingsForDevice()
         }
         .onChange(of: kindeAuth.isSignedIn) { _, _ in
+            aiUsage = nil
             normalizeSettingsForDevice()
+            Task { await refreshUsage() }
         }
     }
 
     // MARK: - Model status row
+
+    private func usageAmount(_ nanoUSD: String?) -> String {
+        guard let nanoUSD, let amount = Double(nanoUSD) else { return "Unavailable" }
+        return String(format: "$%.4f USD", amount / 1_000_000_000)
+    }
+
+    @MainActor private func refreshUsage() async {
+        let requestID = UUID()
+        usageRequestID = requestID
+        guard kindeAuth.isSignedIn, let base = CloudOpenAIConfiguration.proxyBaseURL else {
+            aiUsage = nil
+            return
+        }
+        do {
+            var url = URLComponents(url: base.appendingPathComponent("v1/health-processing/usage"), resolvingAgainstBaseURL: false)!
+            url.queryItems = [URLQueryItem(name: "timezone", value: TimeZone.current.identifier)]
+            var request = URLRequest(url: url.url!)
+            request.setValue("Bearer \(try await kindeAuth.freshAccessToken())", forHTTPHeaderField: "Authorization")
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+            let snapshot = try JSONDecoder().decode(AIUsageSnapshot.self, from: data)
+            guard kindeAuth.isSignedIn, usageRequestID == requestID else { return }
+            aiUsage = snapshot
+            usageIsStale = false
+        } catch { if usageRequestID == requestID { usageIsStale = aiUsage != nil } }
+    }
 
     @ViewBuilder
     private var modelStatusRow: some View {
@@ -405,5 +481,73 @@ struct SettingsView: View {
                 + "For stricter grouping of treatment plans and clinical details, testers often prefer OpenAI (cloud)."
         }
         return "Cloud summaries send transcript text through your organization’s API to OpenAI. Entries remain stored on this device."
+    }
+}
+
+private struct AIUsageSnapshot: Decodable {
+    struct Job: Decodable {
+        let id: String
+        let state: String
+        let cost_nusd: String?
+        let record_count: Int?
+        let retry_count: Int
+        let workload_type: String?
+    }
+    let latest_job: Job?
+    struct Entry: Decodable {
+        let id: String
+        let stage: String
+        let model: String
+        let state: String
+        let cost_nusd: String?
+        let reserve_nusd: String
+        let retry_count: Int
+        let record_count: Int?
+        let created_at: String
+        let workload_type: String?
+    }
+    struct Budget: Decodable {
+        let id: String
+        let limit_nusd: String
+        let used_nusd: String
+        let reserved_nusd: String
+        var remaining_nusd: String? {
+            guard let limit = Int64(limit_nusd), let used = Int64(used_nusd),
+                  let reserved = Int64(reserved_nusd), limit >= 0, used >= 0, reserved >= 0 else { return nil }
+            guard used <= limit, reserved <= limit - used else { return "0" }
+            return String(limit - used - reserved)
+        }
+    }
+    let tracking_start: String?
+    let updated_at: String
+    let today_nusd: String
+    let last48_nusd: String
+    let lifetime_nusd: String
+    let unresolved_charges: Int
+    let timezone: String
+    let entries: [Entry]
+    let budgets: [Budget]
+
+    private func usd(_ value: String?) -> String {
+        value.flatMap(Double.init).map { String(format: "$%.6f USD", $0 / 1_000_000_000) } ?? "Unavailable"
+    }
+    var breakdown: [String] {
+        Dictionary(grouping: entries, by: { "\($0.workload_type ?? "unknown") / \($0.stage) / \($0.model) / \($0.retry_count > 0 ? "retry" : "first attempt")" })
+            .sorted { $0.key < $1.key }.map { key, rows in
+                let total = rows.compactMap { $0.cost_nusd.flatMap(Int64.init) }.reduce(0,+)
+                return "\(key): \(usd(String(total))) known; \(rows.filter { $0.cost_nusd == nil }.count) pending/unresolved"
+            }
+    }
+    // Deliberate allowlist: never serialize credentials, source content, names, or filenames.
+    var report: String {
+        (["Estimated API cost (USD); provider billing is authoritative.",
+          "Range: \(tracking_start ?? "Not started") to \(updated_at); timezone: \(timezone)",
+          "Today: \(usd(tracking_start == nil ? nil : today_nusd)); rolling 48h: \(usd(tracking_start == nil ? nil : last48_nusd)); lifetime: \(usd(tracking_start == nil ? nil : lifetime_nusd))",
+          "Unresolved charges: \(unresolved_charges)",
+          "Historical costs before tracking unavailable; infrastructure excluded."] +
+         (latest_job.map { ["Latest processing job \($0.id): \($0.state), \(usd($0.cost_nusd)), workload \($0.workload_type ?? "unknown"), records \($0.record_count.map(String.init) ?? "Unavailable"), retries \($0.retry_count)"] } ?? []) + breakdown +
+         entries.map { "Job \($0.id): \($0.stage), \($0.model), \($0.state), \(usd($0.cost_nusd)), workload \($0.workload_type ?? "unknown"), retries \($0.retry_count)" } +
+         budgets.map { "Shared budget \($0.id): limit \(usd($0.limit_nusd)), used \(usd($0.used_nusd)), reserved \(usd($0.reserved_nusd)), remaining \(usd($0.remaining_nusd))" })
+            .joined(separator: "\n")
     }
 }

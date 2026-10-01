@@ -39,6 +39,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>CloudOpenAIBaseURL</key>
 	<string>https://speech-session-mvp.vercel.app/api</string>
+	<key>DurableAIProcessingEnabled</key>
+	<true/>
+	<key>DurableConditionWorkflowsEnabled</key>
+	<true/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.medical</string>
 	<key>LSRequiresIPhoneOS</key>

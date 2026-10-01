@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import type { IncomingMessage } from "http";
 import { verifyKindeBearer } from "../../_lib/verifyKinde";
+import { durableEnabledForOwner } from '../../_lib/pilot';
 
 export const config = {
   api: {
@@ -25,7 +26,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    await verifyKindeBearer(req.headers.authorization);
+    const owner = await verifyKindeBearer(req.headers.authorization);
+    if (durableEnabledForOwner(owner)) return res.status(409).json({error:{code:"cloud_audio_pilot_disabled",message:"Use on-device transcription during the budgeted pilot."}});
   } catch (e: unknown) {
     const err = e as { status?: number; message?: string };
     return res.status(err.status ?? 401).json({ error: { message: err.message ?? "Unauthorized" } });

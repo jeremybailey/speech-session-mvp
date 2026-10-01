@@ -1,8 +1,9 @@
 import SwiftUI
 import SpeechSessionFeatures
 import SpeechSessionPersistence
+import CryptoKit
 
-/// One home list. Categories expand in place; sheets are reserved for a specific task.
+/// Health areas lead to condition categories; sheets are reserved for a specific task.
 struct HealthSummaryView: View {
     @ObservedObject var model: HealthSummaryModel
     @ObservedObject var home: HomeViewModel
@@ -20,12 +21,19 @@ struct HealthSummaryView: View {
     @State private var accountActionPending = false
     @AppStorage("speechSession.skippedSignInGate") private var skippedSignInGate = false
     @State private var allExpanded = false
-    @State private var expandedConditions = Set<String>()
     @State private var expanded: Set<String> = []
     #if DEBUG
     @State private var didOpenCareQA = false
     @State private var didRunLiveStress = false
+    @State private var didCheckAIConnection = false
     #endif
+    private var connectionCheckOnly: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--ai-connection-check")
+        #else
+        false
+        #endif
+    }
     @State private var recordsExpanded = false
     @State private var pendingDeletion: Session?
     @State private var taskSheet: HealthSheet?
@@ -34,6 +42,8 @@ struct HealthSummaryView: View {
     @State private var resumeAfterConsent = false
     @State private var attemptedRepair: Set<String> = []
     @State private var preparationTask: Task<Void, Never>?
+    @State private var durableStop: DurableProcessingStop?
+    @State private var stopError: String?
     @State private var isLaunchingPreparation = false
     @State private var preparationWasBackgrounded = false
     @State private var automaticResumeAlreadyAttempted = false
@@ -46,6 +56,14 @@ struct HealthSummaryView: View {
             && backend != "onDevice" && cloudConsent
             && (model.isProcessing || isLaunchingPreparation
                 || (pendingCount == 0 && !attemptedRepair.contains("conditions:" + ConditionSynthesis.fingerprint(model.facts))))
+    }
+
+    private var launchingProgressTitle: String {
+        switch pendingSummaryJob {
+        case "overview": return "Creating overview"
+        case "conditions": return "Organizing conditions"
+        default: return "Processing health details"
+        }
     }
 
     private var pendingCount: Int {
@@ -81,17 +99,21 @@ struct HealthSummaryView: View {
                 Section {
                     HealthProcessingProgressView(
                         title: model.isProcessing && !model.progressTitle.isEmpty
-                            ? model.progressTitle : "Preparing your health story",
-                        status: model.progress.isEmpty ? "Starting…" : model.progress,
+                            ? model.progressTitle : launchingProgressTitle,
+                        status: !model.isProcessing || model.progress.isEmpty ? "Starting…" : model.progress,
                         value: model.isProcessing && model.progressTotal > 0 ? model.progressValue : nil,
                         total: model.isProcessing && model.progressTotal > 0 ? Double(model.progressTotal) : nil,
                         currentRecord: model.progressCurrent,
                         totalRecords: model.progressTotal,
-                        showsRecordCount: model.progressShowsRecordCount
-                    )
-                    Button("Stop preparing summary") {
+                        showsRecordCount: model.isProcessing && model.progressShowsRecordCount
+                    ) {
                         pendingSummaryJob = ""
                         preparationTask?.cancel()
+                        let stop = durableStop
+                        Task {
+                            do { try await stop?.stop() }
+                            catch { stopError = "Could not confirm the server stopped. Processing may continue. Check AI usage in Settings before retrying." }
+                        }
                     }
                 }
             } else if let issue = model.processingIssue {
@@ -270,8 +292,12 @@ struct HealthSummaryView: View {
         .alert("Could not sign in", isPresented: Binding(get: { accountActionError != nil }, set: { if !$0 { accountActionError = nil } })) {
             Button("OK", role: .cancel) { accountActionError = nil }
         } message: { Text(accountActionError ?? "Please try again.") }
+        .alert("Stop not confirmed", isPresented: Binding(get: { stopError != nil }, set: { if !$0 { stopError = nil } })) {
+            Button("OK", role: .cancel) { stopError = nil }
+        } message: { Text(stopError ?? "") }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: showingStoryPlaceholder)
         .task(id: "\(ConditionSynthesis.fingerprint(model.facts))|\(model.isProcessing)|\(model.hasLoaded)|\(cloudConsent)|\(backend)|\(pendingSummaryJob)") {
+            guard !connectionCheckOnly else { return }
             if resumePendingSummaryJobIfPossible() { return }
             guard !model.isProcessing, model.needsConditionOrganization, pendingCount == 0,
                   backend != "onDevice", cloudConsent else { return }
@@ -280,8 +306,91 @@ struct HealthSummaryView: View {
             conditionsOnlyRequest = true
             prepare()
         }
-        .task(id: home.revision) {
+        .task(id: connectionCheckOnly ? "ai-connection-check" : String(describing: home.revision)) {
             #if DEBUG
+            if connectionCheckOnly {
+                guard !didCheckAIConnection else { return }
+                didCheckAIConnection = true
+                await model.refresh()
+                var report: [String: Any] = ["durableEnabled": false, "authenticated": false,
+                    "recordCount": model.snapshot.sessions.count, "factCount": model.facts.count,
+                    "needsConditionOrganization": model.needsConditionOrganization]
+                if let transport = await auth.openAIChatTransport(byokFallback: ""),
+                   let jobs = transport.durableJobsURL, transport.durableConditionWorkflowsURL != nil {
+                    report["durableEnabled"] = true
+                    do {
+                        var request = URLRequest(url: jobs.deletingLastPathComponent().appendingPathComponent("usage"))
+                        let authorization = try await transport.makeAuthorizationHeader()
+                        request.setValue(authorization, forHTTPHeaderField: "Authorization")
+                        // Account-scoped rollout identifier only; never export the token or subject.
+                        let parts = authorization.split(separator: ".")
+                        if parts.count == 3 {
+                            var encoded = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+                            encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
+                            if let claims = Data(base64Encoded: encoded),
+                               let object = (try? JSONSerialization.jsonObject(with: claims)) as? [String: Any],
+                               let subject = object["sub"] as? String {
+                                report["pilotAccountHash"] = SHA256.hash(data: Data(subject.utf8)).map { String(format: "%02x", $0) }.joined()
+                            }
+                        }
+                        let (data, response) = try await URLSession.shared.data(for: request)
+                        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                        report["httpStatus"] = status
+                        try OpenAIChatTransport.validateDurableResponse(data: data, status: status)
+                        let usage = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                        report["authenticated"] = true
+                        report["usageAvailable"] = usage?["updated_at"] != nil
+                        report["processingEnabled"] = usage?["processing_enabled"] as? Bool ?? false
+                        // Read an existing result only. Never submit or regenerate during diagnosis.
+                        if let entries = usage?["entries"] as? [[String: Any]],
+                           let entry = entries.first(where: { ($0["stage"] as? String) == "overview" && ($0["state"] as? String) == "completed" }),
+                           let id = entry["id"] as? String {
+                            var components = URLComponents(url: jobs, resolvingAgainstBaseURL: false)!
+                            components.queryItems = [URLQueryItem(name: "id", value: id)]
+                            var read = URLRequest(url: components.url!)
+                            read.setValue(authorization, forHTTPHeaderField: "Authorization")
+                            let (savedData, savedResponse) = try await URLSession.shared.data(for: read)
+                            try OpenAIChatTransport.validateDurableResponse(data: savedData, status: (savedResponse as? HTTPURLResponse)?.statusCode ?? 0)
+                            if let saved = try JSONSerialization.jsonObject(with: savedData) as? [String: Any],
+                               let output = (saved["result"] as? [String: Any])?["output"] as? String {
+                                let narrative = try OverviewResponseContract.decodeNarrative(output)
+                                report["overviewReferencesValid"] = narrative.hasValidReferences(in: model.facts)
+                                report["overviewNumbersValid"] = narrative.hasGroundedNumbers(in: model.facts)
+                                // Export only unmatched numeric tokens, never prose or source excerpts.
+                                report["overviewNumberMismatches"] = narrative.ungroundedNumbers(in: model.facts)
+                                var withoutIDs = narrative
+                                var embeddedIDs = 0
+                                for index in withoutIDs.sentences.indices {
+                                    for fact in model.facts where withoutIDs.sentences[index].text.contains(fact.id) {
+                                        embeddedIDs += 1
+                                        withoutIDs.sentences[index].text = withoutIDs.sentences[index].text.replacingOccurrences(of: fact.id, with: "")
+                                    }
+                                }
+                                report["overviewEmbeddedFactIDs"] = embeddedIDs
+                                report["overviewNumbersValidWithoutIDs"] = withoutIDs.hasGroundedNumbers(in: model.facts)
+                                let cleaned = narrative.removingInlineReferenceIDs(in: model.facts)
+                                report["overviewCleanupReferencesValid"] = cleaned.hasValidReferences(in: model.facts)
+                                report["overviewCleanupNumbersValid"] = cleaned.hasGroundedNumbers(in: model.facts)
+                            }
+                        }
+                        if let latest = usage?["latest_job"] as? [String: Any] {
+                            report["latestJobStatus"] = latest["state"] as? String
+                            report["latestJobCostNUSD"] = latest["cost_nusd"] as? String
+                        }
+                    } catch {
+                        report["checkFailed"] = true
+                        report["errorDomain"] = (error as NSError).domain
+                        report["errorCode"] = (error as NSError).code
+                    }
+                }
+                // Read-only, nonclinical diagnostic; never exports auth or record text.
+                if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) {
+                    let path = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("ai-connection-check.json")
+                    try? data.write(to: path, options: .atomic)
+                    print("AI_CONNECTION_CHECK " + String(decoding: data, as: UTF8.self))
+                }
+                return
+            }
             if ProcessInfo.processInfo.arguments.contains("--live-condition-stress") {
                 guard !didRunLiveStress else { return }
                 didRunLiveStress = true
@@ -295,9 +404,6 @@ struct HealthSummaryView: View {
             await model.refresh()
             if resumePendingSummaryJobIfPossible() { return }
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--condition-qa") {
-                expandedConditions = ["migraine|"]
-            }
             if ProcessInfo.processInfo.arguments.contains("--summary-error-qa") {
                 model.showProcessingFailureForQA()
                 return
@@ -338,6 +444,11 @@ struct HealthSummaryView: View {
         .onChange(of: isLaunchingPreparation) { _, isLaunching in
             guard !isLaunching else { return }
             _ = resumePendingSummaryJobIfPossible()
+        }
+        .navigationDestination(for: HealthAreaKind.self) { kind in
+            HealthAreaDetailView(kind: kind, model: model) { condition in
+                conditionCategories(condition)
+            }
         }
         .sheet(item: $taskSheet) { sheet in
             switch sheet {
@@ -386,75 +497,56 @@ struct HealthSummaryView: View {
                     : "Your saved details are available in All.").foregroundStyle(.secondary) }
         }
         Section {
-        ForEach(conditions.filter { !$0.isUncategorized }) { condition in
-            let visible = condition.facts
-            if !visible.isEmpty {
-                    DisclosureGroup(isExpanded: Binding(
-                        get: { expandedConditions.contains(condition.id) },
-                        set: { if $0 { expandedConditions.insert(condition.id) } else { expandedConditions.remove(condition.id) } }
-                    )) {
-                        // Recommendations lead; category headings are inline, not another navigation level.
-                        let order: [SummaryEntryCategory] = [.carePlan, .followUp, .symptoms, .findings, .medications,
-                            .testsAndLabs, .vaccinations, .allergies, .biopsychosocialContext, .practitionerContact, .otherNotes]
-                        ForEach(order, id: \.self) { category in
-                            let rows = visible.filter { $0.category == category || (category == .symptoms && $0.category == .chiefComplaint) }
-                            if !rows.isEmpty {
-                                DisclosureGroup {
-                                if category == .symptoms {
-                                    // Same concern gets one heading, with individual mentions available beneath it.
-                                    let names = Dictionary(grouping: rows, by: { ConditionSummaryProjection.normalized($0.title) })
-                                    ForEach(names.keys.sorted(), id: \.self) { name in
-                                        let mentions = names[name] ?? []
-                                        if mentions.count > 1 {
-                                            DisclosureGroup("\(name.capitalized) · \(mentions.count) source details") {
-                                                ForEach(mentions) { fact in conditionFactRow(fact) }
-                                            }
-                                        } else {
-                                            ForEach(mentions) { fact in conditionFactRow(fact) }
-                                        }
-                                    }
-                                } else {
-                                    ForEach(rows) { fact in conditionFactRow(fact) }
-                                }
-                                } label: {
-                                    categoryLabel(category.displayTitle, count: rows.count)
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: bodySystemIcon(condition.bodySystem))
-                                .font(.title2).foregroundStyle(.blue)
-                                .frame(width: 40, height: 40)
-                                .background(.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-                                .accessibilityHidden(true)
+            ForEach(HealthAreaProjection.groups(conditions)) { area in
+                NavigationLink(value: area.id) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: area.id.symbol)
+                            .font(.title2).foregroundStyle(.blue)
+                            .frame(width: 40, height: 40)
+                            .background(.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(condition.name).font(.headline).foregroundStyle(.primary)
-                            Text("\(visible.count) \(visible.count == 1 ? "detail" : "details")").font(.caption).foregroundStyle(.secondary)
+                            Text(area.id.title).font(.headline).foregroundStyle(.primary)
+                            Text("\(area.conditions.count) \(area.conditions.count == 1 ? "concern" : "concerns")")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Text(area.preview).font(.subheadline).foregroundStyle(.secondary)
+                                .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
                         }
-                        }.padding(.vertical, 2)
-                    }
+                    }.padding(.vertical, 4)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityHint("Opens concerns and their health details")
             }
         }
-        }
-
     }
 
-    private func bodySystemIcon(_ system: String) -> String {
-        let value = system.lowercased()
-        let symbols: [(String, String)] = [
-            ("neuro", "brain.head.profile"), ("mental", "brain.head.profile"),
-            ("eye", "eye"), ("ophthalm", "eye"), ("vision", "eye"),
-            ("card", "heart.fill"), ("circul", "heart.fill"),
-            ("resp", "lungs.fill"), ("pulmon", "lungs.fill"),
-            ("musculo", "figure.walk"), ("orthop", "figure.walk"),
-            ("endocr", "waveform.path.ecg"), ("hormon", "waveform.path.ecg"),
-            ("repro", "figure.and.child.holdinghands"), ("pregnan", "figure.and.child.holdinghands"),
-            ("digest", "stomach"), ("gastro", "stomach"),
-            ("ear", "ear"), ("audit", "ear"), ("immun", "shield"),
-            ("skin", "hand.raised"), ("dermat", "hand.raised")
-        ]
-        return symbols.first { value.contains($0.0) }?.1 ?? "figure.stand"
+    @ViewBuilder private func conditionCategories(_ condition: ConditionSummary) -> some View {
+        let order: [SummaryEntryCategory] = [.carePlan, .followUp, .symptoms, .findings, .medications,
+            .testsAndLabs, .vaccinations, .allergies, .biopsychosocialContext, .practitionerContact, .otherNotes]
+        ForEach(order, id: \.self) { category in
+            let rows = condition.facts.filter { $0.category == category || (category == .symptoms && $0.category == .chiefComplaint) }
+            if !rows.isEmpty {
+                DisclosureGroup {
+                    if category == .symptoms {
+                        let names = Dictionary(grouping: rows, by: { ConditionSummaryProjection.normalized($0.title) })
+                        ForEach(names.keys.sorted(), id: \.self) { name in
+                            let mentions = names[name] ?? []
+                            if mentions.count > 1 {
+                                DisclosureGroup("\(name.capitalized) · \(mentions.count) source details") {
+                                    ForEach(mentions) { fact in conditionFactRow(fact) }
+                                }
+                            } else {
+                                ForEach(mentions) { fact in conditionFactRow(fact) }
+                            }
+                        }
+                    } else {
+                        ForEach(rows) { fact in conditionFactRow(fact) }
+                    }
+                } label: {
+                    categoryLabel(category.displayTitle, count: rows.count)
+                }
+            }
+        }
     }
 
     private func conditionFactRow(_ fact: HealthFact) -> some View {
@@ -571,6 +663,7 @@ struct HealthSummaryView: View {
     @State private var conditionsOnlyRequest = false
 
     private func prepare(retryUnfinished: Bool = false, automaticResume: Bool = false) {
+        guard !connectionCheckOnly else { return }
         guard !isLaunchingPreparation && !model.isProcessing else { return }
         if !automaticResume { automaticResumeAlreadyAttempted = false }
         let resume = retryUnfinished || resumeAfterConsent
@@ -590,6 +683,8 @@ struct HealthSummaryView: View {
         pendingSummaryJob = job
         preparationWasBackgrounded = scenePhase == .background
         isLaunchingPreparation = true
+        let stop = DurableProcessingStop()
+        durableStop = stop
         preparationTask = Task {
             var completedSuccessfully = false
             let backgroundLease = SummaryBackgroundTaskLease(name: overviewOnly ? "Create health overview" : "Prepare health summary") {
@@ -607,7 +702,8 @@ struct HealthSummaryView: View {
                 isLaunchingPreparation = false
                 preparationTask = nil
             }
-            let transport = backend == "onDevice" ? nil : await auth.openAIChatTransport(byokFallback: apiKey)
+            var transport = backend == "onDevice" ? nil : await auth.openAIChatTransport(byokFallback: apiKey)
+            transport?.explicitStop = stop
             if conditionsOnly {
                 await model.organizeConditions(transport: transport, onDevice: backend == "onDevice")
                 completedSuccessfully = model.conditionNotice == nil && !model.needsConditionOrganization
@@ -639,6 +735,7 @@ struct HealthSummaryView: View {
 
     @discardableResult
     private func resumePendingSummaryJobIfPossible() -> Bool {
+        guard !connectionCheckOnly else { return false }
         guard SummaryJobResumePolicy.canResume(
             hasPendingJob: !pendingSummaryJob.isEmpty,
             hasLoaded: model.hasLoaded,
@@ -663,6 +760,41 @@ struct HealthSummaryView: View {
     }
 }
 
+/// Observe the live model, not a copied area, so edits and processing remain visible while open.
+private struct HealthAreaDetailView<Content: View>: View {
+    let kind: HealthAreaKind
+    @ObservedObject var model: HealthSummaryModel
+    @ViewBuilder var conditionContent: (ConditionSummary) -> Content
+
+    private var area: HealthArea? {
+        HealthAreaProjection.groups(ConditionSummaryProjection.groups(
+            facts: model.conditionFacts, topics: model.snapshot.topics
+        )).first { $0.id == kind }
+    }
+
+    var body: some View {
+        List {
+            if let area {
+                ForEach(area.conditions) { condition in
+                    Section {
+                        conditionContent(condition)
+                    } header: {
+                        Text(condition.name).font(.headline).foregroundStyle(.primary)
+                            .textCase(nil).accessibilityAddTraits(.isHeader)
+                    }
+                }
+            } else {
+                Section {
+                    Text("No concerns in this area. Your saved details are available in All.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle(kind.title)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 private struct HealthProcessingProgressView: View {
     let title: String
     let status: String
@@ -671,40 +803,101 @@ private struct HealthProcessingProgressView: View {
     let currentRecord: Int
     let totalRecords: Int
     let showsRecordCount: Bool
+    let stop: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var displayedFraction = 0.0
+
+    private struct Sample: Equatable {
+        let title: String
+        let total: Double?
+        let fraction: Double?
+    }
+
+    private var sample: Sample {
+        let fraction: Double?
+        if let value, let total, total > 0, value.isFinite, total.isFinite {
+            fraction = min(1, max(0, value / total))
+        } else {
+            fraction = nil
+        }
+        return Sample(title: title, total: total, fraction: fraction)
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            titleLabel
-            if let value, let total {
-                ProgressView(value: value, total: total)
+        VStack(alignment: .leading, spacing: 14) {
+            if typeSize.isAccessibilitySize {
+                titleLabel
+                stopButton
             } else {
-                ProgressView()
+                HStack(alignment: .center, spacing: 12) {
+                    titleLabel.frame(maxWidth: .infinity, alignment: .leading)
+                    stopButton
+                }
             }
-            statusLabel
+            // Keep the track's footprint during indeterminate startup; the spinner below
+            // communicates activity without advancing an invented percentage.
+            ProgressView(value: displayedFraction, total: 1)
+                .progressViewStyle(.linear)
+                .opacity(sample.fraction == nil ? 0 : 1)
+                .accessibilityLabel(title)
+                .accessibilityHidden(sample.fraction == nil)
+            HStack(alignment: .top, spacing: 10) {
+                ProgressView().progressViewStyle(.circular).controlSize(.small)
+                    .padding(.top, 2)
+                    .accessibilityHidden(true)
+                statusLabel.frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if showsRecordCount && totalRecords > 0 {
+                Text("Record \(currentRecord) of \(totalRecords)")
+                    .font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+            }
         }
-        .progressViewStyle(.linear)
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
+        .onAppear { setFraction(sample.fraction ?? 0, animated: false) }
+        .onChange(of: sample) { old, new in
+            let forwardUpdate = old.title == new.title && old.total == new.total
+                && old.fraction != nil && new.fraction != nil
+                && (new.fraction ?? 0) >= (old.fraction ?? 0)
+            setFraction(new.fraction ?? 0, animated: forwardUpdate && !reduceMotion)
+        }
+        .onChange(of: reduceMotion) { _, reduced in
+            if reduced { setFraction(sample.fraction ?? 0, animated: false) }
+        }
     }
 
     private var titleLabel: some View {
-        Text(title)
-            .fontWeight(.semibold)
-            .lineLimit(1)
+        Text(title).font(.headline).foregroundStyle(.primary)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
     }
 
-    private var statusLabel: some View {
-        HStack(spacing: 8) {
-            Text(status)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 8)
-            if showsRecordCount && totalRecords > 1 {
-                Text("Record \(currentRecord) of \(totalRecords)")
-                    .monospacedDigit()
-                    .fixedSize()
-            }
+    private var stopButton: some View {
+        Button("Stop", action: stop)
+            .font(.body)
+            .controlSize(.regular)
+            .frame(minHeight: 44)
+            .summarySecondaryButtonStyle()
+            .accessibilityLabel("Stop " + title.lowercased())
+    }
+
+    @ViewBuilder private var statusLabel: some View {
+        if typeSize.isAccessibilitySize {
+            Text(status).font(.subheadline).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text(status).font(.subheadline).foregroundStyle(.secondary)
+                .lineLimit(2, reservesSpace: true)
+        }
+    }
+
+    private func setFraction(_ fraction: Double, animated: Bool) {
+        if animated {
+            withAnimation(.easeInOut(duration: 0.3)) { displayedFraction = fraction }
+        } else {
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { displayedFraction = fraction }
         }
     }
 }

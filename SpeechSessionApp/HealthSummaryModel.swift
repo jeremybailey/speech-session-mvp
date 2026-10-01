@@ -269,7 +269,7 @@ final class HealthSummaryModel: ObservableObject {
         progressShowsRecordCount = false
         defer { isProcessing = false; progress = "" }
         await refresh()
-        await synthesizeAcceptedConditions(transport: transport, onDevice: onDevice, force: true)
+        await synthesizeAcceptedConditions(transport: transport, onDevice: onDevice)
         // Overview writing is intentionally separate. Conditions are useful on
         // their own and must remain available if the narrative request stalls.
         if !Task.isCancelled, !needsConditionOrganization, !facts.isEmpty, overview == nil {
@@ -277,7 +277,7 @@ final class HealthSummaryModel: ObservableObject {
         }
     }
 
-    private func synthesizeAcceptedConditions(transport: OpenAIChatTransport?, onDevice: Bool, force: Bool = false) async {
+    private func synthesizeAcceptedConditions(transport: OpenAIChatTransport?, onDevice: Bool) async {
         guard !facts.isEmpty, !Task.isCancelled else { return }
         guard !onDevice else {
             conditionNotice = "Whole-history condition organization uses cloud processing. Your on-device details remain available."
@@ -287,7 +287,7 @@ final class HealthSummaryModel: ObservableObject {
         do {
             let accepted = facts
             let cached = await store.conditionSynthesis(for: accepted)
-            if force || cached == nil {
+            if cached == nil {
                 progressTitle = "Organizing conditions"
                 progressCurrent = 0
                 progressTotal = 100
@@ -1041,7 +1041,7 @@ actor RecordSummaryProcessor {
         Do not imply clinical confirmation.
         """, user: input, transport: transport, onDevice: onDevice, contract: .narrative, allowedFactIDs: facts.map(\.id))
         await progress(OverviewProgressUpdate(message: "Checking supporting details…", fraction: 0.82))
-        var overview = try OverviewResponseContract.decodeNarrative(raw)
+        var overview = try OverviewResponseContract.decodeNarrative(raw).removingInlineReferenceIDs(in: facts)
         overview.conditionContext = conditionContext
         guard overview.hasValidReferences(in: facts) else { throw OverviewFailure.invalidReferences }
         await progress(OverviewProgressUpdate(message: "Checking dates and numbers…", fraction: 0.9))
@@ -1052,10 +1052,68 @@ actor RecordSummaryProcessor {
 
     func synthesizeConditions(facts: [HealthFact], transport: OpenAIChatTransport?, store: SessionStore? = nil,
                               progress: @escaping @Sendable (ConditionProgressUpdate) async -> Void = { _ in }) async throws -> ConditionSynthesis {
+        try Task.checkCancellation()
+        if let accepted = await store?.conditionSynthesis(for: facts) { return accepted }
         let jobID = "conditions-" + ConditionSynthesis.fingerprint(facts)
         activeJobID = jobID
         await SummaryRequestCoordinator.shared.beginJob(jobID)
+        var lastRequestKey: String?
+        func checkpointedRequest(stage: String, instructions: String, input: String, model: String) async throws -> String {
+            try Task.checkCancellation()
+            // Reuse only the exact production request contract, including routing
+            // and schema. A history-wide fingerprint would invalidate unaffected batches.
+            let schema = String(decoding: try JSONSerialization.data(
+                withJSONObject: ClinicalResponseFormat.forStage(stage), options: [.sortedKeys]), as: UTF8.self)
+            let route = transport?.durableJobsURL?.absoluteString ?? transport?.healthProcessingURL?.absoluteString ?? "legacy"
+            let key = String(decoding: try JSONEncoder().encode([
+                "condition-request-v2", stage, model, route, schema, instructions, input
+            ]), as: UTF8.self)
+            lastRequestKey = key
+            if let saved = await store?.conditionResponse(for: facts, key: key) { return saved }
+            let response = try await self.request(stage: stage, system: instructions, user: input,
+                                                  transport: transport, onDevice: false, model: model)
+            try await store?.saveConditionResponse(response, for: facts, key: key)
+            return response
+        }
+        do {
         await progress(ConditionProgressUpdate(message: "Preparing accepted health details…", fraction: 0.06))
+        // New clinical policy stays behind the budgeted pilot gate until paid
+        // quality evaluation passes. Accepted caches above remain valid on upgrade.
+        if transport?.durableJobsURL != nil {
+            let plan = await store?.incrementalConditionPlan(for: facts)
+                ?? ConditionSynthesis.initialIncrementalPlan(facts: facts)
+            if let transport, transport.durableConditionWorkflowsURL != nil {
+                var payload = try JSONSerialization.jsonObject(with: Data(
+                    ConditionSynthesis.conditionWorkflowInput(plan: plan, facts: facts).utf8)) as! [String: Any]
+                payload["mapping"] = ["instructions": ConditionSynthesis.incrementalInstruction,
+                    "response_format": ClinicalResponseFormat.forStage("condition-synthesis")]
+                payload["verification"] = ["instructions": ConditionSynthesis.incrementalVerificationInstruction,
+                    "response_format": ClinicalResponseFormat.forStage("condition-verification")]
+                await progress(ConditionProgressUpdate(message: "Organizing securely in the background…", fraction: 0.12))
+                let raw = try await transport.durableRequest(payload: payload, conditionWorkflow: true)
+                let result = try ConditionSynthesis.decode(raw, facts: facts)
+                await SummaryRequestCoordinator.shared.finishJob(jobID)
+                return result
+            }
+            let result = try await ConditionSynthesis.organizeIncrementally(plan: plan, facts: facts, progress: { phase in
+                switch phase {
+                case .groupingBatch(let current, let total):
+                    await progress(ConditionProgressUpdate(message: "Updating affected details \(current) of \(total)…",
+                        fraction: 0.12 + 0.65 * Double(current - 1) / Double(max(1, total))))
+                case .verificationBatch:
+                    await progress(ConditionProgressUpdate(message: "Checking new condition links…", fraction: 0.78))
+                case .reconcilingBatch: break
+                }
+            }, mapping: { input in
+                try await checkpointedRequest(stage: "condition-synthesis", instructions: ConditionSynthesis.incrementalInstruction,
+                    input: input, model: "gpt-4o-mini")
+            }, verification: { input in
+                try await checkpointedRequest(stage: "condition-verification", instructions: ConditionSynthesis.incrementalVerificationInstruction,
+                    input: input, model: "gpt-4o-mini")
+            })
+            await SummaryRequestCoordinator.shared.finishJob(jobID)
+            return result
+        }
         let cached = await store?.conditionProposal(for: facts, model: ConditionSynthesis.model,
                                                     promptVersion: ConditionSynthesis.promptVersion)
         let proposed: ConditionSynthesis
@@ -1063,7 +1121,8 @@ actor RecordSummaryProcessor {
             await progress(ConditionProgressUpdate(message: "Loading saved condition candidates…", fraction: 0.52))
             proposed = cached
         } else {
-            proposed = try await ConditionSynthesis.organizeWithExternalRecovery(facts: facts, progress: { phase in
+            let checkpoint = await store?.conditionGroupingCheckpoint(for: facts)
+            let initialProposal = try await ConditionSynthesis.organizeWithExternalRecovery(facts: facts, progress: { phase in
                 let update: ConditionProgressUpdate
                 switch phase {
                 case .groupingBatch(let current, let total):
@@ -1076,11 +1135,16 @@ actor RecordSummaryProcessor {
                     return
                 }
                 await progress(update)
+            }, checkpoint: checkpoint, saveCheckpoint: { checkpoint in
+                try await store?.saveConditionGroupingCheckpoint(checkpoint, expected: facts)
             }) { input in
-                return try await self.request(stage: "condition-synthesis", system: ConditionSynthesis.instruction, user: input,
-                    transport: transport, onDevice: false, model: ConditionSynthesis.model)
+                return try await checkpointedRequest(stage: "condition-synthesis", instructions: ConditionSynthesis.instruction, input: input, model: ConditionSynthesis.model)
             }
-            await progress(ConditionProgressUpdate(message: "Saving condition candidates…", fraction: 0.52))
+            await progress(ConditionProgressUpdate(message: "Linking related care details…", fraction: 0.54))
+            proposed = try await ConditionSynthesis.recoveringContext(initialProposal, facts: facts) { input in
+                try await checkpointedRequest(stage: "condition-context-recovery", instructions: ConditionSynthesis.contextRecoveryInstruction, input: input, model: ConditionSynthesis.model)
+            }
+            await progress(ConditionProgressUpdate(message: "Saving condition candidates…", fraction: 0.56))
             try await store?.saveConditionProposal(proposed, expected: facts, model: ConditionSynthesis.model,
                                                    promptVersion: ConditionSynthesis.promptVersion)
         }
@@ -1093,12 +1157,20 @@ actor RecordSummaryProcessor {
                 fraction: fraction
             ))
         }) { input in
-            return try await self.request(stage: "condition-verification", system: ConditionSynthesis.verificationInstruction, user: input,
-                transport: transport, onDevice: false, model: ConditionSynthesis.verifierModel)
+            return try await checkpointedRequest(stage: "condition-verification", instructions: ConditionSynthesis.verificationInstruction, input: input, model: ConditionSynthesis.verifierModel)
         }
         await progress(ConditionProgressUpdate(message: "Finalizing supported condition links…", fraction: 0.92))
         await SummaryRequestCoordinator.shared.finishJob(jobID)
         return verified
+        } catch {
+            // Do not pin an invalid response forever. Completed earlier requests
+            // remain available; cancellation/network failures retain all progress.
+            if error is ConditionSynthesis.SynthesisError || error is DecodingError,
+               let key = lastRequestKey {
+                try? await store?.discardConditionResponse(for: facts, key: key)
+            }
+            throw error
+        }
     }
 
     private func request(stage: String, system: String, user: String, transport: OpenAIChatTransport?, onDevice: Bool, contract: OverviewResponseContract? = nil, allowedFactIDs: [String] = [], expectedCheckIDs: [UUID] = [], model: String = "gpt-4o-mini") async throws -> String {
@@ -1139,6 +1211,9 @@ actor RecordSummaryProcessor {
             "response_format": responseFormat,
             "request_id": UUID().uuidString
         ]
+        if transport.durableJobsURL != nil {
+            return try await transport.durableRequest(payload: typedPayload)
+        }
         var legacyPayload: [String: Any] = [
             "model": model,
             "response_format": responseFormat,

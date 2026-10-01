@@ -20,7 +20,7 @@ public enum OverviewFailure: LocalizedError {
         case .invalidCheckFormat: return "The story was written, but its accuracy check returned an incomplete or incorrectly formatted answer. Tap Create overview to retry; your health details are saved."
         case .refused: return "The overview service declined this request. Your health details are saved. If creating the overview fails again, contact support with this message."
         case .invalidReferences: return "The overview did not correctly link its sentences to your health details. Try creating it again; your saved details are unchanged."
-        case .unsupported: return "The overview could not be confirmed against your saved health details, even after an automatic rewrite and second check. Your health details are available below. You can try Create overview again."
+        case .unsupported: return "A date or number in the overview could not be matched to its linked health details. Your saved details are unchanged. No automatic rewrite was made; retrying may return the same result."
         case .rejectedAfterCorrection: return "The automatic checker rejected the overview after a rewrite. Your health details are saved. Open ‘Why it stopped’ below for the specific explanation; retrying may give the same result."
         }
     }

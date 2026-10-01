@@ -2,6 +2,17 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class ClinicalResponseFormatTests: XCTestCase {
+    func testContextRecoveryUsesDedicatedStrictLinkSchema() throws {
+        let format = ClinicalResponseFormat.forStage("condition-context-recovery")
+        let wrapper = try XCTUnwrap(format["json_schema"] as? [String: Any])
+        XCTAssertEqual(wrapper["name"] as? String, "health_condition_context_recovery")
+        let schema = try XCTUnwrap(wrapper["schema"] as? [String: Any])
+        let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
+        let links = try XCTUnwrap(properties["links"] as? [String: Any])
+        let link = try XCTUnwrap(links["items"] as? [String: Any])
+        XCTAssertEqual(Set(link["required"] as? [String] ?? []), Set(["name", "bodySystem", "entryID", "reason"]))
+    }
+
     func testCheckerSchemaOnlyAllowsCurrentBatchIdentities() throws {
         let first = UUID(), second = UUID(), otherBatch = UUID()
         func identifier(_ ids: [UUID]) throws -> [String: Any] {

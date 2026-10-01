@@ -1,10 +1,11 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import OpenAI from "openai";
 import { verifyKindeBearer } from "../../_lib/verifyKinde";
+import { durableEnabledForOwner } from '../../_lib/pilot';
 
 const allowedStages = new Set([
   "extraction", "classification", "checking", "duplicates",
-  "overview_condense", "overview", "condition-synthesis", "condition-verification",
+  "overview_condense", "overview", "condition-synthesis", "condition-context-recovery", "condition-verification",
 ]);
 const activeBySubject = new Map<string, number>();
 const approvedModels = new Set(["gpt-4o-mini", "gpt-6-luna", "gpt-6-sol", "gpt-6-astra"]);
@@ -36,13 +37,13 @@ function responseFormat(value: Record<string, unknown>): Record<string, unknown>
 }
 
 function policy(stage: string): { model: string; maxOutput: number; reasoning?: "low" } {
-  const configured = stage === "condition-synthesis" || stage === "condition-verification"
+  const configured = stage === "condition-synthesis" || stage === "condition-context-recovery" || stage === "condition-verification"
     ? process.env.CLINICAL_CONDITION_MODEL
     : stage === "overview" || stage === "overview_condense"
       ? process.env.CLINICAL_OVERVIEW_MODEL
       : process.env.CLINICAL_ROUTINE_MODEL;
   const model = configured && approvedModels.has(configured) ? configured : undefined;
-  if (stage === "condition-synthesis" || stage === "condition-verification") {
+  if (stage === "condition-synthesis" || stage === "condition-context-recovery" || stage === "condition-verification") {
     return { model: model ?? "gpt-6-astra", maxOutput: 16_000, reasoning: "low" };
   }
   return { model: model ?? "gpt-4o-mini", maxOutput: 6_000,
@@ -60,6 +61,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let subject: string;
   try {
     subject = await verifyKindeBearer(req.headers.authorization);
+    if (durableEnabledForOwner(subject)) return error(res, 409, "Use budgeted processing jobs", "durable_endpoint_required");
   } catch (cause: unknown) {
     const value = cause as { status?: number; message?: string };
     return error(res, value.status ?? 401, value.message ?? "Unauthorized");

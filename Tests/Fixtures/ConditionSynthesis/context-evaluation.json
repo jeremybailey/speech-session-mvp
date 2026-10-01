@@ -1,0 +1,36 @@
+[
+  {
+    "name": "pregnancy_episode_context",
+    "preserved":{"groups":[{"name":"Pregnancy","bodySystem":"reproductive","isPrimary":true,"reason":"Explicit ongoing pregnancy","entryIDs":["00000000-0000-4000-8000-000000000101"],"stableID":"00000000-0000-4000-8000-000000000199"}],"unassigned":[]},
+    "entries": [
+      {"id":"00000000-0000-4000-8000-000000000101","title":"Pregnancy","details":"Ongoing pregnancy is the patient's primary concern.","excerpt":"Ongoing pregnancy is the patient's primary concern.","category":"chiefComplaint","fields":[],"patientAssigned":false},
+      {"id":"00000000-0000-4000-8000-000000000102","title":"Care plan","details":"Continue antenatal monitoring; attend labor ward for reduced fetal movement.","excerpt":"Antenatal plan: continue monitoring; attend labor ward for reduced fetal movement.","category":"carePlan","fields":[],"patientAssigned":false},
+      {"id":"00000000-0000-4000-8000-000000000103","title":"Prenatal supplement","details":"Continue prenatal vitamins under the antenatal care plan.","excerpt":"Antenatal care plan: continue prenatal vitamins.","category":"medications","fields":[],"patientAssigned":false},
+      {"id":"00000000-0000-4000-8000-000000000104","title":"Follow-up","details":"Return to the antenatal clinic in two weeks for this ongoing episode.","excerpt":"Ongoing antenatal care: return to the antenatal clinic in two weeks.","category":"followUp","fields":[],"patientAssigned":false},
+      {"id":"00000000-0000-4000-8000-000000000105","title":"Fetal growth scan","details":"Fetal growth ultrasound ordered as part of antenatal monitoring.","excerpt":"Antenatal monitoring plan: fetal growth ultrasound.","category":"testsAndLabs","fields":[],"patientAssigned":false},
+      {"id":"00000000-0000-4000-8000-000000000106","title":"Administrative call","details":"Same clinician and date; scheduling call with no stated clinical episode.","excerpt":"Scheduling call. No clinical episode or condition documented.","category":"otherNotes","fields":[],"patientAssigned":false}
+    ],
+    "together":[[0,1,2,3,4]],"apart":[[0,5]],"unassigned":[5],
+    "forbidden":["diabetes","hypertension","anemia"],"required":{"0":["pregnan"]},"primary":0
+  },
+  {
+    "name":"shared_context_is_not_evidence",
+    "entries":[
+      {"id":"00000000-0000-4000-8000-000000000201","title":"Migraine","details":"Established migraine, currently the primary concern.","excerpt":"Migraine is the primary concern.","category":"chiefComplaint","fields":[],"patientAssigned":false},
+      {"id":"00000000-0000-4000-8000-000000000202","title":"Test booking","details":"Same date and neurologist. Test booking contains no indication or stated connection to migraine.","excerpt":"Neurology office: test booking; indication unspecified.","category":"testsAndLabs","fields":[],"patientAssigned":false},
+      {"id":"00000000-0000-4000-8000-000000000203","title":"Follow-up booking","details":"Same clinician and body system. Follow-up reason is not documented.","excerpt":"Neurology follow-up appointment; reason not documented.","category":"followUp","fields":[],"patientAssigned":false}
+    ],
+    "together":[[0]],"apart":[[0,1],[0,2]],"unassigned":[1,2],
+    "forbidden":["epilepsy","neuropathy"],"required":{"0":["migraine"]},"primary":0
+  },
+  {
+    "name":"chronology_and_unrelated_negative_findings",
+    "entries":[
+      {"id":"00000000-0000-4000-8000-000000000301","title":"Headache","details":"Patient reports headache as the main concern.","excerpt":"Headache is my main concern.","category":"chiefComplaint","fields":[],"patientAssigned":false},
+      {"id":"00000000-0000-4000-8000-000000000302","title":"Past procedure","details":"An unspecified procedure occurred before the headache began. No relationship or treatment indication is documented.","excerpt":"Procedure last year; headache began later. No relationship is stated.","category":"findings","fields":[],"patientAssigned":false},
+      {"id":"00000000-0000-4000-8000-000000000303","title":"Negative finding","details":"A separate investigation ruled out uveitis. No connection to headache is documented.","excerpt":"Separate investigation: uveitis ruled out. No link to headache.","category":"findings","fields":[],"patientAssigned":false}
+    ],
+    "together":[[0]],"apart":[[0,1],[0,2]],"unassigned":[1,2],
+    "forbidden":["uveitis","migraine","postoperative"],"required":{"0":["headache"]},"primary":0
+  }
+]
