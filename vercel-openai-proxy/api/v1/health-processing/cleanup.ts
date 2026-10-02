@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { cleanup, database } from "../../_lib/ledger";
 import { cleanupConditionWorkflows } from "../../_lib/condition-workflow-store";
+import {cleanupConditionUploads} from '../../_lib/condition-upload';
 
 /** Retention maintenance must keep running even when paid processing is disabled. */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -11,6 +12,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Retention continues after disabling the pilot, and remains compatible with
     // deployments where the additive workflow migration has not run yet.
     if((await database().query("SELECT to_regclass('public.ai_condition_workflows') AS name")).rows[0].name) await cleanupConditionWorkflows();
+    if((await database().query("SELECT to_regclass('public.ai_condition_uploads') AS name")).rows[0].name) await cleanupConditionUploads();
     await cleanup(); return res.status(200).json({ cleaned: true });
   }
   catch { return res.status(503).json({ error: { code: "cleanup_unavailable" } }); }

@@ -94,7 +94,7 @@ public struct ConditionSynthesis: Codable, Sendable {
     Every supplied unassigned ID must appear exactly once, either as a link or in unassigned. Use only
     supplied concern names/body systems and IDs. Keep reasons under 300 characters.
     """
-    public static func input(_ facts: [HealthFact]) throws -> String {
+    public static func input(_ facts: [HealthFact], byteLimit: Int = 400_000) throws -> String {
         let rows: [[String: Any]] = facts.sorted { $0.id < $1.id }.flatMap { fact in
             fact.occurrences.sorted { $0.id.uuidString < $1.id.uuidString }.map { entry in
                 ["id": entry.id.uuidString, "category": entry.category.rawValue,
@@ -110,7 +110,7 @@ public struct ConditionSynthesis: Codable, Sendable {
         }
         let data = try JSONSerialization.data(withJSONObject: ["entries": rows], options: [.sortedKeys])
         // Never silently truncate a patient's history to fit the request.
-        guard data.count <= 400_000 else { throw SynthesisError.tooLarge }
+        guard data.count <= byteLimit else { throw SynthesisError.tooLarge }
         return String(decoding: data, as: UTF8.self)
     }
     /// Bound both input size and the number of IDs the model must return.
@@ -129,7 +129,7 @@ public struct ConditionSynthesis: Codable, Sendable {
                     result.append(current); current = []
                 }
                 // A single large entry is never silently truncated.
-                _ = try input([single])
+                guard try input([single]).utf8.count <= byteLimit else { throw SynthesisError.oversizedEntry }
                 current.append(single)
             }
         }
@@ -585,10 +585,11 @@ public struct ConditionSynthesis: Codable, Sendable {
         SummaryVerification.hash("condition-synthesis-v4-context-linked-verified|" + StoryOverview.fingerprint(facts) + facts.sorted { $0.id < $1.id }.map { "\($0.id):\($0.preference.topicIDs?.map(\.uuidString).sorted().joined(separator: ",") ?? "automatic")" }.joined())
     }
     public enum SynthesisError: LocalizedError {
-        case tooLarge, invalid
+        case tooLarge, oversizedEntry, invalid
         public var errorDescription: String? {
             switch self {
-            case .tooLarge: return "This history is too large for condition organization in one request. Your saved details remain available in All."
+            case .tooLarge: return "The saved details exceed a processing safety limit. Retrying unchanged data will not fix this. Your records remain available in All; contact support."
+            case .oversizedEntry: return "One saved detail exceeds the safe size of a processing step. It has not been truncated or discarded. Your records remain available in All; contact support rather than retrying."
             case .invalid: return "Condition organization returned incomplete or invalid links. Your saved details are unchanged."
             }
         }

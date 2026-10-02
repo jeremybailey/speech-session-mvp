@@ -11,6 +11,7 @@ async function main() {
   for(const name of ['DATABASE_URL','AI_DEDUPE_SECRET','CRON_SECRET','KINDE_ISSUER_URL','KINDE_AUDIENCE','OPENAI_API_KEY']) assert.ok(process.env[name],`Missing ${name}`);
   const db=database();
   try {
+    assert.ok((await db.query("SELECT to_regclass('public.ai_condition_upload_parts') AS name")).rows[0].name,'Chunked-upload migration missing');
     const budget=(await db.query('SELECT limit_nusd,used_nusd,reserved_nusd FROM ai_budgets WHERE id=$1',[process.env.AI_BUDGET_ID])).rows[0];
     assert.ok(budget&&BigInt(budget.limit_nusd)<=1000000000n,'Shared pilot ceiling must not exceed $1');
     assert.ok(BigInt(budget.used_nusd)+BigInt(budget.reserved_nusd)<BigInt(budget.limit_nusd),'Pilot budget exhausted');

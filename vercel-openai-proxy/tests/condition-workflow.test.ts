@@ -6,6 +6,8 @@ import { submitConditionWorkflow,prepareConditionStep,finishConditionStep,condit
 import { runConditionWorkflow } from '../api/_lib/condition-workflow-worker';
 import { database,claim,settle } from '../api/_lib/ledger';
 import { readUsage } from '../api/v1/health-processing/usage';
+import {conditionUpload,cleanupConditionUploads} from '../api/_lib/condition-upload';
+import {createHash} from 'node:crypto';
 const uuid=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const contract={instructions:'Synthetic source-backed mapping contract',response_format:{type:'json_schema',json_schema:{name:'fixture',strict:true,schema:{type:'object',properties:{},additionalProperties:false}}}};
 function plan(title='Follow-up for this pregnancy'):ConditionPlan {
@@ -15,6 +17,28 @@ function plan(title='Follow-up for this pregnancy'):ConditionPlan {
 }
 const mapped=JSON.stringify({groups:[{name:'Pregnancy',bodySystem:'reproductive',isPrimary:false,reason:'Explicit pregnancy care',entryIDs:['r1'],stableID:'invented'}],unassigned:[]});
 const verified=(supported=true)=>JSON.stringify({decisions:[{name:'Pregnancy',bodySystem:'reproductive',nameSupported:true,supportedEntryIDs:supported?['r1']:[],reason:'Source episode checked'}]});
+test('large preserved histories keep verifier requests bounded without changing accepted links',()=>{
+  const p=plan();
+  p.contextEntries=Array.from({length:1200},(_,i)=>({id:uuid(100+i),title:'Pregnancy',excerpt:'Explicit pregnancy episode '+ 'care '.repeat(100)}));
+  p.preserved.groups[0].entryIDs=p.contextEntries.map(e=>e.id);
+  validateConditionPlan(p);
+  const s=acceptConditionResponse(p,initialConditionState(p),mapped);
+  const request=nextConditionRequest(p,s)!;
+  assert.ok(Buffer.byteLength(request.payload.input)<40000);
+  assert.equal(JSON.parse(request.payload.input).groups[0].contextIncomplete,true);
+  const done=acceptConditionResponse(p,s,verified());
+  assert.equal(done.result.groups[0].entryIDs.length,1201);
+});
+test('large condition catalogues cannot expand a model request without bound',()=>{
+  const p=plan();
+  p.contextEntries=Array.from({length:1500},(_,i)=>({id:uuid(100+i),title:`Documented concern ${i}`}));
+  p.preserved.groups=p.contextEntries.map((e,i)=>({name:`Documented concern ${i}`,bodySystem:'unknown',isPrimary:false,reason:'Synthetic source',entryIDs:[e.id]}));
+  const s=initialConditionState(validateConditionPlan(p));
+  const request=nextConditionRequest(p,s)!;
+  assert.ok(Buffer.byteLength(request.payload.input)<40000);
+  assert.equal(JSON.parse(request.payload.input).catalogueIncomplete,true);
+  assert.equal(s.result.groups.length,1500,'Catalogue selection never deletes saved groups');
+});
 test('mapping then independent verification retains source IDs, reasons and stable identity',()=>{
   const p=validateConditionPlan(plan());let s=initialConditionState(p);
   const input=nextConditionRequest(p,s)!.payload.input;
@@ -67,7 +91,43 @@ test('PostgreSQL workflow continuation, interruption, concurrency, cancellation 
   const db=database();
   try {
     assert.equal((await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public'")).rows.length,0,'Use a dedicated empty test database');
-    for(const file of ['001_ai_ledger.sql','002_condition_workflows.sql','003_workflow_cost_attribution.sql','004_workload_types.sql','005_workflow_model.sql','006_workflow_reasoning.sql']) await db.query(await readFile(`migrations/${file}`,'utf8'));
+    for(const file of ['001_ai_ledger.sql','002_condition_workflows.sql','003_workflow_cost_attribution.sql','004_workload_types.sql','005_workflow_model.sql','006_workflow_reasoning.sql','007_condition_uploads.sql']) await db.query(await readFile(`migrations/${file}`,'utf8'));
+    const largeUploadPlan=plan('Upload-only synthetic care');
+    largeUploadPlan.batches=Array.from({length:430},(_,i)=>[{id:uuid(5000+i),title:'Synthetic record',excerpt:'source '.repeat(135)}]);
+    const uploadData=Buffer.from(JSON.stringify(largeUploadPlan));
+    assert.ok(uploadData.length>400000 && uploadData.length<480000);
+    const digest=createHash('sha256').update(uploadData).digest('hex');
+    const upload={digest,count:2};const middle=Math.floor(uploadData.length/2);
+    await conditionUpload('upload-owner',{...upload,operation:'part',index:0,content:uploadData.subarray(0,middle).toString('base64')});
+    assert.deepEqual((await conditionUpload('upload-owner',{...upload,operation:'status'})).received,[0]);
+    await assert.rejects(conditionUpload('upload-owner',{...upload,operation:'finish'}));
+    assert.equal((await db.query('SELECT count(*) FROM ai_jobs')).rows[0].count,'0');
+    await conditionUpload('upload-owner',{...upload,operation:'part',index:1,content:uploadData.subarray(middle).toString('base64')});
+    const finalized=await Promise.all([conditionUpload('upload-owner',{...upload,operation:'finish'}),conditionUpload('upload-owner',{...upload,operation:'finish'})]);
+    assert.equal(finalized[0].id,finalized[1].id);
+    assert.equal((await db.query('SELECT count(*) FROM ai_jobs')).rows[0].count,'0','Upload and finalization never dispatch inference');
+    const bigResult={groups:[],unassigned:Array.from({length:15000},(_,i)=>uuid(20000+i))};
+    await db.query("UPDATE ai_condition_workflows SET state='completed' WHERE id=$1",[finalized[0].id]);
+    await db.query('UPDATE ai_condition_workflow_payloads SET checkpoint=$2 WHERE workflow_id=$1',[finalized[0].id,{result:bigResult}]);
+    const manifest=await conditionWorkflowStatus('upload-owner',finalized[0].id);
+    assert.ok(manifest.result.chunkCount>1);assert.equal(manifest.result.output,undefined);
+    const received=[];
+    for(let i=0;i<manifest.result.chunkCount;i++) received.push(Buffer.from((await conditionWorkflowStatus('upload-owner',finalized[0].id,i)).result.chunk,'base64'));
+    const downloaded=Buffer.concat(received);
+    assert.equal(createHash('sha256').update(downloaded).digest('hex'),manifest.result.digest);
+    assert.deepEqual(JSON.parse(downloaded.toString()),bigResult);
+    assert.equal(await conditionWorkflowStatus('other-upload-owner',finalized[0].id,0),undefined);
+    await db.query("UPDATE ai_condition_workflows SET state='queued' WHERE id=$1",[finalized[0].id]);
+    assert.equal((await conditionUpload('other-upload-owner',{...upload,operation:'status'})).workflow_id,undefined);
+    await conditionUpload('other-upload-owner',{...upload,operation:'cancel'});
+    assert.equal((await conditionUpload('other-upload-owner',{...upload,operation:'part',index:0,content:uploadData.subarray(0,middle).toString('base64')})).state,'cancelled');
+    await conditionUpload('upload-owner',{...upload,operation:'cancel'});
+    assert.equal((await conditionWorkflowStatus('upload-owner',finalized[0].id)).state,'cancelled');
+    await conditionUpload('expiry-upload-owner',{...upload,operation:'part',index:0,content:uploadData.subarray(0,middle).toString('base64')});
+    await db.query("UPDATE ai_condition_uploads SET expires_at=now()-interval '1 second' WHERE owner='expiry-upload-owner'");
+    await cleanupConditionUploads();
+    assert.equal((await conditionUpload('expiry-upload-owner',{...upload,operation:'status'})).state,'expired');
+    assert.equal((await db.query("SELECT count(*) FROM ai_condition_upload_parts WHERE owner='expiry-upload-owner'")).rows[0].count,'0');
     const submitted=await Promise.all(Array.from({length:5},()=>submitConditionWorkflow('synthetic-owner',plan())));
     const id=submitted[0].id;assert.equal(new Set(submitted.map(w=>w.id)).size,1);
     assert.equal((await readUsage('synthetic-owner','UTC')).budgets[0].id,'evaluation-v1','Queued parents expose applicable budget before any paid step');

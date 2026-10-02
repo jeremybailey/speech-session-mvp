@@ -1,4 +1,5 @@
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac, createHash, randomUUID } from 'node:crypto';
+import type {PoolClient} from 'pg';
 import { database, transaction, submitWithinTransaction,workloadType } from './ledger';
 import { conditionModel, conditionReasoning } from './model-policy';
 import { ConditionState, validateConditionPlan, initialConditionState, nextConditionRequest, acceptConditionResponse } from './condition-workflow';
@@ -9,12 +10,12 @@ function canonical(value:any):string {
   if(value && typeof value==='object') return `{${Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+canonical(value[k])).join(',')}}`;
   return JSON.stringify(value);
 }
-export async function submitConditionWorkflow(owner:string,value:unknown,stopBeforeSubmission=false) {
+export async function submitConditionWorkflow(owner:string,value:unknown,stopBeforeSubmission=false,client?:PoolClient) {
   const plan=validateConditionPlan(value), secret=process.env.AI_DEDUPE_SECRET;
   if(!secret) throw new Error('dedupe_secret_unavailable');
   const {workload_type,...clinicalPlan}=plan;
   const hash=createHmac('sha256',secret).update(canonical([owner,'condition-workflow-v1',clinicalPlan])).digest('hex');
-  return transaction(async db=>{
+  const work=async (db:PoolClient)=>{
     const id=randomUUID(), checkpoint=initialConditionState(plan), state=stopBeforeSubmission?'cancelled':checkpoint.phase==='completed'?'completed':'queued';
     const created=await db.query(`INSERT INTO ai_condition_workflows(id,owner,request_hash,state,record_count,budget_id,finished_at,workload_type,model,reasoning_effort)
       VALUES($1,$2,$3,$4,$5,$6,CASE WHEN $4 IN ('completed','cancelled') THEN now() ELSE NULL END,$7,$8,$9)
@@ -24,7 +25,8 @@ export async function submitConditionWorkflow(owner:string,value:unknown,stopBef
       return created.rows[0];
     }
     return (await db.query('SELECT id,state,revision FROM ai_condition_workflows WHERE owner=$1 AND request_hash=$2',[owner,hash])).rows[0];
-  });
+  };
+  return client?work(client):transaction(work);
 }
 // A cancellation arriving before POST leaves only a nonclinical identity tombstone.
 // If POST wins the race, cancel the existing parent before acknowledging Stop.
@@ -33,11 +35,19 @@ export async function cancelConditionPlan(owner:string,value:unknown) {
   await cancelConditionWorkflow(owner,job.id);
   return conditionWorkflowStatus(owner,job.id);
 }
-export async function conditionWorkflowStatus(owner:string,id:string) {
-  return (await database().query(`SELECT w.id,w.state,w.revision,w.record_count,
+export async function conditionWorkflowStatus(owner:string,id:string,part?:number) {
+  const row=(await database().query(`SELECT w.id,w.state,w.revision,w.record_count,
     CASE WHEN w.state='completed' AND p.expires_at>now() THEN jsonb_build_object('output',(p.checkpoint->'result')::text) ELSE NULL END result
     FROM ai_condition_workflows w LEFT JOIN ai_condition_workflow_payloads p ON p.workflow_id=w.id
     WHERE w.owner=$1 AND w.id=$2`,[owner,id])).rows[0];
+  if(row?.result?.output && Buffer.byteLength(row.result.output)>300_000) {
+    const data=Buffer.from(row.result.output),chunkCount=Math.ceil(data.length/240_000);
+    if(part!==undefined) {
+      if(!Number.isInteger(part)||part<0||part>=chunkCount) throw new Error('invalid_request');
+      row.result={chunk:data.subarray(part*240_000,(part+1)*240_000).toString('base64')};
+    } else row.result={chunkCount,digest:createHash('sha256').update(data).digest('hex')};
+  }
+  return row;
 }
 // Atomic checkpoint + reservation means no orphan paid step on process death.
 export async function prepareConditionStep(id:string):Promise<string|null> {

@@ -313,7 +313,7 @@ final class HealthSummaryModel: ObservableObject {
             conditionNotice = nil
         } catch {
             if error is CancellationError || Task.isCancelled { return }
-            conditionNotice = "Condition organization could not finish. Your details are saved in All. Try Organize conditions again. " + error.localizedDescription
+            conditionNotice = "Condition organization could not finish. Your details are saved in All. " + error.localizedDescription
         }
     }
 
@@ -1089,8 +1089,11 @@ actor RecordSummaryProcessor {
                     "response_format": ClinicalResponseFormat.forStage("condition-synthesis")]
                 payload["verification"] = ["instructions": ConditionSynthesis.incrementalVerificationInstruction,
                     "response_format": ClinicalResponseFormat.forStage("condition-verification")]
-                await progress(ConditionProgressUpdate(message: "Organizing securely in the background…", fraction: 0.12))
-                let raw = try await transport.durableRequest(payload: payload, conditionWorkflow: true)
+                await progress(ConditionProgressUpdate(message: "Preparing secure history upload…", fraction: 0.12))
+                let raw = try await transport.durableRequest(payload: payload, conditionWorkflow: true,
+                    transferProgress: { message in
+                        await progress(ConditionProgressUpdate(message: message, fraction: 0.12))
+                    })
                 let result = try ConditionSynthesis.decode(raw, facts: facts)
                 await SummaryRequestCoordinator.shared.finishJob(jobID)
                 return result

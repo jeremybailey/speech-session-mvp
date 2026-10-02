@@ -2,6 +2,20 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class IncrementalConditionSynthesisTests: XCTestCase {
+    func testLargeHistoryManifestDoesNotUseSingleInferenceLimit() throws {
+        let facts = (0..<900).map { fact("Synthetic concern \($0) " + String(repeating: "source-backed detail ", count: 35)) }
+        XCTAssertThrowsError(try ConditionSynthesis.input(facts))
+        let raw = try ConditionSynthesis.conditionWorkflowInput(plan: ConditionSynthesis.initialIncrementalPlan(facts: facts), facts: facts)
+        XCTAssertGreaterThan(raw.utf8.count, 400_000)
+        let object = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as! [String: Any]
+        let batches = object["batches"] as! [[[String: Any]]]
+        XCTAssertEqual(batches.flatMap { $0 }.count, 900)
+        for batch in batches {
+            XCTAssertLessThanOrEqual(batch.count, 30)
+            XCTAssertLessThanOrEqual(try JSONSerialization.data(withJSONObject: ["entries": batch]).count, 24_000)
+        }
+        XCTAssertEqual(raw, try ConditionSynthesis.conditionWorkflowInput(plan: ConditionSynthesis.initialIncrementalPlan(facts: facts), facts: facts))
+    }
     func testServerWorkflowPlanPreservesSourceAndExcludesReviewState() throws {
         let pregnancy = fact("Pregnancy"), followup = fact("Pregnancy follow-up")
         let prior = ConditionSynthesis(groups: [group("Pregnancy", [pregnancy])], unassigned: [])

@@ -18,13 +18,18 @@ extension ConditionSynthesis {
     /// Existing prompt/schema contracts are attached by the app transport layer.
     public static func conditionWorkflowInput(plan: IncrementalPlan, facts: [HealthFact]) throws -> String {
         func rows(_ values: [HealthFact]) throws -> [[String: Any]] {
-            let object = try JSONSerialization.jsonObject(with: Data(input(values).utf8)) as! [String: Any]
+            let object = try JSONSerialization.jsonObject(with: Data(input(values, byteLimit: 60_000_000).utf8)) as! [String: Any]
             return (object["entries"] as! [[String: Any]]).map { row in
                 var value = row; value.removeValue(forKey: "manualReviewed"); return value
             }
         }
-        let preservedIDs = Set(plan.preserved.groups.flatMap(\.entryIDs) + plan.preserved.unassigned)
-        let context = try rows(facts).filter { row in
+        let preservedIDs = Set(plan.preserved.groups.flatMap(\.entryIDs))
+        let contextFacts = facts.compactMap { fact -> HealthFact? in
+            let entries = fact.occurrences.filter { preservedIDs.contains($0.id) }
+            return entries.isEmpty ? nil : HealthFact(id: fact.id, occurrences: entries,
+                preference: fact.preference, topicIDs: fact.topicIDs)
+        }
+        let context = try rows(contextFacts).filter { row in
             (row["id"] as? String).flatMap(UUID.init(uuidString:)).map(preservedIDs.contains) ?? false
         }
         var preserved = try JSONSerialization.jsonObject(with: JSONEncoder().encode(plan.preserved)) as! [String: Any]
@@ -42,7 +47,8 @@ extension ConditionSynthesis {
         let payload: [String: Any] = ["version": 1, "workload_type": plan.isInitial ? "initial" : "incremental", "preserved": preserved,
                                       "contextEntries": context, "batches": try portions.map(rows)]
         let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
-        guard data.count <= 400_000 else { throw SynthesisError.tooLarge }
+        // Transport chunks this complete manifest; model calls remain separately bounded.
+        guard data.count <= 60_000_000 else { throw SynthesisError.tooLarge }
         return String(decoding: data, as: UTF8.self)
     }
 

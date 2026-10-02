@@ -50,7 +50,7 @@ export function validateConditionPlan(value: unknown): ConditionPlan {
 }
 function checkedConditionPlan(value: unknown): ConditionPlan {
   const p=value as ConditionPlan;
-  requireValue(p && p.version===1 && bytes(p)<=400_000 && Array.isArray(p.batches) && p.batches.length<=100 &&
+  requireValue(p && p.version===1 && bytes(p)<=60_000_000 && Array.isArray(p.batches) && p.batches.length<=10000 &&
     Array.isArray(p.contextEntries));
   const preserved=ids(p.preserved), candidates=p.batches.flat();
   coverage(p.preserved,preserved);
@@ -79,7 +79,21 @@ function verifierInput(plan: ConditionPlan,state: ConditionState,groups: Group[]
   const entries=new Map([...plan.contextEntries,...plan.batches.flat()].map(e=>[e.id,e]));
   return {groups:groups.map(g=>({name:g.name,bodySystem:g.bodySystem,isPrimary:g.isPrimary,
     entries:g.entryIDs.map(id=>source(entries.get(id)!,true)),
-    acceptedContext:(state.result.groups.find(old=>key(old)===key(g))?.entryIDs??[]).map(id=>source(entries.get(id)!,false))}))};
+    ...boundedContext((state.result.groups.find(old=>key(old)===key(g))?.entryIDs??[])
+      .map(id=>source(entries.get(id)!,false)),g.entryIDs.map(id=>source(entries.get(id)!,true)))}))};
+}
+// Context is supporting material, never proof of a new association. Select complete
+// rows, deduplicate exact repeats, and make omitted context explicit to the verifier.
+function boundedContext(rows:Record<string,unknown>[],candidates:Record<string,unknown>[]) {
+  if(bytes(rows)<=8_000) return {acceptedContext:rows}; // Preserve small request identities.
+  const words=new Set(JSON.stringify(candidates).toLowerCase().match(/[a-z]{4,}/g)??[]);
+  const unique=[...new Map(rows.map(r=>[JSON.stringify(r),r])).values()];
+  const score=(r:Record<string,unknown>)=>new Set((JSON.stringify(r).toLowerCase().match(/[a-z]{4,}/g)??[]).filter(w=>words.has(w))).size;
+  unique.sort((a,b)=>score(b)-score(a)||JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  const kept:Record<string,unknown>[]=[];
+  for(const row of unique) if(bytes([...kept,row])<=8_000) kept.push(row);
+  return {acceptedContext:kept,contextIncomplete:true,
+    contextPolicy:'Context is a bounded excerpt, not complete history. Approve only source-supported links; missing context never proves a relationship.'};
 }
 function localRequest(input: Record<string,any>, verification: boolean) {
   const map: Record<string,string>={};
@@ -89,12 +103,25 @@ function localRequest(input: Record<string,any>, verification: boolean) {
   else input.entries=input.entries.map(compact);
   return {input:JSON.stringify(input),map};
 }
+function boundedCatalogue(groups:Group[],entries:Entry[]) {
+  const catalogue=groups.map(g=>({name:g.name,bodySystem:g.bodySystem,isPrimary:g.isPrimary}));
+  if(bytes(catalogue)<=15_000) return {existingGroups:catalogue};
+  // Retrieval only, never an association decision. The mapper must still prove
+  // links from the candidate's source, then the independent verifier checks them.
+  const text=JSON.stringify(entries).toLowerCase();
+  const score=(name:string)=>normalized(name).split(' ').filter(w=>w.length>2&&text.includes(w)).length;
+  catalogue.sort((a,b)=>score(b.name)-score(a.name)||a.name.localeCompare(b.name)||a.bodySystem.localeCompare(b.bodySystem));
+  const selected:typeof catalogue=[];
+  for(const item of catalogue) if(bytes([...selected,item])<=15_000) selected.push(item);
+  return {existingGroups:selected,catalogueIncomplete:true,
+    cataloguePolicy:'This is a retrieved subset, not complete history. Absence does not prove a new concern. Use only explicit source evidence; leave ambiguous links unassigned.'};
+}
 export function nextConditionRequest(plan: ConditionPlan,state: ConditionState): {payload:Payload;map:Record<string,string>}|null {
   if(state.phase==='completed') return null;
   const verification=state.phase==='verification';
   const input=verification?verifierInput(plan,state,state.verificationBatches![state.verificationIndex]):{
     entries:plan.batches[state.batch].map(e=>{const copy={...e};delete copy.manualReviewed;return copy;}),
-    existingGroups:state.result.groups.map(g=>({name:g.name,bodySystem:g.bodySystem,isPrimary:g.isPrimary}))};
+    ...boundedCatalogue(state.result.groups,plan.batches[state.batch])};
   requireValue(bytes(input)<=(verification?60_000:40_000));
   const compact=localRequest(input,verification);
   return {payload:validatePayload({stage:verification?'condition-verification':'condition-synthesis',

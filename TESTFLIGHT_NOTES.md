@@ -1,5 +1,14 @@
 # CollectiveCare TestFlight Notes
 
+## Version 1.0993 (6) — What to Test
+
+Large histories now upload in resumable chunks instead of one oversized request.
+Condition mapping and independent verification remain small, budgeted steps; saved
+results and unchanged record summaries are reused. Please retry Organize conditions
+on the existing history without deleting or reimporting records. Allow the initial
+upload to finish before closing the app. Check completion, source links, and AI usage
+in Settings; uncertain associations should remain in All. The spending cap is unchanged.
+
 ## Version 1.0993 (5) — What to Test
 
 Condition organization now saves progress on the server and can continue while

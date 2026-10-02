@@ -32,13 +32,14 @@ async function main() {
   try {
     // Existing unrelated application tables indicate an unexpected database target.
     const tables=(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public'")).rows.map(x=>x.tablename);
-    assert.ok(tables.every(x=>["ai_budgets","ai_jobs","ai_payloads","ai_condition_workflows","ai_condition_workflow_payloads","ai_condition_workflow_steps"].includes(x)),"Unexpected database contents; migration refused");
+    assert.ok(tables.every(x=>["ai_budgets","ai_jobs","ai_payloads","ai_condition_workflows","ai_condition_workflow_payloads","ai_condition_workflow_steps","ai_condition_uploads","ai_condition_upload_parts"].includes(x)),"Unexpected database contents; migration refused");
     await db.query(await readFile("migrations/001_ai_ledger.sql","utf8"));
     await db.query(await readFile("migrations/002_condition_workflows.sql","utf8"));
     await db.query(await readFile("migrations/003_workflow_cost_attribution.sql","utf8"));
     await db.query(await readFile("migrations/004_workload_types.sql","utf8"));
     await db.query(await readFile("migrations/005_workflow_model.sql","utf8"));
     await db.query(await readFile("migrations/006_workflow_reasoning.sql","utf8"));
+    await db.query(await readFile("migrations/007_condition_uploads.sql","utf8"));
     assert.equal(Number((await db.query("SELECT limit_nusd FROM ai_budgets WHERE id='evaluation-v1'")).rows[0].limit_nusd),1_000_000_000);
     if(process.env.AI_PREVIEW_MIGRATE_ONLY==='true') {
       console.log('PASS additive Preview migrations only; no inference or smoke jobs submitted.');

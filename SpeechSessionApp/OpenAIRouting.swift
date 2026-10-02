@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Explicit Stop is separate from cancellation of foreground polling.
 actor DurableProcessingStop {
@@ -69,10 +70,11 @@ struct OpenAIChatTransport: Sendable {
         return durableJobsURL.deletingLastPathComponent().appendingPathComponent("condition-workflows")
     }
 
-    func durableRequest(payload: [String: Any], conditionWorkflow: Bool = false) async throws -> String {
+    func durableRequest(payload: [String: Any], conditionWorkflow: Bool = false,
+                        transferProgress: (@Sendable (String) async -> Void)? = nil) async throws -> String {
         guard let url = conditionWorkflow ? durableConditionWorkflowsURL : durableJobsURL else { throw URLError(.unsupportedURL) }
         struct Job: Decodable {
-            struct Result: Decodable { let output: String }
+            struct Result: Decodable { let output: String?; let chunkCount: Int?; let digest: String?; let chunk: String? }
             let id: String
             let state: String
             let result: Result?
@@ -88,12 +90,36 @@ struct OpenAIChatTransport: Sendable {
             return try JSONDecoder().decode(Job.self, from: data)
         }
         // Server hashes canonical content, ignoring transient request IDs. Re-submission is safe.
-        let body = try JSONSerialization.data(withJSONObject: payload)
+        let body = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+        let chunked = conditionWorkflow && body.count > 350_000
+        let chunkSize = 240_000
+        let chunkCount = (body.count + chunkSize - 1) / chunkSize
+        let digest = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
+        let uploadIdentity: [String: Any] = ["digest": digest, "count": chunkCount]
+        func upload(_ operation: String, index: Int? = nil) async throws -> [String: Any] {
+            var value = uploadIdentity
+            value["operation"] = operation
+            if let index {
+                value["index"] = index
+                value["content"] = body.subdata(in: (index * chunkSize)..<min(body.count, (index + 1) * chunkSize)).base64EncodedString()
+            }
+            var request = URLRequest(url: url)
+            request.httpMethod = "PUT"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(try await makeAuthorizationHeader(), forHTTPHeaderField: "Authorization")
+            request.httpBody = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+            let (data, response) = try await URLSession.shared.data(for: request)
+            try Self.validateDurableResponse(data: data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+            return try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        }
         let authorize = authorizationHeader
         let stopID = try await explicitStop?.register {
             var request = URLRequest(url: url)
-            request.httpMethod = "DELETE"
-            request.httpBody = body
+            request.httpMethod = chunked ? "PUT" : "DELETE"
+            if chunked {
+                var stop = uploadIdentity; stop["operation"] = "cancel"
+                request.httpBody = try JSONSerialization.data(withJSONObject: stop)
+            } else { request.httpBody = body }
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue(try await authorize(), forHTTPHeaderField: "Authorization")
             let (_, response) = try await URLSession.shared.data(for: request)
@@ -101,7 +127,28 @@ struct OpenAIChatTransport: Sendable {
                 throw URLError(.badServerResponse)
             }
         }
-        let submitted = try await exchange(url, method: "POST", body: body)
+        let submitted: Job
+        if chunked {
+            await transferProgress?("Checking saved upload progress…")
+            var status = try await upload("status")
+            if status["state"] as? String == "uploading" {
+                let received = Set(status["received"] as? [Int] ?? [])
+                for index in 0..<chunkCount where !received.contains(index) {
+                    try Task.checkCancellation()
+                    await transferProgress?("Uploading saved details \(index + 1) of \(chunkCount)… Keep the app open until upload finishes.")
+                    let part = try await upload("part", index: index)
+                    if part["state"] as? String == "cancelled" { throw CancellationError() }
+                }
+                try Task.checkCancellation()
+                status = try await upload("finish")
+            }
+            guard status["id"] is String else {
+                throw NSError(domain: "AIProcessing", code: 409, userInfo: [NSLocalizedDescriptionKey:
+                    "History upload stopped (\(status["state"] as? String ?? "unavailable")). Saved records are unchanged; no new processing was started."])
+            }
+            submitted = try JSONDecoder().decode(Job.self, from: JSONSerialization.data(withJSONObject: status))
+        } else { submitted = try await exchange(url, method: "POST", body: body) }
+        if conditionWorkflow { await transferProgress?("Organizing securely in the background…") }
         var statusURL = URLComponents(url: url, resolvingAgainstBaseURL: false)!
         statusURL.queryItems = [URLQueryItem(name: "id", value: submitted.id)]
         // Submission may deduplicate to an already completed job, but only GET
@@ -116,7 +163,22 @@ struct OpenAIChatTransport: Sendable {
                     throw NSError(domain: "AIProcessing", code: 410, userInfo: [NSLocalizedDescriptionKey: "This processing result has expired. It will not be automatically charged again."])
                 }
                 NotificationCenter.default.post(name: Notification.Name("AIProcessingCompleted"), object: nil)
-                return result.output
+                if let output = result.output { return output }
+                if conditionWorkflow, let count = result.chunkCount, (1...1000).contains(count), let digest = result.digest {
+                    var assembled = Data()
+                    for index in 0..<count {
+                        try Task.checkCancellation()
+                        var partURL = statusURL
+                        partURL.queryItems?.append(URLQueryItem(name: "part", value: String(index)))
+                        let part = try await exchange(partURL.url!, method: "GET")
+                        guard let encoded = part.result?.chunk, let bytes = Data(base64Encoded: encoded), bytes.count <= 240_000 else { throw URLError(.cannotDecodeContentData) }
+                        assembled.append(bytes)
+                    }
+                    guard SHA256.hash(data: assembled).map({ String(format: "%02x", $0) }).joined() == digest,
+                          let output = String(data: assembled, encoding: .utf8) else { throw URLError(.cannotDecodeContentData) }
+                    return output
+                }
+                throw URLError(.cannotDecodeContentData)
             case "queued", "running":
                 try await Task.sleep(for: .seconds(3))
                 job = try await exchange(statusURL.url!, method: "GET")
