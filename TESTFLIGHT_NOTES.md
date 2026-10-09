@@ -2,6 +2,11 @@
 
 ## Version 1.0993 (9) — Processing reliability
 
+Signed archive, App Store Connect upload, Apple processing, and export-compliance
+setup completed October 9, 2026. Build 9 is assigned to the five-tester internal
+CollectiveCare Founders group. What to Test is saved. The previously confirmed
+standard-encryption/no-France answers were reused; encryption is unchanged.
+
 Source-check batches now run one at a time, preventing simultaneous Luna budget
 reservations from unnecessarily stopping a record. Processing failures retain their
 specific explanation, including budget limits, rather than showing a generic error
