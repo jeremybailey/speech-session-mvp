@@ -2,6 +2,14 @@
 
 ## Version 1.0993 (8) — Summary evaluation beta
 
+Signed archive and upload completed October 9, 2026. Apple processing and export
+compliance are complete; build 8 is assigned to the five-tester internal
+CollectiveCare Founders group, with What to Test saved. Standard encryption and
+no distribution in France were declared, with the latter confirmed by the owner.
+The Luna server deployment is Ready on both app aliases; cleanup remains daily.
+Release checks: 290 Swift tests (two optional skips), nine scorer tests, parser
+and transfer guards, and 14 server tests (two database-dependent skips) passed.
+
 This build preserves more summary context, including who reported a detail,
 statement type and status, and medication instructions alongside narrative details.
 Newly processed facts must pass the independent source check and exact-citation
