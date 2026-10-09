@@ -7,9 +7,19 @@ import { readUsage } from "../api/v1/health-processing/usage";
 import continueHandler from "../api/v1/health-processing/continue";
 import { runJob } from "../api/_lib/worker";
 import { queueJobID, enqueueJob } from "../api/_lib/queue";
-import { modelOptions } from '../api/_lib/model-policy';
+import { modelOptions, summaryModelPolicy } from '../api/_lib/model-policy';
 
-const payload = {stage:"extraction",instructions:"Synthetic fixture only",input:"fixture-1",
+test('summary evaluation policy pins extraction and checking to Luna medium', () => {
+  for (const stage of ['extraction','checking']) {
+    const selected=summaryModelPolicy(stage);
+    assert.deepEqual(selected,{model:'gpt-6-luna',effort:'medium'});
+    assert.equal(reservation(selected.model,6000),214500000);
+  }
+  for (const stage of ['classification','duplicates','overview']) {
+    assert.deepEqual(summaryModelPolicy(stage),{model:'gpt-4o-mini',effort:'low'});
+  }
+});
+const payload = {stage:"classification",instructions:"Synthetic fixture only",input:"fixture-1",
   response_format:{type:"json_schema",json_schema:{name:"fixture",strict:true,
     schema:{type:"object",properties:{},additionalProperties:false}}}};
 test("pricing counts cached input and never treats absent usage as zero", () => {

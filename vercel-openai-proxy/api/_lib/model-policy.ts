@@ -24,3 +24,11 @@ export function modelIdentity(model: string, effort = 'low') {
   modelOptions(model, effort); // Fail closed before reserving or dispatching.
   return model === 'gpt-4o-mini' ? model : [model, `${effort}-no-cache-6000-v1`];
 }
+
+// Evaluation policy approved for the shared TestFlight pilot. Classification and
+// other routine stages retain Mini; condition workflows keep their pinned policy.
+export function summaryModelPolicy(stage: string): { model: ProcessingModel; effort: 'low' | 'medium' } {
+  return stage === 'extraction' || stage === 'checking'
+    ? { model: 'gpt-6-luna', effort: 'medium' }
+    : { model: 'gpt-4o-mini', effort: 'low' };
+}

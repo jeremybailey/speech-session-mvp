@@ -16,10 +16,11 @@ well as unsupported interpretations; stricter checks can hide valid information.
 
 This is an evaluation beta. Ambiguous measurements, inferred leakage type, missing
 instructions and condition routing remain known concerns in the experimental
-benchmark. Review all generated content against its source. The latest benchmark
-used an experimental extraction/checking model combination that is not enabled on
-the live server; its 2/18 full passes and 13/17 partial retention are not this
-build's measured accuracy. The live model policy and shared spending cap are unchanged.
+benchmark. Review all generated content against its source. The shared evaluation server now uses GPT-6 Luna with medium reasoning for
+extraction and checking, Mini for categorization, and the existing condition policy.
+The single-record benchmark achieved 2/18 full passes and 13/17 partial retention
+against a provisional Draft key; these are not validated accuracy estimates.
+The shared spending cap is unchanged.
 
 
 ## Version 1.0993 (7) — Settings data transfer (release in progress)

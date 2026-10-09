@@ -1,7 +1,7 @@
 import { Pool, PoolClient } from "pg";
 import { createHmac, randomUUID } from "node:crypto";
 import { estimate, pricingVersion, reservation, Usage } from "./pricing";
-import { modelIdentity, ProcessingModel } from "./model-policy";
+import { modelIdentity, ProcessingModel, summaryModelPolicy } from "./model-policy";
 
 let pool: Pool | undefined;
 export function database(): Pool {
@@ -46,7 +46,8 @@ export function requestHash(owner: string, payload: Payload, model: ProcessingMo
   return createHmac("sha256", secret).update(canonical([owner, "durable-v1", modelIdentity(model, effort), clinicalRequest])).digest("hex");
 }
 export async function submit(owner: string, payload: Payload) {
-  return transaction(db => submitWithinTransaction(db,owner,payload));
+  const {model,effort}=summaryModelPolicy(payload.stage);
+  return transaction(db => submitWithinTransaction(db,owner,payload,process.env.AI_BUDGET_ID,model,effort));
 }
 // Allows a workflow checkpoint and its budgeted step to be committed together.
 export async function submitWithinTransaction(db: PoolClient, owner: string, payload: Payload, budgetID = process.env.AI_BUDGET_ID, model: ProcessingModel = 'gpt-4o-mini', effort = 'low') {
@@ -106,12 +107,13 @@ export async function cancelPayload(owner:string,payload:Payload) {
   const job=await transaction(async db=>{
     const budgetID=process.env.AI_BUDGET_ID;
     if(!(await db.query('SELECT id FROM ai_budgets WHERE id=$1 FOR UPDATE',[budgetID])).rows.length) throw new Error('budget_unavailable');
-    const hash=requestHash(owner,payload);
+    const {model,effort}=summaryModelPolicy(payload.stage);
+    const hash=requestHash(owner,payload,model,effort);
     const prior=(await db.query('SELECT id,state FROM ai_jobs WHERE owner=$1 AND request_hash=$2',[owner,hash])).rows[0];
     if(prior) return prior;
     const id=randomUUID();
-    await db.query(`INSERT INTO ai_jobs(id,owner,request_hash,stage,model,pricing_version,budget_id,state,reserve_nusd,cost_nusd,finished_at)
-      VALUES($1,$2,$3,$4,'gpt-4o-mini',$5,$6,'cancelled',0,0,now())`,[id,owner,hash,payload.stage,pricingVersion,budgetID]);
+    await db.query(`INSERT INTO ai_jobs(id,owner,request_hash,stage,model,pricing_version,budget_id,state,reserve_nusd,cost_nusd,finished_at,reasoning_effort)
+      VALUES($1,$2,$3,$4,$7,$5,$6,'cancelled',0,0,now(),$8)`,[id,owner,hash,payload.stage,pricingVersion,budgetID,model,effort]);
     return {id,state:'cancelled'};
   });
   await cancel(owner,job.id);

@@ -1,12 +1,15 @@
 // Read-only deployment gate: no clinical payloads, migrations, or inference.
 import assert from 'node:assert/strict';
 import {database} from '../api/_lib/ledger';
-import {conditionModel,conditionReasoning} from '../api/_lib/model-policy';
+import {conditionModel,conditionReasoning,summaryModelPolicy} from '../api/_lib/model-policy';
 async function main() {
   if(process.env.VERCEL_ENV!=='production'||process.env.AI_DURABLE_ENABLED!=='true') return;
   assert.equal(process.env.AI_MOCK_INFERENCE,'false');
   assert.equal(process.env.AI_QUEUE_ENABLED,'true');
   assert.equal(process.env.AI_CONDITION_WORKFLOWS_ENABLED,'true');
+  assert.deepEqual(summaryModelPolicy('extraction'),{model:'gpt-6-luna',effort:'medium'});
+  assert.deepEqual(summaryModelPolicy('checking'),{model:'gpt-6-luna',effort:'medium'});
+  assert.deepEqual(summaryModelPolicy('classification'),{model:'gpt-4o-mini',effort:'low'});
   assert.equal(conditionModel(),'gpt-6-luna');assert.equal(conditionReasoning(),'medium');
   for(const name of ['DATABASE_URL','AI_DEDUPE_SECRET','CRON_SECRET','KINDE_ISSUER_URL','KINDE_AUDIENCE','OPENAI_API_KEY']) assert.ok(process.env[name],`Missing ${name}`);
   const db=database();
