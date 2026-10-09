@@ -1,5 +1,22 @@
 # CollectiveCare TestFlight Notes
 
+## Version 1.0993 (9) — Processing reliability
+
+Source-check batches now run one at a time, preventing simultaneous Luna budget
+reservations from unnecessarily stopping a record. Processing failures retain their
+specific explanation, including budget limits, rather than showing a generic error
+and suggesting repeated retries. The shared spending cap and model policy are unchanged.
+
+Jeremy verified that the local build completed processing his history and reported
+improved accuracy. This is user feedback, not a new scored benchmark. The regression
+suite completed 292 tests with zero failures and two optional skips; parser checks passed.
+
+What to test: retry unfinished work and confirm processing completes. Review the
+result against the original record and report missing or incorrect details. If the
+allowance is insufficient, confirm the message names the budget and directs you to
+AI usage in Settings. Existing clinical accuracy limitations still apply.
+
+
 ## Version 1.0993 (8) — Summary evaluation beta
 
 Signed archive and upload completed October 9, 2026. Apple processing and export

@@ -2,6 +2,20 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class SummaryResponseErrorTests: XCTestCase {
+    func testDurableBudgetErrorsPreserveExplanationAndDoNotRecommendBlindRetry() {
+        let error = NSError(domain: "AIProcessing", code: 402, userInfo: [
+            NSLocalizedDescriptionKey: "The processing budget has been reached."])
+        let shown = SummaryResponseError.presentation(for: error)
+        XCTAssertEqual(shown.message, "The processing budget has been reached.")
+        XCTAssertTrue(shown.recovery.contains("pending requests"))
+        XCTAssertTrue(shown.recovery.contains("Do not repeatedly retry"))
+        let stopped = NSError(domain: "AIProcessing", code: 409, userInfo: [
+            NSLocalizedDescriptionKey: "Processing stopped (uncertain). No automatic paid retry was made."])
+        XCTAssertTrue(SummaryResponseError.presentation(for: stopped).message.contains("uncertain"))
+        let raw = NSError(domain: "UntrustedProvider", code: 500, userInfo: [NSLocalizedDescriptionKey: "private provider payload"])
+        XCTAssertEqual(SummaryResponseError.presentation(for: raw).message, SummaryResponseError.unknown.errorDescription)
+    }
+
     private func row(_ id: UUID) -> [String: Any] {
         ["id": id.uuidString, "supported": true, "reason": "Supported", "citations": []]
     }

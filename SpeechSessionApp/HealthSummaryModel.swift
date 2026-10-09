@@ -512,8 +512,9 @@ struct SummaryProcessingIssue {
         let failure = error as? SummaryStageFailure
         let underlying = failure?.underlying ?? error
         let reason: Error = (underlying as? URLError) != nil ? SummaryResponseError.network : underlying
-        let explanation = (reason as? LocalizedError)?.errorDescription ?? SummaryResponseError.unknown.errorDescription!
-        let recovery = (reason as? LocalizedError)?.recoverySuggestion ?? "Retry the unfinished work. If it fails again, contact support with this message."
+        let presentation = SummaryResponseError.presentation(for: reason)
+        let explanation = presentation.message
+        let recovery = presentation.recovery
         if let session {
             let name = session.title?.isEmpty == false ? session.title! : session.inputType.rawValue.capitalized
             let date = session.date.formatted(date: .abbreviated, time: .shortened)
@@ -729,7 +730,10 @@ actor RecordSummaryProcessor {
         let draft = try await classifyForStory(draft, source: source, transport: transport, onDevice: onDevice)
         let size = onDevice ? 1 : 4
         let batches = stride(from: 0, to: draft.count, by: size).map { Array(draft.dropFirst($0).prefix(size)) }
-        let results = try await SummaryParallelWork.map(batches, limit: onDevice ? 1 : 3) { batch in
+        // Luna reserves its maximum request cost against the shared pilot budget.
+        // Run checker batches serially, matching the benchmark, so sibling requests
+        // do not exhaust the allowance with simultaneous reservations.
+        let results = try await SummaryParallelWork.map(batches, limit: 1) { batch in
             let review = try await self.auditBatch(batch, source: source, related: [], kind: kind, session: session,
                 transport: transport, onDevice: onDevice, allowCorrection: false, contactName: contactName)
             return review.assessed

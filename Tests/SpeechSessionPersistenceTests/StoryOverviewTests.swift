@@ -163,6 +163,33 @@ final class StoryOverviewTests: XCTestCase {
         let peak = await counter.peak
         XCTAssertEqual(peak, 3)
     }
+    func testSerialChecksFitBudgetThatRejectsThreeConcurrentLunaReservations() async throws {
+        actor Budget {
+            var reserved = 0
+            var peak = 0
+            func begin() throws {
+                // Pre-release ledger: $0.48418625 spent and $0.0456 held.
+                guard 484_186_250 + 45_600_000 + reserved + 214_500_000 <= 1_000_000_000 else {
+                    throw SummaryResponseError.quotaExceeded
+                }
+                reserved += 214_500_000
+                peak = max(peak, reserved)
+            }
+            func end() { reserved -= 214_500_000 }
+        }
+        let budget = Budget()
+        let result = try await SummaryParallelWork.map(Array(0..<4), limit: 1) { item in
+            try await budget.begin()
+            try await Task.sleep(nanoseconds: 1_000_000)
+            await budget.end()
+            return item
+        }
+        XCTAssertEqual(result, Array(0..<4))
+        let peak = await budget.peak
+        XCTAssertEqual(peak, 214_500_000)
+        XCTAssertGreaterThan(484_186_250 + 45_600_000 + 3 * 214_500_000, 1_000_000_000)
+    }
+
     func testCancelledParallelWorkDoesNotStartMoreItems() async {
         let task = Task {
             try await SummaryParallelWork.map(Array(0..<20), limit: 2) { value in

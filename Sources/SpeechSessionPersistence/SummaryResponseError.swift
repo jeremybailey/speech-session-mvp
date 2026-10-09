@@ -32,6 +32,27 @@ public enum SummaryResponseError: Error, LocalizedError, Equatable {
         }
     }
 
+    /// AIProcessing errors carry local, sanitized messages in NSError.userInfo.
+    /// NSError does not conform to LocalizedError; a protocol cast loses them.
+    public static func presentation(for error: Error) -> (message: String, recovery: String) {
+        let value = error as NSError
+        if value.domain == "AIProcessing" {
+            let recovery: String
+            switch value.code {
+            case 402:
+                recovery = "Check AI usage in Settings. Spending and pending requests both count toward the cap. Do not repeatedly retry; contact support if processing remains blocked."
+            case 401, 403:
+                recovery = "Open Settings and sign in again before continuing."
+            default:
+                recovery = "Check AI usage in Settings and contact support with this message before retrying."
+            }
+            return (value.localizedDescription, recovery)
+        }
+        let localized = error as? LocalizedError
+        return (localized?.errorDescription ?? Self.unknown.errorDescription!,
+                localized?.recoverySuggestion ?? Self.unknown.recoverySuggestion!)
+    }
+
     /// Each required UUID property owns one decision; never associate results by array position.
     public static func decodeKeyedChecks(_ value: Any?, expectedIDs: [UUID]) throws -> [SummaryCheck] {
         guard let rows = value as? [String: Any] else { throw Self.invalidFormat }
