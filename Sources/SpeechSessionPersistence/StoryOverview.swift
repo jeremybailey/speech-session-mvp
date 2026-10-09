@@ -91,7 +91,7 @@ public struct StoryOverview: Codable, Sendable {
     }
 }
 
-private struct StoredStoryOverview: Codable {
+struct StoredStoryOverview: Codable {
     var fingerprint: String
     var overview: StoryOverview
 }

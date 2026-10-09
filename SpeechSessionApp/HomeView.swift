@@ -128,7 +128,8 @@ struct HomeView: View {
             Task { await processPhotoPickerItems(newItems) }
         }
         .sheet(isPresented: $showSettings) {
-            SettingsView(isPresented: $showSettings)
+            SettingsView(isPresented: $showSettings, store: store, home: home, health: health,
+                         transferIsAvailable: phase == .idle && !isConsumingPendingSharedImport && pendingSharedImportURL == nil)
         }
         .fullScreenCover(isPresented: $showCameraCapture) {
             CameraCaptureView { image in
@@ -198,6 +199,12 @@ struct HomeView: View {
         }
         .onChange(of: pendingSharedImportURL) { _, _ in
             Task { await consumePendingSharedImportIfNeeded() }
+        }
+        .onChange(of: showSettings) { _, shown in
+            if !shown { Task { await consumePendingSharedImportIfNeeded() } }
+        }
+        .onChange(of: health.isTransferringData) { _, transferring in
+            if !transferring { Task { await consumePendingSharedImportIfNeeded() } }
         }
         .onChange(of: recording.errorMessage) { _, newValue in
             showRecordingError = newValue != nil
@@ -382,6 +389,7 @@ struct HomeView: View {
     }
 
     private func startLiveRecording(intent: SessionEntryIntent) {
+        guard !health.isTransferringData else { return }
         Task {
             let creds = await kindeAuth.openAIWhisperCredentials(byokKey: openAIAPIKey)
             recording.prepareForRecording(
@@ -560,7 +568,7 @@ struct HomeView: View {
     // MARK: - Shared handoff (App Group audio + photo share extensions)
 
     private func consumePendingSharedImportIfNeeded() async {
-        guard !isConsumingPendingSharedImport else { return }
+        guard !isConsumingPendingSharedImport, !showSettings, !health.isTransferringData else { return }
         guard let sourceURL = pendingSharedImportURL else { return }
 
         isConsumingPendingSharedImport = true

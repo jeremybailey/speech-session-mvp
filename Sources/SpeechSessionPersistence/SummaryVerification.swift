@@ -32,7 +32,7 @@ public struct SummaryRun: Codable, Hashable, Sendable {
     public init(source: String, stage: Stage = .fetching) {
         id = UUID(); sourceHash = SummaryVerification.hash(source); self.stage = stage
         version = SummaryVerification.version; updatedAt = Date()
-        completedSourceChunks = 0; promptVersion = "clinical-pipeline-v1"
+        completedSourceChunks = 0; promptVersion = SummaryVerification.promptVersion
     }
 }
 public struct SummaryRevision: Codable, Hashable, Sendable {
@@ -55,8 +55,9 @@ public struct SummaryCheck: Codable, Sendable {
     }
 }
 public enum SummaryVerification {
-    // Recheck records affected by the checker request-schema routing regression.
-    public static let version = 19
+    // New checks cannot resume chunks admitted through the old source-link fallback.
+    public static let version = 21
+    public static let promptVersion = "clinical-pipeline-v3"
     public static func hash(_ value: String) -> String {
         var result: UInt64 = 14695981039346656037
         for byte in value.utf8 { result = (result ^ UInt64(byte)) &* 1099511628211 }
@@ -215,6 +216,7 @@ public enum SummaryVerification {
             .values.filter { Set($0.map { fieldValue($0.value) }).count > 1 }.compactMap { $0.first?.label }.sorted()
         let reason: String?
         if check?.id != entry.id { reason = "The source check did not return a decision for this detail. Regenerate the summary to retry." }
+        else if let exclusion = check?.exclusion { reason = "The source check excluded this detail: " + exclusion + "." }
         else if check?.supported != true { reason = check?.reason.isEmpty == false ? check!.reason : "The source does not clearly support this detail." }
         else if entry.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { reason = "This detail has no clear title." }
         else if !uncertainPopulated.isEmpty { reason = "The source check still identifies uncertain fields: " + uncertainPopulated.joined(separator: ", ") + "." }

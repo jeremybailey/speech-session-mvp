@@ -595,7 +595,7 @@ public struct ConditionSynthesis: Codable, Sendable {
         }
     }
 }
-private struct StoredConditionSynthesis: Codable {
+struct StoredConditionSynthesis: Codable {
     var fingerprint: String
     var synthesis: ConditionSynthesis
     var entryHashes: [String: String]?

@@ -235,6 +235,8 @@ struct VisitSummaryFact {
     var clinicalStatus: SummaryEntryClinicalStatus?
     var factKey: String?
     var evidence: ClinicalEvidence? = nil
+    /// Source claims shown on the card and checked like any other populated field.
+    var contextFields: [SummaryEntryField] = []
 
     var markdownLine: String {
         if details.isEmpty { return "- \(title)" }
@@ -350,7 +352,7 @@ enum SummaryEntryFactory {
         ]
 
         return specs.flatMap { spec in
-            if let facts = fields.factsByCategory[spec.category], !facts.isEmpty {
+            if let facts = fields.factsByCategory[spec.category] {
                 return facts.map { fact in
                     makeEntry(
                         category: spec.category,
@@ -364,7 +366,8 @@ enum SummaryEntryFactory {
                         factKey: fact.factKey,
                         session: session,
                         origin: origin,
-                        evidence: fact.evidence
+                        evidence: fact.evidence,
+                        contextFields: fact.contextFields
                     )
                 }
             }
@@ -447,7 +450,8 @@ enum SummaryEntryFactory {
         factKey: String? = nil,
         session: Session,
         origin: SummaryEntryOrigin,
-        evidence: ClinicalEvidence? = nil
+        evidence: ClinicalEvidence? = nil,
+        contextFields: [SummaryEntryField] = []
     ) -> SummaryEntry {
         let split = splitPrimaryAndDetail(from: line)
         let overrideTitle = titleOverride?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -482,6 +486,7 @@ enum SummaryEntryFactory {
                 baseFields[index] = SummaryEntryField(label: label, value: value)
             } else { baseFields.append(SummaryEntryField(label: label, value: value)) }
         }
+        baseFields += contextFields
         var result = SummaryEntry(
             category: category,
             title: title,
@@ -666,7 +671,12 @@ enum VisitSummaryJSONParser {
     static func fields(fromAssistantContent raw: String) -> VisitSummaryFields? {
         let fenced = sanitizeFencedJSON(raw)
         let proseStripped = extractJSONObjectFragment(fenced.trimmingCharacters(in: .whitespacesAndNewlines))
-        guard let data = proseStripped.data(using: .utf8), !proseStripped.isEmpty else { return nil }
+        guard var data = proseStripped.data(using: .utf8), !proseStripped.isEmpty else { return nil }
+        if let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], object["facts"] != nil {
+            guard let sections = try? ClinicalDraftFormat.sections(from: object),
+                  let normalized = try? JSONSerialization.data(withJSONObject: sections) else { return nil }
+            data = normalized
+        }
 
         let dec = JSONDecoder()
         dec.keyDecodingStrategy = .convertFromSnakeCase
@@ -846,6 +856,8 @@ enum VisitSummaryJSONParser {
             ("", ["duration"]),
             ("", ["instructions", "directions", "patient_instructions", "prescriber_instructions", "changes"]),
             ("Class (source)", ["class_or_category", "class", "category", "drug_class", "pharmacologic_class"]),
+            ("Reason started", ["reasonStarted", "reason_started"]),
+            ("Reason stopped", ["reasonStopped", "reason_stopped"]),
         ]
 
         var fragments: [String] = []
@@ -866,6 +878,11 @@ enum VisitSummaryJSONParser {
         for rawKey in dict.keys.sorted() {
             let nk = norm(rawKey)
             guard !consumedNorm.contains(nk) else { continue }
+            // These remain in ClinicalEvidence; serializing them into clinical
+            // prose contaminates display and adds redundant checker fields.
+            guard !HealthStoryText.isInternalField(rawKey),
+                  !["practitioner", "assessmentmethod", "reportedby", "statementtype", "statementstatus",
+                    "title", "details", "detail", "description", "notes"].contains(nk) else { continue }
             guard let v = coerceOpenAIJSONValue(dict[rawKey]), !v.isEmpty else { continue }
             fragments.append("\(rawKey): \(v)")
         }
@@ -941,24 +958,23 @@ enum VisitSummaryJSONParser {
         var bucket: [SummaryEntryCategory: [VisitSummaryFact]] = fields.factsByCategory
         for spec in factSectionKeys {
             let value = obj.first { factSectionKeysMatch($0.key, spec.synonyms) }?.value
+            guard let value else { continue }
             let facts = parseFacts(from: value)
-            guard !facts.isEmpty else { continue }
             bucket[spec.category] = facts
             let markdown = facts.map(\.markdownLine).joined(separator: "\n")
             switch spec.category {
-            case .chiefComplaint: if fields.chiefComplaint?.isEmpty != false { fields.chiefComplaint = markdown }
-            case .symptoms: if fields.symptoms?.isEmpty != false { fields.symptoms = markdown }
-            case .findings: if fields.findings?.isEmpty != false { fields.findings = markdown }
-            case .medications: if fields.medications?.isEmpty != false { fields.medications = markdown }
-            case .carePlan: if fields.treatmentPlan?.isEmpty != false { fields.treatmentPlan = markdown }
-            case .practitionerContact: if fields.practitionerContacts?.isEmpty != false { fields.practitionerContacts = markdown }
-            case .vaccinations: if fields.vaccinations?.isEmpty != false { fields.vaccinations = markdown }
-            case .allergies: if fields.allergies?.isEmpty != false { fields.allergies = markdown }
-            case .testsAndLabs: if fields.testsAndLabs?.isEmpty != false { fields.testsAndLabs = markdown }
-            case .followUp: if fields.followUp?.isEmpty != false { fields.followUp = markdown }
-            case .otherNotes: if fields.otherNotes?.isEmpty != false { fields.otherNotes = markdown }
+            case .chiefComplaint: fields.chiefComplaint = markdown
+            case .symptoms: fields.symptoms = markdown
+            case .findings: fields.findings = markdown
+            case .medications: fields.medications = markdown
+            case .carePlan: fields.treatmentPlan = markdown
+            case .practitionerContact: fields.practitionerContacts = markdown
+            case .vaccinations: fields.vaccinations = markdown
+            case .allergies: fields.allergies = markdown
+            case .testsAndLabs: fields.testsAndLabs = markdown
+            case .followUp: fields.followUp = markdown
+            case .otherNotes: fields.otherNotes = markdown
             case .biopsychosocialContext: fields.biopsychosocialContext = markdown
-            default: break
             }
         }
         fields.factsByCategory = bucket
@@ -1006,11 +1022,13 @@ enum VisitSummaryJSONParser {
 
     private static func parseFact(from dict: [String: Any]) -> VisitSummaryFact? {
         func string(for keys: [String]) -> String? {
-            let want = Set(keys.map { normalizeJSONKey($0) })
-            for (rawKey, rawVal) in dict {
-                guard want.contains(normalizeJSONKey(rawKey)) else { continue }
-                if let s = coerceOpenAIJSONValue(rawVal)?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
-                    return s
+            // Canonical clinical details must win over an instruction used only
+            // as a legacy fallback, regardless of dictionary iteration order.
+            for key in keys {
+                for (rawKey, rawVal) in dict where normalizeJSONKey(rawKey) == normalizeJSONKey(key) {
+                    if let s = coerceOpenAIJSONValue(rawVal)?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
+                        return s
+                    }
                 }
             }
             return nil
@@ -1021,8 +1039,11 @@ enum VisitSummaryJSONParser {
         guard let title, !title.isEmpty else { return nil }
 
         var details = string(for: ["details", "detail", "description", "notes", "instruction"]) ?? ""
-        if details.isEmpty, looksLikeMedicationItem(dict) {
-            details = medicationDetailString(from: dict, excludingTitle: title) ?? ""
+        if looksLikeMedicationItem(dict), let medicationDetails = medicationDetailString(from: dict, excludingTitle: title),
+           !medicationDetails.isEmpty, !details.localizedCaseInsensitiveContains(medicationDetails) {
+            // A narrative detail must not suppress separately supplied dosing,
+            // adherence or instructions. Metadata stays in structured fields.
+            details = [details, medicationDetails].filter { !$0.isEmpty }.joined(separator: "; ")
         }
 
         let status = SummaryEntryClinicalStatus.parse(
@@ -1066,7 +1087,12 @@ enum VisitSummaryJSONParser {
             bodySystem: bodySystem,
             clinicalStatus: status,
             factKey: factKey,
-            evidence: evidence
+            evidence: evidence,
+            contextFields: [("reportedBy", "Reported by"), ("statementType", "Statement type"),
+                            ("statementStatus", "Statement status")].compactMap { key, label in
+                guard let value = string(for: [key]) else { return nil }
+                return SummaryEntryField(label: label, value: value)
+            }
         )
     }
 
@@ -1089,13 +1115,15 @@ enum VisitSummaryPromptGuidance {
     CATEGORY RULES (apply strictly):
     - For each detail, use topicNames only for explicitly linked conditions, symptoms or reasons for care (such as a named test indication). A condition need not be a diagnosis. Use one concise, consistent topic name for equivalent descriptions of the same concern (for example pain in the back / back pain), while retaining original wording in the detail. Preserve laterality, anatomical level, distinct diagnoses, and uncertainty. Reuse the same topic across categories only when the source explicitly connects those details; never group merely because they involve the same body system. Record bodySystem only as internal metadata. Include the relationship wording in the source excerpt. Never infer a condition from a drug, test value, body system, provider specialty, or mere proximity in a document. If the relationship is unclear, leave topicNames empty. Preserve historical versus current status only when explicit; old dispensing dates do not establish ongoing use.
     - Preserve patient vs practitioner attribution and negation. A patient-reported diagnosis is not a verified diagnosis.
+    - Retain the source's explicit concerns, symptom course, medication adherence, patient preferences and undecided choices, clinician instructions, conditional next steps and return timing. Before finishing, check that none of these were lost in compression. Split independent actions, while keeping each action's dose, timing, conditions and precautions together. Retain an ongoing symptom separately from an earlier resolved episode when the source distinguishes them. Do not invent a symptom's cause or resolve ambiguous spoken names or measurements.
+    - Preventive treatment does not establish the disease being prevented. Link to an explicitly established care context when supported, and retain the preventive purpose in the medication or plan details. A planned test is a care instruction, not a test result. Preserve offered versus accepted versus completed actions.
     - Chief Complaint is the reason for seeking care, not every symptom. Routine checkups and administrative visits are not conditions.
     - Tests & Labs holds reported test results even outside an appointment. Do not put results under Chief Complaint or Findings. Numeric lab values, reference ranges and high/low flags belong only in Tests & Labs. Findings is for separately stated patient-specific diagnoses or clinical impressions, not a second copy of test results.
     - Biopsychosocial Context retains explicitly stated mental health, life events, caregiving, work, social circumstances, diet and lifestyle. Never infer causal relationships.
     - A prescription is not evidence that medication was administered. OCR of forms can lose circled selections and handwritten overrides: never choose a dose, concentration, eye, frequency or repeat count from a list of printed alternatives. Keep the medicine name and omit uncertain values. Do not infer a prescriber from a multi-provider clinic header. Ambiguous numeric dates stay unknown.
     - Medications includes supplements. Keep missing dose, indication and stop reason unknown; never fill them from general knowledge.
     - Homecare classification is functional: does the statement ask the patient to do something outside the visit? Include HEP, education, self-care, lifestyle instructions and referrals even without a matching keyword.
-    - Care Plans may describe treatments received; mark these actionKind=treatment_received. Never turn in-clinic-only treatment into a home action. Ambiguous instructions use actionKind=uncertain and reviewReason.
+    - Use actionKind=treatment_received ONLY for a treatment explicitly already performed or taken, never for a recommendation, offer or future instruction. Use homecare for an explicit instruction outside the visit and follow_up for return logistics. An earlier dose does not turn a separate future dosing instruction into treatment_received. Do not turn an offered option into an accepted plan. Ambiguous instructions use actionKind=uncertain and reviewReason.
 
     - Treatment Plan: Put ALL clinician-directed plans and actions here: medication changes or new prescriptions \
     discussed as today’s plan, referrals, procedures, imaging/therapy orders, device or equipment instructions, \
@@ -1106,7 +1134,7 @@ enum VisitSummaryPromptGuidance {
     - Care team & contacts (practitionerContacts): Each line is one contact card from one source block: person or organization name, \
     role/specialty, phone, email, address, and notes ONLY when explicitly present together in that same source block. \
     **Never** pair a provider or org named in one part of the source with contact/lab/Rx text from another section or entry. \
-    **Omit** first-name-only dialogue. Plain lines; omit unavailable fields rather than inventing placeholders. \
+    **Omit** first-name-only dialogue. Use contact objects; omit unavailable fields rather than inventing placeholders. \
     Clinical plan prose stays under **Treatment Plan**.
     - Follow-up: Use ONLY for scheduling and return logistics (when to return, phone follow-up timing, booking \
     the next appointment, “see you in 6 weeks”). Do not place the substantive treatment plan solely in Follow-up; \
@@ -1114,13 +1142,11 @@ enum VisitSummaryPromptGuidance {
     - Findings: Only patient-specific stated diagnoses, impressions or actual examination results. Test names, billed services, exam scope (such as Partial Exam), headings and general educational statements are not findings.
     - Medications: List drug names/doses/adherence explicitly mentioned; if a NEW medication is STARTED as part \
     of today’s plan, summarize it briefly in Medications AND keep the clinician’s prescribing intent under Treatment Plan.
-    - Chief Complaint: Organize each presenting concern by body system. Use markdown `###` headings \
-    (or a system label before the bullet) from this set: \(BodySystem.promptAllowedList). \
-    One bullet per distinct complaint. Prefer a short stable title (e.g. "Migraine") with severity, \
-    triggers, course, and treatment response after an em dash or on the detail side of the line \
-    (e.g. "- Migraine — photophobia, 2-day duration"). Do not write a narrative paragraph.
-    - Symptoms: One bullet per distinct symptom. Prefer a short stable title ("Nausea", "Low back pain") \
-    and put severity, triggers, course, and response-to-treatment in the detail after an em dash so \
+    - Chief Complaint: Use one object per distinct presenting concern, with bodySystem from \
+    this set: \(BodySystem.promptAllowedList). Prefer a short stable title (e.g. "Migraine"). \
+    Put severity, triggers, course and treatment response in details, with a supporting sourceExcerpt.
+    - Symptoms: One object per distinct symptom. Prefer a short stable title ("Nausea", "Low back pain") \
+    and put severity, triggers, course, and response-to-treatment in details so \
     the same symptom can be compared across visits. Do not invent facts.
     """
 
@@ -1145,12 +1171,15 @@ enum VisitSummaryPromptGuidance {
         Always include the key "otherNotes" when there is substantive information that does not fit any other allowed field; \
         otherwise omit "otherNotes" entirely. Never duplicate the same fact in otherNotes and another field. \
         Do not invent clinical facts. Copy strengths and doses verbatim from the source when given.
-        Prefer each section as a JSON array of objects with keys: \
+        Emit each populated section as a JSON array of objects with keys: \
         title (required; short stable name), details (optional), \
         clinicalStatus ("current" or "past"), \
         factKey (lowercase hyphenated slug that stays stable across visits, e.g. "migraine" or "metformin"). \
         For chiefComplaint objects also include bodySystem from (\(BodySystem.promptAllowedList)). \
         Include these common evidence properties on EVERY fact object when supported:
+        reportedBy (Patient, Clinician, or the source-established clinical role; do not guess a name or role),
+        statementType (Patient report, Clinician finding, Care instruction, Medication, Follow-up, or Education),
+        statementStatus (Current, Historical, Planned, or Uncertain, according to the assertion rather than the encounter date),
         sourceExcerpt (short verbatim passage supporting this fact, including negation/qualifiers), sourcePage (original page number if supplied),
         eventDate (explicit YYYY-MM-DD, YYYY-MM or YYYY; never the import date), practitioner, assessmentMethod,
         topicNames (array of condition/health-topic names ONLY explicitly associated with this fact in this source), bodySystem,
@@ -1164,10 +1193,26 @@ enum VisitSummaryPromptGuidance {
         Use consistent titles and factKey values for synonymous wording across every category. Emit one object per distinct fact, with expanded wording in details rather than a second object. Never equate headache with migraine or omit negation, body side, dose, result, or event timing to force a match.
         Use the same concise topic name for a chief complaint and every fact explicitly linked to it. Include multiple topicNames when the source explicitly links a fact to multiple concerns. Never infer a diagnosis or causal relationship from symptoms alone. If no condition relationship is explicitly supported, omit topicNames; general health is valid.
         clinicalStatus may be omitted when unknown; statusExplicit must then be false.
-        String values or arrays of strings are still accepted if objects are not possible. \
-        A legacy "summary" markdown field is acceptable ONLY when every other section key would be empty. \
+        clinicalStatus is only the current/past axis. For a planned or undecided assertion use statementStatus=Planned
+        or Uncertain, omit clinicalStatus and use statusExplicit=false; do not mislabel it as current treatment.
+        reportedBy, statementType and statementStatus are visible clinical claims, not bookkeeping. Omit a value
+        when the source does not establish it. A first-person remark is not automatically the patient's remark:
+        use the surrounding exchange to distinguish patient, clinician and other people; omit uncertain attribution.
+        Put attribution and meaningful uncertainty in the readable details too (for example, Patient reports...,
+        Clinician offers..., Patient is considering...); do not hide qualifiers only in sourceExcerpt or reviewReason.
+        Preserve each distinct patient concern and instruction as its own fact. Do not merge a current observation,
+        a historical finding and social context into a single long note. Preserve exact durations, relative timing,
+        improvement or worsening, adherence, decision/booking status and all conditions attached to an action.
+        Omit isRecurring unless the source establishes repetition or one-time use; absence of repetition is not false.
+        Preserve optionality: describing an available test or treatment is not an instruction to undergo it.
+        Do not add a pharmacological assessment method, urgency, goal, body system or other filler to complete an object.
+        Before returning, compare the draft inventory against the source for omitted reports, preferences and actions.
+        A named condition being prevented is not a diagnosis. Uncertain spoken drug names remain uncertain in the
+        title/details; do not silently resolve them using medical knowledge. Keep every qualifying phrase in the
+        same object as the claim it qualifies. Copy excerpts exactly, including the original punctuation and wording.
+        Do not flatten evidence properties into details or emit bare strings for clinical facts: each fact needs its own sourceExcerpt and any supported qualifiers. \
         Every item must describe one distinct source, event, provider, medication, or care-plan entry. \
-        Include dates only when explicitly stated; otherwise do not invent dates. \
+        Include dates only when explicitly stated in the source; otherwise omit eventDate. Relative timing remains verbatim in details or reviewTiming; never invent an absolute year or calendar date from it. \
         For practitionerContacts: use objects with separate name, org, role, phone, email, address string properties; never serialize labelled contact fields into details; include name, org, role, phone, email, and address only when explicitly tied to that contact in the same source block. \
         Never merge names with contact details from a different document or section.
         """
@@ -1190,7 +1235,7 @@ enum VisitSummaryPromptGuidance {
             Allowed optional keys for care plans & education documents (omit when empty): \
             chiefComplaint, symptoms, findings, medications, treatmentPlan, practitionerContacts, vaccinations, allergies, testsAndLabs, followUp, biopsychosocialContext, otherNotes.
             Prefer treatmentPlan for patient education, self-management, lifestyle, warning signs, and clinician-directed steps stated in the document.
-            For medications use a string or array of strings, or an array of medication objects (see medication_reference spec for object shape).
+            For medications use an array of medication objects with the common evidence properties (see medication_reference spec for object shape).
             """
 
         case .medicationReference:

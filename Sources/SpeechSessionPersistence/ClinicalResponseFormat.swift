@@ -11,6 +11,8 @@ public enum ClinicalResponseFormat {
     }
     public static func forStage(_ stage: String, expectedCheckIDs: [UUID] = []) -> [String: Any] {
         switch stage {
+        case "extraction":
+            return ClinicalDraftFormat.responseFormat
         case "classification":
             let category: [String: Any] = ["anyOf": [
                 ["type": "string", "enum": SummaryEntryCategory.allCases.map(\.rawValue)],

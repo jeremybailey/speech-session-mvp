@@ -1228,7 +1228,10 @@ struct SessionSourceView: View {
     private func assetViewer(for asset: SessionSourceAsset) -> some View {
         let fileURL = sourceStore.url(for: asset, sessionID: session.id)
 
-        switch asset.kind {
+        if !FileManager.default.fileExists(atPath: fileURL.path) {
+            Text("Original file not included. The saved source text is available below.")
+                .foregroundStyle(.secondary)
+        } else { switch asset.kind {
         case .pdf:
             SessionPDFSourceView(url: fileURL)
                 .frame(minHeight: 480)
@@ -1246,6 +1249,7 @@ struct SessionSourceView: View {
         case .plainText:
             SessionPlainTextSourceView(url: fileURL)
                 .liquidGlassCard(cornerRadius: 14)
+        }
         }
     }
 

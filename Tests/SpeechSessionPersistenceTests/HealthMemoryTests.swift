@@ -48,6 +48,18 @@ final class HealthMemoryTests: XCTestCase {
         XCTAssertEqual(HealthStoryText.clean("{\"actionKind\":\"homecare\",\"details\":\"Keep a diary\"}"), "Keep a diary")
     }
 
+    func testInlineEvidenceMetadataDoesNotHideClinicalDirections() {
+        let raw = "5 mg; once daily; actionKind: homecare; clinicalStatus: current; factKey: example; sourceExcerpt: Take medicine.; statusExplicit: 1; topicNames: Example concern; with food; stop if dizzy"
+        XCTAssertEqual(HealthStoryText.cleanForDisplay(raw), "5 mg; once daily; with food; stop if dizzy")
+        XCTAssertEqual(HealthStoryText.clean(raw), raw, "Identity normalization must not change for saved records")
+        XCTAssertEqual(HealthStoryText.cleanForDisplay("Call at 9:00; do not drive; if worse: call clinic"),
+                       "Call at 9:00; do not drive; if worse: call clinic")
+        XCTAssertEqual(HealthStoryText.cleanForDisplay("Patient asks about sourceExcerpt: a label on a form"),
+                       "Patient asks about sourceExcerpt: a label on a form")
+        XCTAssertEqual(HealthStoryText.cleanForDisplay("dose: 5 mg; source_page: 2; frequency: daily"), "dose: 5 mg; frequency: daily")
+        XCTAssertEqual(HealthStoryText.cleanForDisplay("{\"details\":\"Take with food; stop if dizzy\",\"actionKind\":\"homecare\"}"), "Take with food; stop if dizzy")
+    }
+
     func testSavedContactWithoutAddressStillDecodes() throws {
         let member = CareTeamMember(name: "Sample Provider", phone: "555-0100")
         let encoded = try JSONEncoder().encode(member)

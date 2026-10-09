@@ -38,6 +38,7 @@ public actor SessionStore {
         decoder.dateDecodingStrategy = .iso8601
         self.decoder = decoder
 
+        try DataTransferArchive.recoverReplacement(at: storageDirectory)
         try fileManager.createDirectory(at: storageDirectory, withIntermediateDirectories: true)
     }
 
@@ -94,6 +95,10 @@ public actor SessionStore {
             throw SessionStoreError.ioFailed(error.localizedDescription)
         }
     }
+
+    // Transfer operations are actor-isolated alongside ordinary record writes.
+    func transferEnvelope() throws -> SessionsEnvelope { try loadEnvelope() }
+    func invalidateTransferCache() { cachedEnvelope = nil }
 
     private func saveEnvelope(_ envelope: SessionsEnvelope) throws {
         var env = envelope
@@ -577,7 +582,7 @@ public actor SessionStore {
            existing.stage != .complete,
            existing.sourceHash == SummaryVerification.hash(expected.transcript),
            existing.version == SummaryVerification.version,
-           existing.promptVersion == "clinical-pipeline-v1",
+           existing.promptVersion == SummaryVerification.promptVersion,
            env.sessions[i].summaryDrafts != nil {
             existing.stage = .fetching
             existing.updatedAt = Date()

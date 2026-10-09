@@ -53,6 +53,20 @@ public enum HealthStoryText {
         return ["actionkind", "factkey", "clinicalstatus", "statusexplicit", "topicnames", "bodysystem", "eventdate", "reviewreason", "sourceexcerpt", "sourcepage"].contains(key)
     }
 
+    /// Display-only cleanup: `clean` also participates in persistent fact identity.
+    /// Changing that normalization would invalidate saved condition associations.
+    public static func cleanForDisplay(_ text: String) -> String {
+        if let data = text.data(using: .utf8),
+           (try? JSONSerialization.jsonObject(with: data)) is [String: Any] { return clean(text) }
+        let filtered = text.components(separatedBy: .newlines).map { line in
+            line.components(separatedBy: ";").filter { segment in
+                guard let colon = segment.firstIndex(of: ":") else { return true }
+                return !isInternalField(String(segment[..<colon]).trimmingCharacters(in: .whitespacesAndNewlines))
+            }.joined(separator: ";")
+        }.joined(separator: "\n")
+        return clean(filtered)
+    }
+
     public static func clean(_ text: String) -> String {
         if let data = text.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             return ["title", "name", "instruction", "details", "description", "notes"].compactMap { object[$0] as? String }.joined(separator: "\n")

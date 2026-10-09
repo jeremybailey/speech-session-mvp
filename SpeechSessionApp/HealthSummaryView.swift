@@ -297,7 +297,7 @@ struct HealthSummaryView: View {
         } message: { Text(stopError ?? "") }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: showingStoryPlaceholder)
         .task(id: "\(ConditionSynthesis.fingerprint(model.facts))|\(model.isProcessing)|\(model.hasLoaded)|\(cloudConsent)|\(backend)|\(pendingSummaryJob)") {
-            guard !connectionCheckOnly else { return }
+            guard !connectionCheckOnly, model.automaticProcessingAllowed else { return }
             if resumePendingSummaryJobIfPossible() { return }
             guard !model.isProcessing, model.needsConditionOrganization, pendingCount == 0,
                   backend != "onDevice", cloudConsent else { return }
@@ -410,7 +410,7 @@ struct HealthSummaryView: View {
             }
             #endif
             let repairKey = model.snapshot.sessions.map { $0.id.uuidString + SummaryVerification.hash($0.transcript) }.sorted().joined()
-            if model.processingIssue == nil, pendingCount > 0, backend == "onDevice" || cloudConsent, attemptedRepair.insert(repairKey).inserted { prepare() }
+            if model.automaticProcessingAllowed, model.processingIssue == nil, pendingCount > 0, backend == "onDevice" || cloudConsent, attemptedRepair.insert(repairKey).inserted { prepare() }
             #if DEBUG
             if !didOpenCareQA, ProcessInfo.processInfo.arguments.contains("--care-qa"),
                let fact = model.facts.first(where: { $0.category == .carePlan }) {
@@ -735,7 +735,7 @@ struct HealthSummaryView: View {
 
     @discardableResult
     private func resumePendingSummaryJobIfPossible() -> Bool {
-        guard !connectionCheckOnly else { return false }
+        guard !connectionCheckOnly, model.automaticProcessingAllowed else { return false }
         guard SummaryJobResumePolicy.canResume(
             hasPendingJob: !pendingSummaryJob.isEmpty,
             hasLoaded: model.hasLoaded,

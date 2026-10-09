@@ -14,7 +14,7 @@ public enum HealthDetailPresentation {
     public static func remainingDetails(_ entry: SummaryEntry) -> [String] {
         let structured = fields(entry)
         let values = structured.map { normalize($0.value) }
-        let text = HealthStoryText.clean(entry.details).replacingOccurrences(of: "\\n", with: "\n")
+        let text = HealthStoryText.cleanForDisplay(entry.details).replacingOccurrences(of: "\\n", with: "\n")
             .replacingOccurrences(of: #"(?i)<br\s*/?>"#, with: "\n", options: .regularExpression)
             .replacingOccurrences(of: #"[;|]\s*(?=(?i:phone|email|address|clinic|organization|role|specialty|dose|frequency|notes):)"#, with: "\n", options: .regularExpression)
         var seen = Set<String>()

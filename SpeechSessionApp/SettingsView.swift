@@ -1,11 +1,235 @@
 import SwiftUI
 import SpeechSessionFeatures
+import SpeechSessionPersistence
+import UniformTypeIdentifiers
+import UserNotifications
+
+/// Deliberately reachable only from Settings. Import replaces the local dataset;
+/// it never imports authentication or submits processing work.
+private struct SettingsDataTransferView: View {
+    let store: SessionStore
+    @ObservedObject var home: HomeViewModel
+    @ObservedObject var health: HealthSummaryModel
+    let importing: Bool
+    @State private var includeOriginals = false
+    @State private var password = ""
+    @State private var confirmation = ""
+    @State private var selectedFile: URL?
+    @State private var showPicker = false
+    @State private var prepared: PreparedDataImport?
+    @State private var showReplacementConfirmation = false
+    @State private var shareURL: URL?
+    @State private var showShare = false
+    @State private var busy = false
+    @State private var status = ""
+    @State private var errorMessage: String?
+    @State private var missingCount = 0
+    @State private var showMissingConfirmation = false
+    @State private var operation: Task<Void, Never>?
+    @State private var ownsTransfer = false
+
+    var body: some View {
+        Form {
+            Section {
+                Text("This ZIP file contains sensitive health information. Only share it with people you authorize, use restricted Drive sharing, and send the password separately. Your password cannot be recovered.")
+                    .font(.footnote)
+            }
+            if importing {
+                Section {
+                    Button(selectedFile == nil ? "Choose ZIP file" : "Choose a different ZIP file") { showPicker = true }
+                    if selectedFile != nil { Text("ZIP file selected").foregroundStyle(.secondary) }
+                    Text("Enter the password used when this ZIP file was created. Passwords are case-sensitive.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    SecureField("File password", text: $password)
+                        .textContentType(.password)
+                    Button("Review import") { inspectImport() }
+                        .disabled(selectedFile == nil || password.isEmpty)
+                }
+                .disabled(busy || prepared != nil)
+                if let prepared {
+                    Section("Import preview") {
+                        LabeledContent("Records", value: String(prepared.manifest.records.count))
+                        LabeledContent("File created", value: prepared.manifest.exportedAt.formatted(date: .abbreviated, time: .shortened))
+                        LabeledContent("Original files", value: prepared.manifest.includesOriginals ? "Included where available" : "Not included")
+                        if prepared.manifest.missingOriginalCount > 0 {
+                            Text("\(prepared.manifest.missingOriginalCount) original files were unavailable on the original device.")
+                        }
+                        Text("Replacing removes this device’s current history and original files. Save a backup ZIP file with originals first if you want to restore it later. Your sign-in will not change. No AI processing starts during import.")
+                        Button("Replace local history", role: .destructive) { showReplacementConfirmation = true }
+                            .disabled(busy)
+                        Button("Cancel import", role: .cancel) { cancelPreview() }.disabled(busy)
+                    }
+                }
+            } else {
+                Section {
+                    LabeledContent("Records", value: String(home.sessions.count))
+                    Toggle("Include original files", isOn: $includeOriginals)
+                    Text("Add original audio, PDFs, scans, and photos. Transcripts, extracted text, and saved results are always included.").font(.footnote)
+                    Text("Use at least \(DataTransferArchive.minimumPasswordLength) characters. Words and spaces are fine; numbers and symbols are optional.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    SecureField("Choose a password", text: $password)
+                        .textContentType(.newPassword)
+                    if !password.isEmpty && password.count < DataTransferArchive.minimumPasswordLength {
+                        Text("\(DataTransferArchive.minimumPasswordLength - password.count) more characters needed.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    SecureField("Confirm password", text: $confirmation)
+                        .textContentType(.newPassword)
+                    if !confirmation.isEmpty && password != confirmation {
+                        Text("Passwords don’t match yet.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Button("Create encrypted ZIP") { export() }
+                        .disabled(password.count < DataTransferArchive.minimumPasswordLength || password != confirmation)
+                }
+                .disabled(busy)
+                if let _ = shareURL {
+                    Section {
+                        Button("Share export") { showShare = true }
+                        Text("Save or share before leaving this screen. The temporary export is removed when you leave.").font(.footnote)
+                    }
+                }
+            }
+            if busy {
+                Section {
+                    ProgressView(status)
+                    Button("Cancel", role: .cancel) { operation?.cancel(); status = "Cancelling safely…" }
+                }
+            } else if !status.isEmpty { Section { Text(status) } }
+            if let errorMessage { Section { Text(errorMessage).foregroundStyle(.red) } }
+        }
+        .navigationTitle(importing ? "Import data" : "Export data")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(busy)
+        .interactiveDismissDisabled(busy)
+        .disabled(!ownsTransfer)
+        .onAppear {
+            guard !ownsTransfer, !health.isProcessing, !health.isTransferringData else { return }
+            health.isTransferringData = true; ownsTransfer = true
+        }
+        .onDisappear {
+            guard ownsTransfer, !showShare, !showPicker else { return }
+            ownsTransfer = false
+            password = ""; confirmation = ""; operation?.cancel()
+            let finishing = operation
+            Task { @MainActor in
+                await finishing?.value
+                try? await store.discardDataTransfer()
+                health.isTransferringData = false
+            }
+        }
+        .fileImporter(isPresented: $showPicker, allowedContentTypes: [.zip]) { result in
+            switch result {
+            case .success(let url): selectedFile = url; prepared = nil; errorMessage = nil
+            case .failure: errorMessage = "The ZIP file could not be opened. Try choosing it again from Files."
+            }
+        }
+        .sheet(isPresented: $showShare) {
+            if let shareURL { HealthActivitySheet(urls: [shareURL]) }
+        }
+        .confirmationDialog("Replace local history?", isPresented: $showReplacementConfirmation, titleVisibility: .visible) {
+            Button("Replace local history", role: .destructive) { replace() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your current records and originals will be removed. This cannot be undone without a backup ZIP file. Your account stays signed in.")
+        }
+        .confirmationDialog("Some originals are missing", isPresented: $showMissingConfirmation, titleVisibility: .visible) {
+            Button("Continue without missing files") { export(allowMissing: true) }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("\(missingCount) original files cannot be included. Saved source text and results will still be exported.") }
+    }
+
+    private func export(allowMissing: Bool = false) {
+        guard !busy, ownsTransfer, !health.isProcessing else { return }
+        busy = true; status = "Creating encrypted export…"; errorMessage = nil; shareURL = nil
+        let secret = password
+        operation = Task { @MainActor in
+            defer { busy = false }
+            do {
+                let version = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown") +
+                    " (" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unknown") + ")"
+                let url = try await store.exportData(password: secret, includeOriginals: includeOriginals,
+                                                    allowMissingOriginals: allowMissing, appVersion: version)
+                try Task.checkCancellation()
+                password = ""; confirmation = ""; shareURL = url; showShare = true
+                status = "Export ready. Share the password separately."
+            } catch DataTransferError.missingOriginals(let count) {
+                missingCount = count; showMissingConfirmation = true; status = ""
+            } catch {
+                password = ""; confirmation = ""
+                try? await store.discardDataTransfer()
+                status = ""; errorMessage = transferMessage(error)
+            }
+        }
+    }
+
+    private func inspectImport() {
+        guard let selectedFile, !busy, ownsTransfer, !health.isProcessing else { return }
+        busy = true; status = "Opening and checking ZIP file…"; errorMessage = nil
+        let secret = password; password = ""
+        operation = Task { @MainActor in
+            defer { busy = false }
+            let scoped = selectedFile.startAccessingSecurityScopedResource()
+            defer { if scoped { selectedFile.stopAccessingSecurityScopedResource() } }
+            do {
+                prepared = try await store.prepareDataImport(from: selectedFile, password: secret)
+                try Task.checkCancellation()
+                status = "Review the ZIP file’s contents before replacing your history."
+            } catch {
+                prepared = nil; try? await store.discardDataTransfer()
+                status = ""; errorMessage = transferMessage(error)
+            }
+        }
+    }
+
+    private func cancelPreview() {
+        prepared = nil; status = "Import cancelled. Your history is unchanged."
+        operation = Task { try? await store.discardDataTransfer() }
+    }
+
+    private func replace() {
+        guard let prepared, !busy, ownsTransfer, !health.isProcessing else { return }
+        busy = true; status = "Replacing local history…"; errorMessage = nil
+        operation = Task { @MainActor in
+            defer { busy = false }
+            do {
+                let previousReminderIDs = health.snapshot.preferences.filter(\.reminderEnabled).map(\.id)
+                try await store.replaceWithImportedData(prepared)
+                // The replaced person's reminders must not remain on this phone.
+                UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: previousReminderIDs)
+                UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: previousReminderIDs)
+                // Clear only history-specific defaults. Authentication, consent,
+                // transcription configuration, and account spending stay local.
+                for key in ["speechSession.pendingSummaryJob", "speechSession.globalSummaryJSON", "speechSession.globalSummaryBackend", "speechSession.globalSummaryFingerprint"] {
+                    UserDefaults.standard.removeObject(forKey: key)
+                }
+                await health.resetAfterDataImport()
+                await home.loadSessions()
+                self.prepared = nil; selectedFile = nil
+                status = "History imported. No AI processing was started. Use the existing record reprocessing and condition/overview controls when you’re ready."
+            } catch {
+                self.prepared = nil; try? await store.discardDataTransfer()
+                status = ""; errorMessage = transferMessage(error)
+            }
+        }
+    }
+
+    private func transferMessage(_ error: Error) -> String {
+        if error is CancellationError { return "Transfer cancelled. Your saved history is unchanged." }
+        if let error = error as? DataTransferError { return error.localizedDescription }
+        return "The transfer could not finish. Check the ZIP file and available device storage, then try again."
+    }
+}
 
 struct SettingsView: View {
     /// Drives sheet dismissal from the presenter’s `isPresented` binding so UIKit tears down
     /// presentation cleanly (nested `NavigationStack` + `Environment(\.dismiss)` can leave a
     /// full-screen hit blocker on iPad after the sheet animates out).
     @Binding var isPresented: Bool
+    let store: SessionStore
+    @ObservedObject var home: HomeViewModel
+    @ObservedObject var health: HealthSummaryModel
+    var transferIsAvailable: Bool
 
     @AppStorage("speechSession.transcriptionBackend") private var backendRaw = TranscriptionBackend.onDeviceWhisperKit.rawValue
     @AppStorage("speechSession.openaiAPIKey") private var openAIAPIKey = ""
@@ -103,6 +327,19 @@ struct SettingsView: View {
                 } footer: {
                     Text(accountFooterText)
                 }
+
+                Section {
+                    NavigationLink("Export data") {
+                        SettingsDataTransferView(store: store, home: home, health: health, importing: false)
+                    }
+                    NavigationLink("Import data") {
+                        SettingsDataTransferView(store: store, home: home, health: health, importing: true)
+                    }
+                } header: { Text("Data transfer") }
+                footer: {
+                    Text("Share a password-protected export or replace this device’s history. Your sign-in does not change. Wait for recording and processing to finish before transferring.")
+                }
+                .disabled(!transferIsAvailable || health.isProcessing)
 
                 Section {
                     Picker("Engine", selection: $backendRaw) {
@@ -247,6 +484,7 @@ struct SettingsView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") { isPresented = false }
                         .fontWeight(.semibold)
+                        .disabled(health.isTransferringData)
                 }
             }
             .alert("Account", isPresented: Binding(
@@ -261,6 +499,7 @@ struct SettingsView: View {
         .background(BrandPalette.canvas.ignoresSafeArea())
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .interactiveDismissDisabled(health.isTransferringData)
         .task {
             normalizeSettingsForDevice()
             await refreshUsage()

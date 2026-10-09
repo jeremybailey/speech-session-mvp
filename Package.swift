@@ -14,10 +14,12 @@ let package = Package(
         .library(name: "SpeechSessionFeatures", targets: ["SpeechSessionFeatures"]),
     ],
     dependencies: [
+        .package(url: "https://github.com/ZipArchive/ZipArchive.git", exact: "2.6.0"),
         .package(url: "https://github.com/argmaxinc/WhisperKit", from: "0.9.0"),
     ],
     targets: [
-        .target(name: "SpeechSessionPersistence"),
+        .target(name: "TransferZip", dependencies: [.product(name: "ZipArchive", package: "ZipArchive")]),
+        .target(name: "SpeechSessionPersistence", dependencies: ["TransferZip", .product(name: "ZipArchive", package: "ZipArchive")]),
         .target(
             name: "SpeechSessionTranscription",
             dependencies: [

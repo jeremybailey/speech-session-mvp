@@ -183,6 +183,7 @@ final class AppModel: ObservableObject {
     }
 
     func handleLiveActivityStartIfNeeded() {
+        guard !health.isTransferringData else { return }
         guard RecordingLiveActivityBridge.consumeStartRequest() else { return }
         NotificationCenter.default.post(name: .liveActivityStartRecording, object: nil)
     }

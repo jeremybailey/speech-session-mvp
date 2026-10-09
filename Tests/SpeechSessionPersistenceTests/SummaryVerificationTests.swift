@@ -121,7 +121,7 @@ final class SummaryVerificationTests: XCTestCase {
 
         XCTAssertEqual(resumed.id, run.id)
         XCTAssertEqual(resumed.completedSourceChunks, 1)
-        XCTAssertEqual(resumed.promptVersion, "clinical-pipeline-v1")
+        XCTAssertEqual(resumed.promptVersion, SummaryVerification.promptVersion)
         XCTAssertEqual(drafts.map(\.id), [checked.id])
     }
 }

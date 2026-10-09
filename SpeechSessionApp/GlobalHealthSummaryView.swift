@@ -16,6 +16,7 @@ struct ScopedHealthSummaryView: View {
     let store: SessionStore
 
     @EnvironmentObject private var kindeAuth: KindeAuthManager
+    @EnvironmentObject private var health: HealthSummaryModel
     @AppStorage("speechSession.openaiAPIKey") private var openAIAPIKey = ""
     @AppStorage("speechSession.summaryBackend") private var summaryBackendRaw = "openai"
     @AppStorage("speechSession.globalSummaryJSON") private var cachedGlobalJSON = ""
@@ -111,7 +112,9 @@ struct ScopedHealthSummaryView: View {
             await restoreOrGenerate()
         }
         .onChange(of: selectedSummaryBackendRaw) { _, _ in
-            Task { await clearScopeCacheAndRegenerate() }
+            Task {
+                if !(await store.isImportedHistory) { await clearScopeCacheAndRegenerate() }
+            }
         }
         .navigationDestination(item: $sourceSheetContext) { context in
             SessionDetailView(
@@ -507,7 +510,7 @@ struct ScopedHealthSummaryView: View {
                 summaryState = .loaded(cached)
             } else {
                 summaryState = .idle
-                await generateSummary()
+                if !(await store.isImportedHistory) { await generateSummary() }
             }
         case .folder(let id):
             guard let folder = home.folders.first(where: { $0.id == id }),
@@ -517,7 +520,7 @@ struct ScopedHealthSummaryView: View {
                   let cached = try? JSONDecoder().decode(GlobalSummaryPayload.self, from: data)
             else {
                 summaryState = .idle
-                await generateSummary()
+                if !(await store.isImportedHistory) { await generateSummary() }
                 return
             }
             summaryState = .loaded(cached)
@@ -551,6 +554,7 @@ struct ScopedHealthSummaryView: View {
     }
 
     private func generateSummary() async {
+        guard !health.isTransferringData else { return }
         guard case .idle = summaryState else { return }
         guard !scopedSessions.isEmpty else { return }
 

@@ -1,5 +1,57 @@
 # CollectiveCare TestFlight Notes
 
+## Version 1.0993 (8) — Summary evaluation beta
+
+This build preserves more summary context, including who reported a detail,
+statement type and status, and medication instructions alongside narrative details.
+Newly processed facts must pass the independent source check and exact-citation
+requirements before appearing. Internal extraction metadata is removed from display.
+The password-protected ZIP export/import workflow from build 7 remains available.
+
+What to test: back up your history, then explicitly reprocess the selected record
+from its saved text. Compare displayed details and source links with the human
+scorecard. Check medication instructions, attribution, uncertainty, and condition
+placement. Importing a ZIP alone does not reprocess it. Report missing details as
+well as unsupported interpretations; stricter checks can hide valid information.
+
+This is an evaluation beta. Ambiguous measurements, inferred leakage type, missing
+instructions and condition routing remain known concerns in the experimental
+benchmark. Review all generated content against its source. The latest benchmark
+used an experimental extraction/checking model combination that is not enabled on
+the live server; its 2/18 full passes and 13/17 partial retention are not this
+build's measured accuracy. The live model policy and shared spending cap are unchanged.
+
+
+## Version 1.0993 (7) — Settings data transfer (release in progress)
+
+Signed archive and App Store Connect upload succeeded on October 2. Apple
+processing completed; distribution awaits the export-compliance answer for the
+new standard AES ZIP encryption. Existing CollectiveCare Founders group includes
+Asha and has automatic Xcode-build distribution enabled.
+
+Settings → Data transfer now provides Export data and Import data. There is no
+new home-screen section or tab. Export requires a password of at least 12
+characters; share the password separately. Leave Include original files off for
+a compact transcript/OCR-text and saved-results ZIP. Turn it on for a backup
+including saved audio, PDFs, scans, and photos. Restrict sharing of these health
+records; encryption does not anonymize them.
+
+Import previews the ZIP file before asking to replace the entire local history.
+Export your own history with originals first if you want to restore it later.
+Your Kinde sign-in and spending account do not change. Import and reopening do
+not start AI processing. Existing explicit record reprocessing, condition
+organization, and overview actions remain available under the existing budget.
+Text-only exports cannot test audio transcription or OCR accuracy. Old-device
+reminders are removed on replacement; imported reminders are not automatically
+scheduled on the receiving phone.
+
+The Settings → export → share/save → import flow was successfully checked on
+Jeremy's physical iPhone. Offline archive tests cover both original-file modes,
+wrong passwords, integrity validation, and replacement/recovery. The October 2
+release check passed 280 tests with one skipped and no failures; Settings transfer
+guards also passed. Test only consented data; no real exports or answer keys belong in Git.
+No paid evaluation or backend changes are part of this feature.
+
 ## Version 1.0993 (6) — What to Test
 
 Large histories now upload in resumable chunks instead of one oversized request.
