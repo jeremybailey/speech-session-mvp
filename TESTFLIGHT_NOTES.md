@@ -2,11 +2,11 @@
 
 ## Version 1.0993 (10) — Contact grouping and processing fixes
 
-Signed archive and App Store Connect upload completed October 10, 2026. Apple
-accepted build 10 and reported the uploaded package is processing. Browser sign-in
-expired; processing completion, export compliance, tester assignment, and What to
-Test remain to be confirmed. Jeremy rebuilt and verified the latest contact
-presentation on his own records.
+Signed archive, upload, Apple processing, and export compliance completed October
+10, 2026. Build 10 is assigned to the five-tester internal CollectiveCare Founders
+group. What to Test is saved. The previously confirmed standard-encryption and
+no-France answers were reused; encryption is unchanged. Jeremy rebuilt and verified
+the latest contact presentation on his own records.
 
 Care team & contacts now presents same-name entries under one expandable heading,
 retaining independently editable details, differing addresses, and original sources.
