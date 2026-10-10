@@ -2,6 +2,20 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class SummarySourceCheckTests: XCTestCase {
+    func testKeyedClaimsAreOrderIndependentAndRejectDuplicateIdentity() throws {
+        let first = SummaryEntry(category: .symptoms, title: "Itchy rash")
+        let second = SummaryEntry(category: .symptoms, title: "Headache")
+        let forward = try SummarySourceCheck.input([first, second], source: "Synthetic source")
+        XCTAssertEqual(forward, try SummarySourceCheck.input([second, first], source: "Synthetic source"))
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(forward.utf8)) as? [String: Any])
+        let drafts = try XCTUnwrap(payload["drafts"] as? [String: [String: Any]])
+        for entry in [first, second] {
+            let row = try XCTUnwrap(drafts[entry.id.uuidString])
+            XCTAssertEqual(row["id"] as? String, entry.id.uuidString)
+            XCTAssertEqual((row["fieldsToCheck"] as? [String: Any])?["title"] as? String, entry.title)
+        }
+        XCTAssertThrowsError(try SummarySourceCheck.input([first, first], source: "Synthetic source"))
+    }
     func testRequestContainsClinicalClaimsWithoutDisplayPlaceholdersOrPriorVerdicts() throws {
         var entry = SummaryEntry(category: .symptoms, title: "Itchy rash",
                                  fields: [.init(label: "Practitioner", value: "", isMissing: true)])
@@ -13,8 +27,8 @@ final class SummarySourceCheckTests: XCTestCase {
         let input = try SummarySourceCheck.input([entry], source: source)
         let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: Any])
         XCTAssertEqual(payload["originalSource"] as? String, source)
-        let rows = try XCTUnwrap(payload["drafts"] as? [[String: Any]])
-        let fields = try XCTUnwrap(rows[0]["fieldsToCheck"] as? [String: Any])
+        let rows = try XCTUnwrap(payload["drafts"] as? [String: [String: Any]])
+        let fields = try XCTUnwrap(rows[entry.id.uuidString]?["fieldsToCheck"] as? [String: Any])
         XCTAssertEqual(Set(fields.keys), SummaryVerification.requiredFields(entry))
         XCTAssertEqual(fields["title"] as? String, "Itchy rash")
         XCTAssertFalse(input.contains("Practitioner"))
@@ -31,8 +45,8 @@ final class SummarySourceCheckTests: XCTestCase {
             directions: "Only if still present", reviewTiming: "Friday")
         let input = try SummarySourceCheck.input([entry], source: "If the rash persists, call on Friday.")
         let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: Any])
-        let rows = try XCTUnwrap(payload["drafts"] as? [[String: Any]])
-        let fields = try XCTUnwrap(rows[0]["fieldsToCheck"] as? [String: Any])
+        let rows = try XCTUnwrap(payload["drafts"] as? [String: [String: Any]])
+        let fields = try XCTUnwrap(rows[entry.id.uuidString]?["fieldsToCheck"] as? [String: Any])
         XCTAssertEqual(fields["field:Dose"] as? [String], ["5 mg", "10 mg"])
         let instruction = try XCTUnwrap(fields["careInstruction"] as? [String: Any])
         XCTAssertEqual(instruction["directions"] as? String, "Only if still present")
@@ -68,7 +82,7 @@ final class SummarySourceCheckTests: XCTestCase {
         let store = try SessionStore(storageDirectory: directory)
         var session = Session(transcript: "Patient reports rash.")
         var run = SummaryRun(source: session.transcript)
-        run.promptVersion = "clinical-pipeline-v1"
+        run.promptVersion = "clinical-pipeline-v4-keyed-checks"
         run.completedSourceChunks = 1
         session.summaryRun = run
         session.summaryDrafts = [SummaryEntry(category: .symptoms, title: "Old draft")]

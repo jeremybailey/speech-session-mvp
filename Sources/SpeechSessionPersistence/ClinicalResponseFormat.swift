@@ -10,6 +10,7 @@ public enum ClinicalResponseFormat {
         ["type": "json_schema", "json_schema": ["name": name, "strict": true, "schema": schema]]
     }
     public static func forStage(_ stage: String, expectedCheckIDs: [UUID] = []) -> [String: Any] {
+        let bodySystem: [String: Any] = ["type": "string", "enum": ConditionSynthesis.bodySystems]
         switch stage {
         case "extraction":
             return ClinicalDraftFormat.responseFormat
@@ -24,22 +25,22 @@ public enum ClinicalResponseFormat {
         case "duplicates":
             return strict("health_duplicate_decision", object(["equivalent": ["type": "boolean"]]))
         case "condition-synthesis":
-            let group = object(["name": ["type": "string"], "bodySystem": ["type": "string"],
-                                "isPrimary": ["type": "boolean"], "reason": ["type": "string"],
+            let group = object(["name": ["type": "string", "minLength": 1, "maxLength": 80], "bodySystem": bodySystem,
+                                "isPrimary": ["type": "boolean"], "reason": ["type": "string", "minLength": 1, "maxLength": 300],
                                 "entryIDs": ["type": "array", "items": ["type": "string"]]])
             return strict("health_condition_organization", object([
                 "groups": ["type": "array", "items": group],
                 "unassigned": ["type": "array", "items": ["type": "string"]]
             ]))
         case "condition-context-recovery":
-            let link = object(["name": ["type": "string"], "bodySystem": ["type": "string"],
+            let link = object(["name": ["type": "string"], "bodySystem": bodySystem,
                                "entryID": ["type": "string"], "reason": ["type": "string"]])
             return strict("health_condition_context_recovery", object([
                 "links": ["type": "array", "items": link],
                 "unassigned": ["type": "array", "items": ["type": "string"]]
             ]))
         case "condition-verification":
-            let decision = object(["name": ["type": "string"], "bodySystem": ["type": "string"],
+            let decision = object(["name": ["type": "string"], "bodySystem": bodySystem,
                                    "nameSupported": ["type": "boolean"],
                                    "supportedEntryIDs": ["type": "array", "items": ["type": "string"]],
                                    "reason": ["type": "string"]])

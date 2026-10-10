@@ -556,21 +556,24 @@ public actor SessionStore {
 
     public func verifiedPairDecision(_ key: String) throws -> Bool? { try loadEnvelope().verifiedPairDecisions[key] }
 
-    public func saveVerifiedPairDecision(_ key: String, equivalent: Bool, root: HealthFact, other: HealthFact) throws {
+    @discardableResult
+    public func saveVerifiedPairDecision(_ key: String, equivalent: Bool, root: HealthFact, other: HealthFact) throws -> HealthCombinationUndo? {
         var env = try loadEnvelope()
         let snapshot = HealthMemorySnapshot(sessions: env.sessions, preferences: env.preferences)
         let facts = HealthMemoryProjection.facts(in: snapshot, verifiedOnly: true)
         guard let a = facts.first(where: { $0.id == root.id }), let b = facts.first(where: { $0.id == other.id }),
               a.revision == root.revision, b.revision == other.revision,
-              (a.occurrences + b.occurrences).allSatisfy({ $0.evidence?.combinationExcluded != true }) else { return }
+              (a.occurrences + b.occurrences).allSatisfy({ $0.evidence?.combinationExcluded != true }) else { return nil }
+        var undo: HealthCombinationUndo?
         if equivalent {
             // Reuse the patient-preference guards and preserve every original occurrence.
             // A conflict is a valid reason to retain separate cards, not to retry the model forever.
-            _ = try? combineHealthFacts(keeping: a.id, duplicateID: b.id)
+            undo = try? combineHealthFacts(keeping: a.id, duplicateID: b.id)
             env = try loadEnvelope()
         }
         env.verifiedPairDecisions[key] = equivalent
         try saveEnvelope(env)
+        return undo
     }
 
     /// A durable run token prevents stale or overlapping extraction from publishing.

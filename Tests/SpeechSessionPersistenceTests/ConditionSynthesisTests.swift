@@ -2,6 +2,34 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class ConditionSynthesisTests: XCTestCase {
+    func testEachOccurrenceKeepsItsOwnStatusThroughGroupingAndVerification() async throws {
+        var past = SummaryEntry(category: .carePlan, title: "Prior treatment", details: "Previously tried for the concern.")
+        past.clinicalStatus = .past
+        past.evidence = ClinicalEvidence()
+        past.evidence?.statusExplicit = true
+        past.evidence?.actionKind = "treatment_received"
+        var current = past
+        current.id = UUID()
+        current.clinicalStatus = .current
+        let facts = [HealthFact(id: "synthetic", occurrences: [past, current], preference: .init(id: "synthetic"), topicIDs: [])]
+        let input = try JSONSerialization.jsonObject(with: Data(ConditionSynthesis.input(facts).utf8)) as! [String: Any]
+        let entries = input["entries"] as! [[String: Any]]
+        XCTAssertEqual(entries.first { $0["id"] as? String == past.id.uuidString }?["status"] as? String, "past")
+        XCTAssertEqual(entries.first { $0["id"] as? String == current.id.uuidString }?["status"] as? String, "current")
+        let proposal = ConditionSynthesis(groups: [.init(name: "Reported concern", bodySystem: "unknown", isPrimary: false,
+            reason: "Explicit relationship", entryIDs: [past.id, current.id])], unassigned: [])
+        _ = try await ConditionSynthesis.verified(proposal, facts: facts) { payload in
+            let object = try JSONSerialization.jsonObject(with: Data(payload.utf8)) as! [String: Any]
+            let rows = (object["groups"] as! [[String: Any]])[0]["entries"] as! [[String: Any]]
+            let historical = try XCTUnwrap(rows.first { $0["id"] as? String == past.id.uuidString })
+            XCTAssertEqual(historical["status"] as? String, "past")
+            XCTAssertEqual(historical["statusExplicit"] as? Bool, true)
+            XCTAssertEqual(historical["actionKind"] as? String, "treatment_received")
+            return """
+            {"decisions":[{"name":"Reported concern","bodySystem":"unknown","nameSupported":true,"supportedEntryIDs":["\(past.id)","\(current.id)"],"reason":"Explicit relationship"}]}
+            """
+        }
+    }
     func testLegacyCompletedCacheMigratesWithoutInference() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -471,6 +499,38 @@ final class ConditionSynthesisTests: XCTestCase {
         let portions = try ConditionSynthesis.batches([combined])
         XCTAssertEqual(portions.count, 3)
         XCTAssertEqual(portions.flatMap { $0 }.flatMap(\.occurrences).count, 130)
+    }
+
+    func testRecordBatchesPreserveProvenanceCoverageAndBounds() throws {
+        let sources = [UUID(), UUID()]
+        var shared = fact("Shared concern across encounters")
+        shared.occurrences = (0..<8).map { index in
+            var entry = SummaryEntry(category: .symptoms, title: "Concern \(index)")
+            entry.sourceSessionID = sources[index % 2]
+            return entry
+        }
+        var legacy = fact("No source metadata")
+        legacy.occurrences[0].sourceSessionID = nil
+        let facts = [shared, legacy]
+        let portions = try ConditionSynthesis.batches(facts, entryLimit: 3, groupBySourceRecord: true)
+        XCTAssertEqual(portions.count, 5)
+        XCTAssertEqual(Set(portions.flatMap { $0 }.flatMap(\.occurrences).map(\.id)),
+                       Set(facts.flatMap(\.occurrences).map(\.id)))
+        XCTAssertEqual(portions.flatMap { $0 }.flatMap(\.occurrences).count, 9)
+        for portion in portions {
+            XCTAssertLessThanOrEqual(portion.flatMap(\.occurrences).count, 3)
+            XCTAssertEqual(Set(portion.flatMap(\.occurrences).map(\.sourceSessionID)).count, 1)
+            XCTAssertLessThanOrEqual(try ConditionSynthesis.input(portion).utf8.count, 60_000)
+        }
+        shared.occurrences.reverse()
+        let reversed = try ConditionSynthesis.batches([legacy, shared], entryLimit: 3, groupBySourceRecord: true)
+        XCTAssertEqual(portions.map { $0.flatMap(\.occurrences).map(\.id) },
+                       reversed.map { $0.flatMap(\.occurrences).map(\.id) })
+        let windows = Dictionary(uniqueKeysWithValues: shared.occurrences.map { ($0.id, [String(repeating: "Source text. ", count: 160)]) })
+        let bounded = try ConditionSynthesis.batches([shared], byteLimit: 4_000, sourceWindows: windows, groupBySourceRecord: true)
+        XCTAssertEqual(bounded.flatMap { $0 }.flatMap(\.occurrences).count, 8)
+        XCTAssertTrue(try bounded.allSatisfy { try ConditionSynthesis.input($0, sourceWindows: windows).utf8.count <= 4_000 })
+        XCTAssertThrowsError(try ConditionSynthesis.batches([shared], byteLimit: 1_000, sourceWindows: windows, groupBySourceRecord: true))
     }
 
     func testBatchFailureNeverReturnsPartialOrganization() async throws {

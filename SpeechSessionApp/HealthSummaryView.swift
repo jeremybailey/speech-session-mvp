@@ -50,12 +50,12 @@ struct HealthSummaryView: View {
     @AppStorage("speechSession.pendingSummaryJob") private var pendingSummaryJob = ""
 
     private var showingStoryPlaceholder: Bool {
-        if !model.hasLoaded { return true }
-        return model.needsConditionOrganization && model.conditionNotice == nil
-            && model.processingIssue == nil && model.error == nil
-            && backend != "onDevice" && cloudConsent
-            && (model.isProcessing || isLaunchingPreparation
-                || (pendingCount == 0 && !attemptedRepair.contains("conditions:" + ConditionSynthesis.fingerprint(model.facts))))
+        SummaryStoryLoadingPolicy.showsPlaceholder(
+            hasLoaded: model.hasLoaded,
+            needsConditionOrganization: model.needsConditionOrganization,
+            isWorking: model.isProcessing || isLaunchingPreparation,
+            hasFailure: model.conditionNotice != nil || model.processingIssue != nil || model.error != nil
+        )
     }
 
     private var launchingProgressTitle: String {
@@ -89,7 +89,7 @@ struct HealthSummaryView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            if model.undoCombination != nil {
+            if model.undoCombination != nil || !model.contactReviewUndos.isEmpty {
                 Section { Button("Undo combination", systemImage: "arrow.uturn.backward") { Task { await model.undoCombine() } } }
             }
             if model.undoRemoval != nil {
@@ -162,10 +162,13 @@ struct HealthSummaryView: View {
             if let notice = model.conditionNotice {
                 Section {
                     Text(notice).foregroundStyle(.secondary)
-                    Button("Organize conditions", systemImage: "square.grid.2x2") {
-                        conditionsOnlyRequest = true
-                        prepare()
-                    }.disabled(model.isProcessing || backend == "onDevice")
+                    organizeConditionsButton
+                }
+            } else if model.needsConditionOrganization && !model.isProcessing && !isLaunchingPreparation {
+                Section {
+                    Text("Your saved details are ready to organize into conditions.")
+                        .foregroundStyle(.secondary)
+                    organizeConditionsButton
                 }
             }
             conditionSections
@@ -176,13 +179,17 @@ struct HealthSummaryView: View {
                     ForEach(categories, id: \.self) { category in
                         let facts = categoryFacts[category] ?? []
                         let members = category == .practitionerContact ? model.snapshot.careTeam : []
+                        let contactGroups = ContactPresentationGroup.groups(facts: facts, members: members)
                         DisclosureGroup(isExpanded: Binding(
                             get: { expanded.contains(category.rawValue) },
                             set: { if $0 { expanded.insert(category.rawValue) } else { expanded.remove(category.rawValue) } }
                         )) {
-                            ForEach(facts) { fact in factRow(fact) }
-                            ForEach(members) { member in
-                                contactRow(member)
+                            if category == .practitionerContact {
+                                ForEach(contactGroups) { group in
+                                    contactGroupRow(group)
+                                }
+                            } else {
+                                ForEach(facts) { fact in factRow(fact) }
                             }
                             if facts.isEmpty && members.isEmpty {
                                 Text("No details yet").foregroundStyle(.secondary)
@@ -191,7 +198,7 @@ struct HealthSummaryView: View {
                                 taskSheet = category == .practitionerContact ? .contact(.init()) : .add(category)
                             }.frame(minHeight: 44)
                         } label: {
-                            categoryLabel(category.displayTitle, count: facts.count + members.count)
+                            categoryLabel(category.displayTitle, count: category == .practitionerContact ? contactGroups.count : facts.count)
                         }.id(category.rawValue)
                     }
                     } label: {
@@ -487,6 +494,13 @@ struct HealthSummaryView: View {
         }
     }
 
+    private var organizeConditionsButton: some View {
+        Button("Organize conditions", systemImage: "square.grid.2x2") {
+            conditionsOnlyRequest = true
+            prepare()
+        }.disabled(model.isProcessing || isLaunchingPreparation || model.isTransferringData || backend == "onDevice")
+    }
+
     @ViewBuilder private var conditionSections: some View {
         let conditions = ConditionSummaryProjection.groups(facts: model.conditionFacts, topics: model.snapshot.topics)
         if conditions.filter({ !$0.isUncategorized }).isEmpty {
@@ -501,9 +515,9 @@ struct HealthSummaryView: View {
                 NavigationLink(value: area.id) {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: area.id.symbol)
-                            .font(.title2).foregroundStyle(.blue)
+                            .font(.title2).foregroundStyle(BrandPalette.icon)
                             .frame(width: 40, height: 40)
-                            .background(.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                            .background(BrandPalette.conditionIconBackground, in: RoundedRectangle(cornerRadius: 10))
                             .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(area.id.title).font(.headline).foregroundStyle(.primary)
@@ -545,6 +559,27 @@ struct HealthSummaryView: View {
                 } label: {
                     categoryLabel(category.displayTitle, count: rows.count)
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func contactGroupRow(_ group: ContactPresentationGroup) -> some View {
+        if group.count == 1 {
+            ForEach(group.facts) { fact in factRow(fact) }
+            ForEach(group.members) { member in contactRow(member) }
+        } else {
+            DisclosureGroup {
+                Text("These entries share a name. Their details and original records are kept separately below.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                ForEach(group.facts) { fact in factRow(fact) }
+                ForEach(group.members) { member in contactRow(member) }
+            } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(group.title).font(.headline).foregroundStyle(.primary)
+                    Text("\(group.count) saved entries · View details")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }.padding(.vertical, 8)
             }
         }
     }

@@ -45,7 +45,7 @@ final class HealthSummaryModel: ObservableObject {
         snapshot = HealthMemorySnapshot(); facts = []; conditionFacts = []
         overview = nil; overviewNotice = nil; overviewCheckerExplanation = nil
         conditionNotice = nil; needsConditionOrganization = false
-        undoCombination = nil; undoRemoval = nil; retryRecordIDs = []
+        undoCombination = nil; contactReviewUndos = []; undoRemoval = nil; retryRecordIDs = []
         processingIssue = nil; error = nil
         await refresh()
     }
@@ -58,6 +58,7 @@ final class HealthSummaryModel: ObservableObject {
     @Published private(set) var overviewNotice: String?
     @Published private(set) var overviewCheckerExplanation: String?
     @Published private(set) var undoCombination: HealthCombinationUndo?
+    @Published private(set) var contactReviewUndos: [HealthCombinationUndo] = []
     @Published private(set) var undoRemoval: HealthFactPreference?
     @Published private(set) var isProcessing = false
     @Published private(set) var progress = ""
@@ -167,9 +168,12 @@ final class HealthSummaryModel: ObservableObject {
     }
 
     func undoCombine() async {
-        guard let undoCombination else { return }
-        do { try await store.undoHealthCombination(undoCombination); self.undoCombination = nil; await refresh() }
-        catch { self.error = "Could not undo the combination. Please try again." }
+        guard let undo = undoCombination ?? contactReviewUndos.last else { return }
+        do {
+            try await store.undoHealthCombination(undo)
+            if undoCombination != nil { undoCombination = nil } else { contactReviewUndos.removeLast() }
+            await refresh()
+        } catch { self.error = "Could not undo the combination. Please try again." }
     }
 
     func save(_ preference: HealthFactPreference) async -> Bool {
@@ -292,7 +296,7 @@ final class HealthSummaryModel: ObservableObject {
         }
     }
 
-    private func synthesizeAcceptedConditions(transport: OpenAIChatTransport?, onDevice: Bool) async {
+    private func synthesizeAcceptedConditions(transport: OpenAIChatTransport?, onDevice: Bool, reviewContacts: Bool = true) async {
         guard !facts.isEmpty, !Task.isCancelled else { return }
         guard !onDevice else {
             conditionNotice = "Whole-history condition organization uses cloud processing. Your on-device details remain available."
@@ -300,6 +304,14 @@ final class HealthSummaryModel: ObservableObject {
         }
         progress = "Organizing your conditions…"
         do {
+            if reviewContacts {
+                progress = "Checking repeated contacts…"
+                try await processor.reconcileContacts(store: store, transport: transport, onDevice: onDevice) { undo in
+                    await MainActor.run { self.contactReviewUndos.append(undo) }
+                }
+                await refresh()
+            }
+            progress = "Organizing your conditions…"
             let accepted = facts
             let cached = await store.conditionSynthesis(for: accepted)
             if cached == nil {
@@ -386,12 +398,29 @@ final class HealthSummaryModel: ObservableObject {
             }
         } catch is CancellationError { return }
         catch { self.error = error.localizedDescription; return }
+        var contactReviewAttempted = false
         if !overviewOnly && !Task.isCancelled && (!pending.isEmpty || retryUnfinished) {
             progressTitle = "Finishing health details"
             progressCurrent = 0
             progressTotal = 0
             progressValue = 0
             progressShowsRecordCount = false
+            // Contact identity is part of finishing records, even when the user
+            // explicitly skips condition organization (Reprocess health details).
+            contactReviewAttempted = true
+            progress = "Checking repeated contacts…"
+            do {
+                try await processor.reconcileContacts(store: store, transport: transport, onDevice: onDevice) { undo in
+                    await MainActor.run { self.contactReviewUndos.append(undo) }
+                }
+                await refresh()
+            } catch is CancellationError { await refresh(); return }
+            catch {
+                await refresh()
+                if failures.isEmpty {
+                    processingIssue = SummaryProcessingIssue(error: error, session: nil, completed: completed, remaining: retryRecordIDs.count)
+                }
+            }
             progress = "Checking related symptoms…"
             do {
                 try await processor.reconcileSymptoms(store: store, transport: transport, onDevice: onDevice, force: forceAll || forceSessionID != nil)
@@ -400,7 +429,7 @@ final class HealthSummaryModel: ObservableObject {
             catch { if failures.isEmpty { processingIssue = SummaryProcessingIssue(error: error, session: nil, completed: completed, remaining: retryRecordIDs.count) } }
         }
         if organizeConditionsAfterRecords && !onDevice {
-            await synthesizeAcceptedConditions(transport: transport, onDevice: onDevice)
+            await synthesizeAcceptedConditions(transport: transport, onDevice: onDevice, reviewContacts: !contactReviewAttempted)
         }
         if !Task.isCancelled, !facts.isEmpty, overview == nil, overviewNotice == nil {
             // Finish and expose the durable structured result before starting an
@@ -741,6 +770,50 @@ actor RecordSummaryProcessor {
         return results.flatMap { $0 }
     }
 
+    func reconcileContacts(store: SessionStore, transport: OpenAIChatTransport?, onDevice: Bool,
+                           didCombine: (HealthCombinationUndo) async -> Void) async throws {
+        guard !onDevice else { return }
+        let initial = try await store.healthSnapshot()
+        let contacts = HealthMemoryProjection.facts(in: initial).filter { $0.category == .practitionerContact }
+        let buckets = Dictionary(grouping: contacts, by: ContactIdentityReview.candidateName)
+        var requests = 0
+        for name in buckets.keys.sorted() where !name.isEmpty {
+            let ids = buckets[name]!.sorted { $0.id < $1.id }.map(\.id)
+            for i in ids.indices {
+                for j in ids.indices where j > i {
+                    try Task.checkCancellation()
+                    let snapshot = try await store.healthSnapshot()
+                    let facts = HealthMemoryProjection.facts(in: snapshot)
+                    guard let root = facts.first(where: { $0.id == ids[i] }),
+                          let other = facts.first(where: { $0.id == ids[j] }),
+                          (root.occurrences + other.occurrences).allSatisfy({ $0.evidence?.combinationExcluded != true }),
+                          let input = try ContactIdentityReview.input(root, other, sessions: snapshot.sessions) else { continue }
+                    let key = SummaryVerification.hash("contact-identity-v1|" + input)
+                    if let cached = try await store.verifiedPairDecision(key) {
+                        // A still-valid decision may outlive the display grouping.
+                        // Reapply through current revision and patient-choice guards.
+                        if cached, let undo = try await store.saveVerifiedPairDecision(key, equivalent: true, root: root, other: other) {
+                            await didCombine(undo)
+                        }
+                        continue
+                    }
+                    guard requests < 64 else {
+                        throw SummaryProcessingError.unavailable("Contact review paused after this batch. Organize conditions again to continue; your saved details are unchanged.")
+                    }
+                    requests += 1
+                    let accepted = try await ContactIdentityReview.review(input: input) { instructions, input in
+                        try await self.request(stage: "duplicates", system: instructions, user: input,
+                            transport: transport, onDevice: false)
+                    }
+                    try Task.checkCancellation()
+                    if let undo = try await store.saveVerifiedPairDecision(key, equivalent: accepted, root: root, other: other) {
+                        await didCombine(undo)
+                    }
+                }
+            }
+        }
+    }
+
     /// Semantic candidates are indexed; clinical-event categories retain their stricter existing matching rules.
     func reconcileSymptoms(store: SessionStore, transport: OpenAIChatTransport?, onDevice: Bool, force: Bool) async throws {
         let snapshot = try await store.healthSnapshot()
@@ -885,9 +958,60 @@ actor RecordSummaryProcessor {
             for index in checks.indices {
                 checks[index].citations.removeAll { SummaryVerification.matchingCitation($0.excerpt, source: session.transcript) == nil }
             }
+            let citationCandidates = batch.filter { entry in
+                !SummaryVerification.citationRepairFields(entry, check: checks.first { $0.id == entry.id }, source: source).isEmpty
+            }
+            var citationRepairs: [SummaryCheck] = []
+            if !onDevice, !citationCandidates.isEmpty {
+                do {
+                    let repairRaw = try await request(stage: "checking",
+                        system: SummarySourceCheck.citationRepairInstructions(count: citationCandidates.count, contactName: contactName),
+                        user: SummarySourceCheck.citationRepairInput(citationCandidates, checks: checks, source: source),
+                        transport: transport, onDevice: false, expectedCheckIDs: citationCandidates.map(\.id))
+                    guard let object = try JSONSerialization.jsonObject(with: Data(repairRaw.utf8)) as? [String: Any] else { throw invalidResponse }
+                    citationRepairs = try SummaryResponseError.decodeKeyedChecks(object["decisions"], expectedIDs: citationCandidates.map(\.id))
+                    for index in citationRepairs.indices {
+                        citationRepairs[index].citations.removeAll { SummaryVerification.matchingCitation($0.excerpt, source: session.transcript) == nil }
+                    }
+                } catch {
+                    try Task.checkCancellation()
+                    // One optional repair attempt. Failure keeps the original hidden
+                    // result; it cannot discard accepted facts or start a retry loop.
+                    if error is CancellationError { throw error }
+                }
+            }
+            let typeCandidates = batch.compactMap { entry in
+                SummaryVerification.statementTypeRepairCandidate(entry, check: checks.first { $0.id == entry.id }, source: source)
+            }
+            var typeRepairs: [UUID: SummaryEntry] = [:]
+            if !onDevice, !typeCandidates.isEmpty {
+                do {
+                    let repairRaw = try await request(stage: "checking",
+                        system: SummarySourceCheck.instructions(count: typeCandidates.count, contactName: contactName),
+                        user: SummarySourceCheck.input(typeCandidates, source: source),
+                        transport: transport, onDevice: false, expectedCheckIDs: typeCandidates.map(\.id))
+                    guard let object = try JSONSerialization.jsonObject(with: Data(repairRaw.utf8)) as? [String: Any] else { throw invalidResponse }
+                    var repairedChecks = try SummaryResponseError.decodeKeyedChecks(object["decisions"], expectedIDs: typeCandidates.map(\.id))
+                    for index in repairedChecks.indices {
+                        repairedChecks[index].citations.removeAll { SummaryVerification.matchingCitation($0.excerpt, source: session.transcript) == nil }
+                    }
+                    for candidate in typeCandidates {
+                        let repaired = SummaryVerification.assess(candidate, check: repairedChecks.first { $0.id == candidate.id }, source: source)
+                        if repaired.evidence?.assessment?.admission == .supported { typeRepairs[candidate.id] = repaired }
+                    }
+                } catch {
+                    try Task.checkCancellation()
+                    if error is CancellationError { throw error }
+                    // A failed optional recheck retains the original hidden result.
+                }
+            }
             for entry in batch {
                 // Citations are validated against the supplied window and stamped with the complete source hash.
                 var checked = SummaryVerification.assess(entry, check: checks.first { $0.id == entry.id }, source: source)
+                if let repair = citationRepairs.first(where: { $0.id == entry.id }) {
+                    checked = SummaryVerification.assessCitationRepair(entry, original: checks.first { $0.id == entry.id }, repair: repair, source: source)
+                }
+                if let repaired = typeRepairs[entry.id] { checked = repaired }
                 checked.evidence?.assessment?.sourceHash = SummaryVerification.hash(session.transcript)
                 // A rejected or uncited assertion remains source-only. Shared words
                 // cannot establish clinical meaning or override the independent check.
@@ -1067,11 +1191,13 @@ actor RecordSummaryProcessor {
         // New clinical policy stays behind the budgeted pilot gate until paid
         // quality evaluation passes. Accepted caches above remain valid on upgrade.
         if transport?.durableJobsURL != nil {
+            let sourceSessions = try await store?.healthSnapshot().sessions ?? []
+            let sourceWindows = ConditionSourceContext.windows(facts: facts, sessions: sourceSessions, includeRecordOpening: true)
             let plan = await store?.incrementalConditionPlan(for: facts)
                 ?? ConditionSynthesis.initialIncrementalPlan(facts: facts)
             if let transport, transport.durableConditionWorkflowsURL != nil {
                 var payload = try JSONSerialization.jsonObject(with: Data(
-                    ConditionSynthesis.conditionWorkflowInput(plan: plan, facts: facts).utf8)) as! [String: Any]
+                    ConditionSynthesis.conditionWorkflowInput(plan: plan, facts: facts, sourceWindows: sourceWindows, repairRejectedHeadings: true).utf8)) as! [String: Any]
                 payload["mapping"] = ["instructions": ConditionSynthesis.incrementalInstruction,
                     "response_format": ClinicalResponseFormat.forStage("condition-synthesis")]
                 payload["verification"] = ["instructions": ConditionSynthesis.incrementalVerificationInstruction,
@@ -1085,7 +1211,7 @@ actor RecordSummaryProcessor {
                 await SummaryRequestCoordinator.shared.finishJob(jobID)
                 return result
             }
-            let result = try await ConditionSynthesis.organizeIncrementally(plan: plan, facts: facts, progress: { phase in
+            let result = try await ConditionSynthesis.organizeIncrementally(plan: plan, facts: facts, sourceWindows: sourceWindows, repairRejectedHeadings: true, progress: { phase in
                 switch phase {
                 case .groupingBatch(let current, let total):
                     await progress(ConditionProgressUpdate(message: "Updating affected details \(current) of \(total)…",
@@ -1095,7 +1221,7 @@ actor RecordSummaryProcessor {
                 case .reconcilingBatch: break
                 }
             }, mapping: { input in
-                try await checkpointedRequest(stage: "condition-synthesis", instructions: ConditionSynthesis.incrementalInstruction,
+                try await checkpointedRequest(stage: "condition-synthesis", instructions: ConditionSynthesis.mappingInstruction(for: input),
                     input: input, model: "gpt-4o-mini")
             }, verification: { input in
                 try await checkpointedRequest(stage: "condition-verification", instructions: ConditionSynthesis.incrementalVerificationInstruction,

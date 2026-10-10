@@ -19,6 +19,27 @@ final class SummaryVerificationTests: XCTestCase {
         XCTAssertEqual(Set(facts.map(\.title)), ["My concern", "Tingling in back"])
         XCTAssertFalse(SummaryVerification.isVisible(accepted, source: "Different source"))
     }
+    func testRepeatedPublicationDoesNotAccumulateVisibleGeneratedEntries() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try SessionStore(storageDirectory: dir)
+        var session = Session(transcript: source)
+        try await store.upsert(session)
+        for title in ["Tingling in back", "Back tingling with knapsack", "Back tingling with knapsack"] {
+            let run = try await store.beginSummaryRun(sessionID: session.id, expected: session)
+            let entry = supported(SummaryEntry(category: .symptoms, title: title,
+                sourceSessionID: session.id), source: source)
+            try await store.publishVerifiedSummary(expected: session, runID: run.id, entries: [entry])
+            try await store.consolidateHealthFacts()
+            let snapshot = try await store.healthSnapshot()
+            session = try XCTUnwrap(snapshot.sessions.first)
+            let visible = HealthMemoryProjection.facts(in: snapshot)
+            XCTAssertEqual(visible.count, 1)
+            XCTAssertEqual(visible.flatMap(\.occurrences).count, 1)
+            XCTAssertEqual(visible.first?.title, title)
+        }
+    }
+
     func testEveryPopulatedFieldMustHaveValidEvidence() {
         let entry = SummaryEntry(category: .medications, title: "Drug", fields: [.init(label: "Dose", value: "20 mg")])
         let partial = SummaryCheck(id: entry.id, supported: true, reason: "", citations: [.init(field: "title", excerpt: source)])

@@ -76,6 +76,107 @@ final class MedicationHistoryPresentationTests: XCTestCase {
 }
 
 final class ContactHistoryPresentationTests: XCTestCase {
+    private func pharmacy(_ id: String, source: UUID?, phone: String = "", address: String = "") -> HealthFact {
+        let entry = SummaryEntry(category: .practitionerContact, title: "Example Pharmacy",
+            details: "Mention \(id): pharmacy for listed medication fills.",
+            fields: [.init(label: "Role or specialty", value: "Dispensing pharmacy"),
+                     .init(label: "Phone", value: phone), .init(label: "Address", value: address)],
+            sourceSessionID: source)
+        return HealthFact(id: id, occurrences: [entry], preference: .init(id: id), topicIDs: [])
+    }
+    func testIdenticalCardsGroupAcrossRecordsWithoutSharedContactChannel() {
+        let a = pharmacy("a", source: UUID())
+        var b = pharmacy("b", source: UUID())
+        b.occurrences[0].details = a.latest.details
+        b.occurrences[0].fields.reverse()
+        let original = [a, b]
+        let grouped = ContactHistoryPresentation.group(original)
+        XCTAssertEqual(grouped.count, 1)
+        XCTAssertEqual(Set(grouped.flatMap(\.occurrences).map(\.id)), Set(original.flatMap(\.occurrences).map(\.id)))
+        XCTAssertEqual(Set(grouped[0].occurrences.compactMap(\.sourceSessionID)).count, 2)
+        XCTAssertEqual(ContactHistoryPresentation.group(grouped).count, 1)
+        // Pure presentation: original facts and entries still exist unchanged.
+        XCTAssertEqual(original.count, 2)
+        XCTAssertEqual(original[1].occurrences.count, 1)
+    }
+
+    func testExactGroupingAppliesWhenProjectingExistingSavedDetails() {
+        var a = pharmacy("a", source: nil).latest
+        var b = pharmacy("b", source: nil).latest
+        b.details = a.details
+        var session = Session(date: Date(), transcript: "Saved source")
+        a.sourceSessionID = session.id
+        b.sourceSessionID = session.id
+        session.summaryEntries = [a, b]
+        let snapshot = HealthMemorySnapshot(sessions: [session])
+        let facts = HealthMemoryProjection.facts(in: snapshot, verifiedOnly: false)
+        XCTAssertEqual(facts.count, 1)
+        XCTAssertEqual(Set(facts[0].occurrences.map(\.id)), Set([a.id, b.id]))
+        XCTAssertEqual(snapshot.sessions[0].summaryEntries?.count, 2)
+    }
+
+    func testExactCardsRespectConflictsAndPatientChoices() {
+        let a = pharmacy("a", source: UUID())
+        var b = pharmacy("b", source: UUID())
+        b.occurrences[0].details = a.latest.details
+        b.occurrences[0].fields.append(.init(label: "Branch ID", value: "different branch"))
+        XCTAssertEqual(ContactHistoryPresentation.group([a,b]).count, 2)
+        b.occurrences[0].fields = a.latest.fields
+        b.preference.hidden = true
+        XCTAssertEqual(ContactHistoryPresentation.group([a,b]).count, 2)
+        b.preference.hidden = false
+        b.occurrences[0].evidence = ClinicalEvidence()
+        b.occurrences[0].evidence?.combinationExcluded = true
+        XCTAssertEqual(ContactHistoryPresentation.group([a,b]).count, 2)
+        b.occurrences[0].evidence = nil
+        b.preference.clinicalStatus = .past
+        var chosen = a
+        chosen.preference.clinicalStatus = .current
+        XCTAssertEqual(ContactHistoryPresentation.group([chosen,b]).count, 2)
+    }
+
+    func testIdenticalNamesWithoutDetailsDoNotEstablishContactIdentity() {
+        var a = pharmacy("a", source: UUID())
+        var b = pharmacy("b", source: UUID())
+        a.occurrences[0].details = ""
+        b.occurrences[0].details = ""
+        a.occurrences[0].fields = []
+        b.occurrences[0].fields = []
+        XCTAssertEqual(ContactHistoryPresentation.group([a,b]).count, 2)
+    }
+
+    func testRepeatedPharmacyNeedsSourceReviewRatherThanKeywordGrouping() {
+        let source = UUID()
+        let facts = (0..<10).map { pharmacy(String($0), source: source) }
+        let grouped = ContactHistoryPresentation.group(facts)
+        XCTAssertEqual(grouped.count, 10)
+        XCTAssertEqual(Set(grouped.flatMap(\.occurrences).map(\.id)), Set(facts.flatMap(\.occurrences).map(\.id)))
+    }
+    func testBareNameAcrossRecordsOrMissingProvenanceStaysSeparate() {
+        XCTAssertEqual(ContactHistoryPresentation.group([pharmacy("a", source: UUID()), pharmacy("b", source: UUID())]).count, 2)
+        XCTAssertEqual(ContactHistoryPresentation.group([pharmacy("a", source: nil), pharmacy("b", source: nil)]).count, 2)
+    }
+    func testConflictingBranchesCannotMergeThroughIncompleteContact() {
+        let source = UUID()
+        let a = pharmacy("a", source: source, phone: "5550101", address: "10 Main St")
+        let b = pharmacy("b", source: source)
+        let c = pharmacy("c", source: source, phone: "5550102", address: "20 Main St")
+        let groups = ContactHistoryPresentation.group([a,b,c])
+        XCTAssertEqual(groups.count, 3)
+        XCTAssertFalse(groups.contains { Set($0.occurrences.map(\.id)).isSuperset(of: [a.latest.id, c.latest.id]) })
+    }
+    func testPatientSeparationAndHiddenChoicesRemainIntact() {
+        let source = UUID()
+        let a = pharmacy("a", source: source)
+        var b = pharmacy("b", source: source)
+        b.preference.hidden = true
+        XCTAssertEqual(ContactHistoryPresentation.group([a,b]).count, 2)
+        b.preference.hidden = false
+        b.occurrences[0].evidence = ClinicalEvidence()
+        b.occurrences[0].evidence?.combinationExcluded = true
+        XCTAssertEqual(ContactHistoryPresentation.group([a,b]).count, 2)
+    }
+
     func testSameProviderEnrichedAndRawContactMetadataNotRepeated() {
         func fact(_ id: String, _ address: String, _ role: String) -> HealthFact {
             let entry = SummaryEntry(category: .practitionerContact, title: "Dr. Example Person",

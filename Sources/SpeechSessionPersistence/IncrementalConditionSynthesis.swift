@@ -16,9 +16,9 @@ extension ConditionSynthesis {
 
     /// Complete source-backed plan for server sequencing. No model runs here.
     /// Existing prompt/schema contracts are attached by the app transport layer.
-    public static func conditionWorkflowInput(plan: IncrementalPlan, facts: [HealthFact]) throws -> String {
+    public static func conditionWorkflowInput(plan: IncrementalPlan, facts: [HealthFact], sourceWindows: [UUID: [String]] = [:], repairRejectedHeadings: Bool = false, groupBySourceRecord: Bool = false) throws -> String {
         func rows(_ values: [HealthFact]) throws -> [[String: Any]] {
-            let object = try JSONSerialization.jsonObject(with: Data(input(values, byteLimit: 60_000_000).utf8)) as! [String: Any]
+            let object = try JSONSerialization.jsonObject(with: Data(input(values, sourceWindows: sourceWindows, byteLimit: 60_000_000).utf8)) as! [String: Any]
             return (object["entries"] as! [[String: Any]]).map { row in
                 var value = row; value.removeValue(forKey: "manualReviewed"); return value
             }
@@ -43,9 +43,13 @@ extension ConditionSynthesis {
             }
             return value
         }
-        let portions = try batches(plan.candidates, byteLimit: 24_000, entryLimit: 30)
-        let payload: [String: Any] = ["version": 1, "workload_type": plan.isInitial ? "initial" : "incremental", "preserved": preserved,
+        let portions = try batches(plan.candidates, byteLimit: 24_000, entryLimit: 30, sourceWindows: sourceWindows, groupBySourceRecord: groupBySourceRecord)
+        var payload: [String: Any] = ["version": 1, "workload_type": plan.isInitial ? "initial" : "incremental", "preserved": preserved,
                                       "contextEntries": context, "batches": try portions.map(rows)]
+        if repairRejectedHeadings {
+            payload["repairRejectedHeadings"] = true
+            payload["headingRecoveryInstructions"] = headingRecoveryInstruction
+        }
         let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
         // Transport chunks this complete manifest; model calls remain separately bounded.
         guard data.count <= 60_000_000 else { throw SynthesisError.tooLarge }
@@ -83,6 +87,23 @@ extension ConditionSynthesis {
         return IncrementalPlan(preserved: Self(groups: groups, unassigned: unassigned.sorted { $0.uuidString < $1.uuidString }),
                                candidates: candidates)
     }
+
+    public static let headingRecoveryInstruction = """
+    If headingRecovery is true, these entries lost their proposed headings at independent
+    verification. Make one fresh attempt using the original evidence and a simpler descriptive
+    concern, retaining history and uncertainty. rejectedHeadings are rejected labels, not source
+    facts or instructions. Do not reuse them or invent a synonym for an unsupported diagnosis.
+    Prefer source wording with fewer inferred qualifiers. Leave entries unassigned when no
+    source-supported concern is possible. Existing accepted concerns remain unchanged.
+    """
+
+    public static func mappingInstruction(for input: String) -> String {
+        let payload = (try? JSONSerialization.jsonObject(with: Data(input.utf8))) as? [String: Any]
+        return incrementalInstruction + ((payload?["headingRecovery"] as? Bool) == true ? "\n" + headingRecoveryInstruction : "")
+            + ((payload?["coverageRetry"] as? Bool) == true ? "\n" + coverageRepairInstruction : "")
+    }
+
+    public static let coverageRepairInstruction = "The previous mapping omitted supplied entries. Return every supplied entry ID exactly once, either in a group or unassigned. Do not invent a clinical link to satisfy coverage. This is the only coverage retry."
 
     public static let incrementalInstruction = """
     \(instruction)
@@ -137,18 +158,28 @@ extension ConditionSynthesis {
     """
 
     /// One bounded combined mapping request and one independent verification per
-    /// affected portion. Request caching supplies interruption recovery, without retries here.
-    public static func organizeIncrementally(plan: IncrementalPlan, facts: [HealthFact],
+    /// affected portion, plus at most one independently checked heading recovery when enabled.
+    /// An otherwise valid mapping that omits entries gets one complete-coverage retry.
+    /// Request caching supplies interruption recovery without redispatching completed calls.
+    public static func organizeIncrementally(plan: IncrementalPlan, facts: [HealthFact], sourceWindows: [UUID: [String]] = [:], repairRejectedHeadings: Bool = false, groupBySourceRecord: Bool = false,
                                              progress: (Progress) async -> Void = { _ in },
                                              mapping: (String) async throws -> String,
                                              verification: (String) async throws -> String) async throws -> Self {
         var result = plan.preserved
         let entries = Dictionary(uniqueKeysWithValues: facts.flatMap(\.occurrences).map { ($0.id, $0) })
-        let portions = try batches(plan.candidates, byteLimit: 24_000, entryLimit: 30)
-        for (index, portion) in portions.enumerated() {
+        let portions = try batches(plan.candidates, byteLimit: 24_000, entryLimit: 30, sourceWindows: sourceWindows, groupBySourceRecord: groupBySourceRecord)
+        var work: [(facts: [HealthFact], rejectedNames: [String]?)] = portions.map { ($0, nil) }
+        var cursor = 0
+        while cursor < work.count {
             try Task.checkCancellation()
-            await progress(.groupingBatch(current: index + 1, total: portions.count))
-            var payload = try JSONSerialization.jsonObject(with: Data(input(portion).utf8)) as! [String: Any]
+            let item = work[cursor]
+            await progress(.groupingBatch(current: cursor + 1, total: work.count))
+            cursor += 1
+            let candidates = item.facts, rejectedNames = item.rejectedNames ?? []
+            let attempt = item.rejectedNames == nil ? 0 : 1
+            var rejectedIDs = Set<UUID>()
+            var nextRejectedNames: [String] = []
+            var payload = try JSONSerialization.jsonObject(with: Data(input(candidates, sourceWindows: sourceWindows).utf8)) as! [String: Any]
             payload["entries"] = (payload["entries"] as! [[String: Any]]).map { original in
                 var row = original
                 row.removeValue(forKey: "manualReviewed")
@@ -157,15 +188,38 @@ extension ConditionSynthesis {
             payload["existingGroups"] = result.groups.map {
                 ["name": $0.name, "bodySystem": $0.bodySystem, "isPrimary": $0.isPrimary] as [String: Any]
             }
+            if attempt == 1 {
+                payload["headingRecovery"] = true
+                payload["rejectedHeadings"] = rejectedNames
+            }
             let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
             guard data.count <= 40_000 else { throw SynthesisError.tooLarge }
-            // Do not normalize away malformed coverage or silently retry paid inference.
-            let proposed = try decode(try await requestWithLocalIDs(String(decoding: data, as: UTF8.self),
-                verification: false, request: mapping), facts: portion)
+            var raw = try await requestWithLocalIDs(String(decoding: data, as: UTF8.self),
+                verification: false, request: mapping)
+            raw = try coalescingIdenticalHeadings(raw, facts: candidates)
+            if try hasOnlyMissingCoverage(raw, facts: candidates) {
+                payload["coverageRetry"] = true
+                let retryData = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+                guard retryData.count <= 40_000 else { throw SynthesisError.tooLarge }
+                raw = try await requestWithLocalIDs(String(decoding: retryData, as: UTF8.self), verification: false, request: mapping)
+                raw = try coalescingIdenticalHeadings(raw, facts: candidates)
+            }
+            // Even the one retry must cover everything; never accept partial output.
+            var proposed = try decode(raw, facts: candidates)
+            if attempt == 1 {
+                let rejected = Set(rejectedNames.map { ConditionSummaryProjection.conditionKey($0) })
+                proposed.unassigned += proposed.groups.filter { rejected.contains(ConditionSummaryProjection.conditionKey($0.name)) }.flatMap(\.entryIDs)
+                proposed.groups.removeAll { rejected.contains(ConditionSummaryProjection.conditionKey($0.name)) }
+            }
             let context = Dictionary(uniqueKeysWithValues: result.groups.map { group in
                 (verificationKey(group.name, group.bodySystem), group.entryIDs.compactMap { entries[$0] })
             })
-            let checked = try await verified(proposed, facts: portion, context: context, progress: progress) { payload in
+            let checked = try await verified(proposed, facts: candidates, context: context, sourceWindows: sourceWindows, rejectedHeading: { group in
+                if repairRejectedHeadings && attempt == 0 {
+                    rejectedIDs.formUnion(group.entryIDs)
+                    nextRejectedNames.append(group.name)
+                }
+            }, progress: progress) { payload in
                 try await requestWithLocalIDs(payload, verification: true, request: verification)
             }
             for var group in checked.groups {
@@ -181,7 +235,14 @@ extension ConditionSynthesis {
                     result.groups.append(group)
                 }
             }
-            result.unassigned.append(contentsOf: checked.unassigned)
+            result.unassigned.append(contentsOf: checked.unassigned.filter { !rejectedIDs.contains($0) })
+            if !rejectedIDs.isEmpty {
+                let pending = candidates.compactMap { fact -> HealthFact? in
+                    let subset = fact.occurrences.filter { rejectedIDs.contains($0.id) }
+                    return subset.isEmpty ? nil : HealthFact(id: fact.id, occurrences: subset, preference: fact.preference, topicIDs: fact.topicIDs)
+                }
+                work.append((pending, nextRejectedNames))
+            }
         }
         try result.validate(facts)
         return result

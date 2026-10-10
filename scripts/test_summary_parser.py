@@ -52,6 +52,33 @@ assert(shown.contains { $0.label == "Reported by" && $0.value == "Nurse" })
 assert(shown.contains { $0.label == "Statement status" && $0.value == "Planned" })
 assert(shown.contains { $0.label == "Statement type" && $0.value == "Follow-up" })
 assert(entry.evidence?.statusExplicit == false && entry.evidence?.actionKind == "follow_up")
+// A boolean alone cannot turn a default current status into a source claim.
+for status in ["Planned", "Uncertain", ""] {
+    let raw = "{\"treatmentPlan\":[{\"title\":\"Optional review\",\"details\":\"Consider review if needed.\",\"statementStatus\":\"" + status + "\",\"statusExplicit\":true}]}"
+    let parsed = VisitSummaryJSONParser.fields(fromAssistantContent: raw)!
+    let item = SummaryEntryFactory.entries(from: parsed, session: session).first!
+    assert(item.evidence?.statusExplicit == false)
+    assert(!SummaryVerification.requiredFields(item).contains("clinicalStatus"))
+}
+let historical = VisitSummaryJSONParser.fields(fromAssistantContent: #"{"treatmentPlan":[{"title":"Counselling provided","details":"Counselling was provided at the prior visit.","statementStatus":"Historical","statusExplicit":true}]}"#)!
+let historicalEntry = SummaryEntryFactory.entries(from: historical, session: session).first!
+assert(historicalEntry.clinicalStatus == .past && historicalEntry.evidence?.statusExplicit == true)
+// Exercise the strict extraction format used by the cloud pipeline, including
+// statusExplicit inside attributes, persistence, and the independent checker.
+let strictHistorical = #"{"title":"Prior counselling","facts":[{"category":"carePlan","title":"Counselling provided","details":"Counselling was provided at the prior visit.","sourceExcerpt":"Counselling was provided at the prior visit.","reportedBy":"Clinician","statementType":"Education","statementStatus":"Historical","attributes":[{"name":"statusExplicit","value":true}]}]}"#
+let strictHistoricalEntry = SummaryEntryFactory.entries(from: VisitSummaryJSONParser.fields(fromAssistantContent: strictHistorical)!, session: session).first!
+assert(strictHistoricalEntry.clinicalStatus == .past)
+assert(strictHistoricalEntry.evidence?.statusExplicit == true)
+assert(SummaryVerification.requiredFields(strictHistoricalEntry).contains("clinicalStatus"))
+let persistedHistorical = try JSONDecoder().decode(SummaryEntry.self, from: JSONEncoder().encode(strictHistoricalEntry))
+assert(persistedHistorical.clinicalStatus == .past)
+let historicalCheckInput = try SummarySourceCheck.input([persistedHistorical], source: session.transcript)
+assert(historicalCheckInput.contains("past") && historicalCheckInput.contains("Historical"))
+let conflicting = VisitSummaryJSONParser.fields(fromAssistantContent: #"{"treatmentPlan":[{"title":"Review","details":"A review.","clinicalStatus":"current","statementStatus":"Historical","statusExplicit":true}]}"#)!
+let conflictingEntry = SummaryEntryFactory.entries(from: conflicting, session: session).first!
+assert(conflictingEntry.clinicalStatus == .current)
+assert(conflictingEntry.fields.contains { $0.label == "Statement status" && $0.value == "Historical" })
+// Explicit conflicting claims remain visible to the checker rather than silently reconciled.
 assert(entry.evidence?.careInstruction?.isRecurring == nil)
 let required = SummaryVerification.requiredFields(entry)
 assert(required.contains("field:Reported by") && required.contains("field:Statement status"))

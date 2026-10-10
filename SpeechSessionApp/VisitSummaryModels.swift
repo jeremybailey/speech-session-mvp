@@ -1046,9 +1046,15 @@ enum VisitSummaryJSONParser {
             details = [details, medicationDetails].filter { !$0.isEmpty }.joined(separator: "; ")
         }
 
-        let status = SummaryEntryClinicalStatus.parse(
+        let explicitStatus = SummaryEntryClinicalStatus.parse(
             string(for: ["clinicalStatus", "clinical_status", "status"])
         )
+        // The statement axis can explicitly establish current/past without a
+        // separate clinicalStatus attribute. Planned/uncertain do not imply current.
+        let statementStatus = string(for: ["statementStatus"])?.lowercased()
+        let statementClinicalStatus: SummaryEntryClinicalStatus? = statementStatus == "historical" ? .past
+            : (statementStatus == "current" ? .current : nil)
+        let status = explicitStatus ?? statementClinicalStatus
         let factKey = SummaryEntry.normalizedFactKey(
             string(for: ["factKey", "fact_key", "key"])
         ) ?? SummaryEntry.normalizedFactKey(title)
@@ -1078,7 +1084,7 @@ enum VisitSummaryJSONParser {
         evidence.reasonStarted = string(for: ["reasonStarted"])
         evidence.reasonStopped = string(for: ["reasonStopped"])
         evidence.actionKind = string(for: ["actionKind"])
-        evidence.statusExplicit = dict["statusExplicit"] as? Bool
+        evidence.statusExplicit = status == nil ? false : (dict["statusExplicit"] as? Bool)
         evidence.reviewReason = string(for: ["reviewReason"])
 
         return VisitSummaryFact(

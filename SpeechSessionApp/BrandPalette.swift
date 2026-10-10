@@ -12,6 +12,10 @@ enum BrandPalette {
     /// Primary actions (FAB, tint-aligned controls). Uses the app’s accent color.
     static var brand: Color { Color.accentColor }
 
+    /// Brand artwork uses the named asset, independent of inherited control tint.
+    static var icon: Color { Color("AccentColor") }
+    static var conditionIconBackground: Color { Color(red: 1, green: 244.0 / 255, blue: 223.0 / 255) }
+
     // MARK: System UI colors (dynamic)
 
     static var systemBlue: Color { Color(uiColor: .systemBlue) }

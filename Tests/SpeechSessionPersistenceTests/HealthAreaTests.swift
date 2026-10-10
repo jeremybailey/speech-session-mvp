@@ -48,8 +48,10 @@ final class HealthAreaTests: XCTestCase {
         XCTAssertEqual(HealthAreaProjection.groups(input).map(\.preview), areas.map(\.preview))
     }
 
-    func testPregnancyRequiresExplicitWordInConditionName() {
-        XCTAssertEqual(HealthAreaKind.classify(condition("Reflux during pregnancy", "digestive")), .pregnancy)
+    func testPregnancyContextDoesNotOverrideSpecificBodySystem() {
+        XCTAssertEqual(HealthAreaKind.classify(condition("Reflux during pregnancy", "digestive")), .digestive)
+        XCTAssertEqual(HealthAreaKind.classify(condition("Stress and overwhelm during pregnancy", "mental")), .mental)
+        XCTAssertEqual(HealthAreaKind.classify(condition("Pelvic pain during pregnancy", "musculoskeletal")), .movement)
         XCTAssertEqual(HealthAreaKind.classify(condition("Pregnancy-related care", "reproductive")), .pregnancy)
         XCTAssertEqual(HealthAreaKind.classify(condition("Currently pregnant", "unknown")), .pregnancy)
         XCTAssertEqual(HealthAreaKind.classify(condition("Reflux", "digestive")), .digestive)

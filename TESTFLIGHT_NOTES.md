@@ -1,5 +1,31 @@
 # CollectiveCare TestFlight Notes
 
+## Version 1.0993 (10) — Contact grouping and processing fixes
+
+Release preparation October 10, 2026. Jeremy rebuilt and verified the latest contact
+presentation on his own records. Upload and tester availability pending.
+
+Care team & contacts now presents same-name entries under one expandable heading,
+retaining independently editable details, differing addresses, and original sources.
+Exact duplicate cards group on load; source-backed contact identity review also runs
+after record processing. Existing records benefit from the new presentation without
+regenerating conditions. Explicit separation and patient choices remain respected.
+
+This client build also includes the historical-status parsing fix, source-check
+repair safeguards, condition source-context improvements, a loading placeholder that
+only appears during active work, and red condition icons on cream backgrounds.
+Category icons under All retain their original colors. Server model settings and
+the shared spending cap are unchanged by this release.
+
+Validation: 340 Swift tests, two optional skips, no failures; simulator build passed.
+Private export replay preserved every source occurrence in the two reported contact
+pairs. This is not a new full clinical-accuracy benchmark.
+
+What to test: open All → Care team & contacts, expand same-name contact groups, and
+check that distinct details and original records remain accessible. Confirm condition
+loading finishes or offers a retry, and review newly processed details against their
+originals. Known clinical accuracy limitations remain.
+
 ## Version 1.0993 (9) — Processing reliability
 
 Signed archive, App Store Connect upload, Apple processing, and export-compliance

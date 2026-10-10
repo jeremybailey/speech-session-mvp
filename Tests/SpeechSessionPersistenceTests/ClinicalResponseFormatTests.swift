@@ -2,6 +2,37 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class ClinicalResponseFormatTests: XCTestCase {
+    func testConditionContractsCannotEmitAnUnsupportedBodySystem() throws {
+        for (stage, key) in [("condition-synthesis", "groups"), ("condition-context-recovery", "links"), ("condition-verification", "decisions")] {
+            let format = ClinicalResponseFormat.forStage(stage)
+            let wrapper = try XCTUnwrap(format["json_schema"] as? [String: Any])
+            let schema = try XCTUnwrap(wrapper["schema"] as? [String: Any])
+            let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
+            let array = try XCTUnwrap(properties[key] as? [String: Any])
+            let item = try XCTUnwrap(array["items"] as? [String: Any])
+            let fields = try XCTUnwrap(item["properties"] as? [String: Any])
+            let system = try XCTUnwrap(fields["bodySystem"] as? [String: Any])
+            let allowed = try XCTUnwrap(system["enum"] as? [String])
+            XCTAssertTrue(allowed.contains("cardiovascular"))
+            XCTAssertTrue(allowed.contains("unknown"))
+            XCTAssertFalse(allowed.contains("circulatory"), "Observed invalid response must be excluded at generation")
+            XCTAssertEqual(Set(allowed), Set(ConditionSynthesis.bodySystems))
+        }
+    }
+    func testConditionMappingSchemaBoundsMatchThePersistedValidator() throws {
+        let format = ClinicalResponseFormat.forStage("condition-synthesis")
+        let wrapper = try XCTUnwrap(format["json_schema"] as? [String: Any])
+        let schema = try XCTUnwrap(wrapper["schema"] as? [String: Any])
+        let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
+        let groups = try XCTUnwrap(properties["groups"] as? [String: Any])
+        let item = try XCTUnwrap(groups["items"] as? [String: Any])
+        let fields = try XCTUnwrap(item["properties"] as? [String: Any])
+        XCTAssertEqual((fields["name"] as? [String: Any])?["maxLength"] as? Int, 80)
+        XCTAssertEqual((fields["reason"] as? [String: Any])?["maxLength"] as? Int, 300)
+        // The generator constraint must not weaken strict unknown-field rejection.
+        XCTAssertEqual(item["additionalProperties"] as? Bool, false)
+    }
+
     func testContextRecoveryUsesDedicatedStrictLinkSchema() throws {
         let format = ClinicalResponseFormat.forStage("condition-context-recovery")
         let wrapper = try XCTUnwrap(format["json_schema"] as? [String: Any])

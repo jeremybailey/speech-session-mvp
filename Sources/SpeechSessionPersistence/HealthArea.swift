@@ -45,7 +45,9 @@ public enum HealthAreaKind: String, CaseIterable, Sendable {
 
     public static func classify(_ condition: ConditionSummary) -> Self {
         let words = Set(ConditionSummaryProjection.normalized(condition.name).split(separator: " "))
-        if words.contains("pregnancy") || words.contains("pregnant") { return .pregnancy }
+        let pregnancy = words.contains("pregnancy") || words.contains("pregnant")
+        // Pregnancy context must not override an independently assigned system:
+        // for example, mood symptoms during pregnancy still belong in mental health.
         switch ConditionSummaryProjection.normalized(condition.bodySystem) {
         case "musculoskeletal": return .movement
         case "eye": return .eye
@@ -54,13 +56,13 @@ public enum HealthAreaKind: String, CaseIterable, Sendable {
         case "respiratory": return .respiratory
         case "digestive": return .digestive
         case "endocrine": return .endocrine
-        case "reproductive": return .reproductive
+        case "reproductive": return pregnancy ? .pregnancy : .reproductive
         case "urinary": return .urinary
         case "mental": return .mental
         case "skin": return .skin
         case "immune": return .immune
         case "ear": return .ear
-        default: return .other
+        default: return pregnancy ? .pregnancy : .other
         }
     }
 }

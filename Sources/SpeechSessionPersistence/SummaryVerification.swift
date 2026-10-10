@@ -57,7 +57,7 @@ public struct SummaryCheck: Codable, Sendable {
 public enum SummaryVerification {
     // New checks cannot resume chunks admitted through the old source-link fallback.
     public static let version = 21
-    public static let promptVersion = "clinical-pipeline-v3"
+    public static let promptVersion = "clinical-pipeline-v5-explicit-statement-status"
     public static func hash(_ value: String) -> String {
         var result: UInt64 = 14695981039346656037
         for byte in value.utf8 { result = (result ^ UInt64(byte)) &* 1099511628211 }
@@ -223,8 +223,7 @@ public enum SummaryVerification {
         else if !conflictingLabels.isEmpty { reason = "This detail contains conflicting values for: " + conflictingLabels.joined(separator: ", ") + "." }
         else if !validContactFields(entry) { reason = "Contact information could not be separated into valid fields." }
         else if !missing.isEmpty {
-            let labels = missing.map { $0.replacingOccurrences(of: "field:", with: "") }.joined(separator: ", ")
-            reason = "The checker considered this detail supported, but usable source evidence was missing for: \(labels). Regenerate the summary to retry."
+            reason = missingCitationReason(missing)
         } else { reason = nil }
         if entry.evidence == nil { entry.evidence = ClinicalEvidence() }
         let fingerprint = contentHash(entry)
@@ -232,6 +231,56 @@ public enum SummaryVerification {
             reason: reason ?? "Supported by original source", sourceHash: hash(source), contentHash: fingerprint, citations: valid)
         entry.evidence?.assessment?.modelSupported = check?.supported
         return entry
+    }
+
+    private static func missingCitationReason(_ fields: [String]) -> String {
+        let labels = fields.map { $0.replacingOccurrences(of: "field:", with: "") }.joined(separator: ", ")
+        return "The checker considered this detail supported, but usable source evidence was missing for: \(labels). Regenerate the summary to retry."
+    }
+
+    /// Only incomplete evidence coverage is repairable here. A rejected claim,
+    /// uncertain populated field or conflicting value requires a different review.
+    public static func citationRepairFields(_ entry: SummaryEntry, check: SummaryCheck?, source: String) -> [String] {
+        let assessed = assess(entry, check: check, source: source)
+        let valid = assessed.evidence?.assessment?.citations ?? []
+        let missing = requiredFields(entry).subtracting(coveredFields(entry, citations: valid)).sorted()
+        guard !missing.isEmpty,
+              assessed.evidence?.assessment?.reason == missingCitationReason(missing) else { return [] }
+        return missing
+    }
+
+    /// The second check must independently support the unchanged claim. New
+    /// evidence never rewrites content or overrides rejection/uncertainty.
+    public static func assessCitationRepair(_ entry: SummaryEntry, original: SummaryCheck?, repair: SummaryCheck?, source: String) -> SummaryEntry {
+        let prior = assess(entry, check: original, source: source)
+        guard !citationRepairFields(entry, check: original, source: source).isEmpty,
+              let original, var repair, repair.id == entry.id,
+              repair.supported, repair.exclusion == nil else { return prior }
+        repair.citations = Array(Set(original.citations + repair.citations))
+            .sorted { ($0.field, $0.excerpt) < ($1.field, $1.excerpt) }
+        let repaired = assess(entry, check: repair, source: source)
+        return repaired.evidence?.assessment?.admission == .supported ? repaired : prior
+    }
+
+    /// Proposes dropping only a rejected statement-type label, never clinical content.
+    /// This remains hidden until a fresh independent check supports every remaining field.
+    public static func statementTypeRepairCandidate(_ entry: SummaryEntry, check: SummaryCheck?, source: String) -> SummaryEntry? {
+        let field = "field:Statement type"
+        guard entry.origin == .generated, entry.evidence?.contactFields == nil,
+              let check, check.id == entry.id, !check.supported, check.exclusion == nil,
+              Set(check.uncertainFields ?? []) == [field],
+              entry.fields.filter({ $0.label == "Statement type" && !$0.value.isEmpty }).count == 1 else { return nil }
+        let valid = check.citations.filter { matchingCitation($0.excerpt, source: source) != nil }
+        guard requiredFields(entry).subtracting([field]).isSubset(of: coveredFields(entry, citations: valid)) else { return nil }
+        var candidate = entry
+        candidate.fields.removeAll { $0.label == "Statement type" }
+        if candidate.evidence == nil { candidate.evidence = ClinicalEvidence() }
+        candidate.evidence?.assessment = nil
+        let omitted = Array(Set((candidate.evidence?.omittedFields ?? []) + [field])).sorted()
+        candidate.evidence?.omittedFields = omitted
+        candidate.needsReview = true
+        candidate.reviewReason = "The statement type was not supported and has been left unset."
+        return candidate
     }
 
     /// Retain an explicitly verified standalone medication/contact identity, not an unsupported clinical interpretation.
