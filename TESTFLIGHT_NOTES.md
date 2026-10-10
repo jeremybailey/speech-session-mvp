@@ -2,8 +2,11 @@
 
 ## Version 1.0993 (10) — Contact grouping and processing fixes
 
-Release preparation October 10, 2026. Jeremy rebuilt and verified the latest contact
-presentation on his own records. Upload and tester availability pending.
+Signed archive and App Store Connect upload completed October 10, 2026. Apple
+accepted build 10 and reported the uploaded package is processing. Browser sign-in
+expired; processing completion, export compliance, tester assignment, and What to
+Test remain to be confirmed. Jeremy rebuilt and verified the latest contact
+presentation on his own records.
 
 Care team & contacts now presents same-name entries under one expandable heading,
 retaining independently editable details, differing addresses, and original sources.
