@@ -1,5 +1,34 @@
 # CollectiveCare TestFlight Notes
 
+## Version 1.0993 (14) — Condition recovery and regression coverage
+
+App commit: `244cfdbb7e92cdfddaf6d6cfe928205b89012571`, branch
+`codex/release-candidate-11`. Signed archive and upload completed October 12, 2026.
+Apple processing and export compliance completed; build 14 is available to the
+five-person internal CollectiveCare Founders group. What to Test is saved.
+App Store Connect build ID: `a137b44d-00b0-4828-8fff-808ef92e914b`.
+Standard-encryption/no-France answers are unchanged.
+
+The app retains build 13's continuous condition updates and explicit on-device
+opt-in. The deployed backend now recovers once from condition-checker entry-ID or
+heading mismatches using an independent constrained repair, preserving completed
+work and source occurrences. Clinical rejections remain rejections; exhausted
+repairs stop without repeated paid retries. The pilot's approved cumulative shared
+allowance is $20; the separate experiment cap is unchanged. Asha's previously
+failing condition organization has now completed, as confirmed by Jeremy.
+
+Validation: 100 offline backend tests passed; the dedicated condition recovery
+suite passed 78 tests with zero skips, including real PostgreSQL workflow and
+reservation accounting. GitHub CI passed both suites. The 45-batch synthetic
+workflow covers early/middle/late failures, interrupted publication, concurrent
+retries and exhausted repair. These verify recovery contracts, not clinical
+accuracy. No new paid benchmark or accuracy improvement is claimed.
+
+What to test: reprocess health details and confirm conditions start automatically;
+organize/re-organize conditions; interrupt and resume; verify duplicate contacts,
+retained details and original-source links. Compare clinical details and condition
+assignments against originals.
+
 ## Version 1.0993 (13) — Continuous updates and explicit processing choice
 
 Signed archive, upload, Apple processing and export compliance completed October
