@@ -2,7 +2,7 @@ import { createHmac, createHash, randomUUID } from 'node:crypto';
 import type {PoolClient} from 'pg';
 import { database, transaction, submitWithinTransaction,workloadType } from './ledger';
 import { conditionModel, conditionReasoning } from './model-policy';
-import { ConditionState, compactConditionPlan, validateConditionPlan, initialConditionState, nextConditionRequest, acceptConditionResponse } from './condition-workflow';
+import { ConditionState, compactConditionPlan, validateConditionPlan, initialConditionState, nextConditionRequest, acceptConditionResponse, repairVerificationContract } from './condition-workflow';
 
 const active = (state:string) => ['queued','running'].includes(state);
 function canonical(value:any):string {
@@ -31,7 +31,8 @@ export async function submitConditionWorkflow(owner:string,value:unknown,stopBef
       if(!stopBeforeSubmission) await db.query('INSERT INTO ai_condition_workflow_payloads(workflow_id,plan,checkpoint) VALUES($1,$2,$3)',[id,plan,checkpoint]);
       return created.rows[0];
     }
-    return (await db.query('SELECT id,state,revision FROM ai_condition_workflows WHERE owner=$1 AND request_hash=$2',[owner,hash])).rows[0];
+    const existing=(await db.query('SELECT id,state,revision FROM ai_condition_workflows WHERE owner=$1 AND request_hash=$2',[owner,hash])).rows[0];
+    return stopBeforeSubmission?existing:resumeConditionWorkflow(owner,existing.id,db);
   };
   return client?work(client):transaction(work);
 }
@@ -87,7 +88,11 @@ export async function finishConditionStep(id:string,childID:string):Promise<{sta
         if(typeof child.result?.output!=='string') throw new Error('missing_result');
         checkpoint=acceptConditionResponse(p.plan,p.checkpoint,child.result.output);
         if(checkpoint.phase==='completed') state='completed';
-      } catch {state='invalid';}
+      } catch {
+        checkpoint=typeof child.result?.output==='string'
+          ? repairVerificationContract(p.plan,p.checkpoint,child.result.output)??undefined : undefined;
+        state=checkpoint?'running':'invalid';
+      }
     }
     if(checkpoint) await db.query('UPDATE ai_condition_workflow_payloads SET checkpoint=$2 WHERE workflow_id=$1',[id,checkpoint]);
     const revision=w.revision+1;
@@ -120,4 +125,31 @@ export async function cleanupConditionWorkflows() {
       FROM ai_condition_workflow_payloads p WHERE w.id=p.workflow_id AND p.expires_at<=now() AND w.state IN ('queued','running')`);
     await db.query('DELETE FROM ai_condition_workflow_payloads WHERE expires_at<=now()');
   });
+}
+
+// Called only during explicit submission/upload, never GET polling. Resume from
+// the durable checkpoint; do not reset spend, release charges, or retry a child
+// whose provider outcome is uncertain.
+export async function resumeConditionWorkflow(owner:string,id:string,client?:PoolClient) {
+  const work=async(db:PoolClient)=>{
+    const w=(await db.query('SELECT * FROM ai_condition_workflows WHERE owner=$1 AND id=$2 FOR UPDATE',[owner,id])).rows[0];
+    if(!w) return null;
+    if(w.current_step || !['invalid','budget_exhausted'].includes(w.state)) return {id:w.id,state:w.state,revision:w.revision};
+    const p=(await db.query('SELECT * FROM ai_condition_workflow_payloads WHERE workflow_id=$1 AND expires_at>now()',[id])).rows[0];
+    if(!p) return {id:w.id,state:w.state,revision:w.revision};
+    if(w.state==='invalid') {
+      const last=(await db.query(`SELECT j.state,p.result FROM ai_condition_workflow_steps s
+        JOIN ai_jobs j ON j.id=s.job_id AND j.owner=$2
+        JOIN ai_payloads p ON p.job_id=j.id AND p.expires_at>now()
+        WHERE s.workflow_id=$1 AND s.revision=$3`,[id,owner,w.revision-1])).rows[0];
+      const checkpoint=last?.state==='completed' && typeof last.result?.output==='string'
+        ? repairVerificationContract(p.plan,p.checkpoint,last.result.output):null;
+      if(!checkpoint) return {id:w.id,state:w.state,revision:w.revision};
+      await db.query('UPDATE ai_condition_workflow_payloads SET checkpoint=$2 WHERE workflow_id=$1',[id,checkpoint]);
+    }
+    // New delivery identity; the old revision's queue message may be consumed.
+    return (await db.query(`UPDATE ai_condition_workflows SET state='queued',revision=revision+1,finished_at=NULL
+      WHERE id=$1 RETURNING id,state,revision`,[id])).rows[0];
+  };
+  return client?work(client):transaction(work);
 }

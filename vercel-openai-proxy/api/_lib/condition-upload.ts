@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {database,transaction} from './ledger';
-import {submitConditionWorkflow,cancelConditionWorkflow,conditionWorkflowStatus} from './condition-workflow-store';
+import {submitConditionWorkflow,cancelConditionWorkflow,conditionWorkflowStatus,resumeConditionWorkflow} from './condition-workflow-store';
 
 export type Upload={operation:'part'|'finish'|'cancel'|'status';digest:string;count:number;index?:number;content?:string};
 export function validateUpload(value:unknown):Upload {
@@ -47,7 +47,10 @@ export async function conditionUpload(owner:string,value:unknown) {
     if(row.workflow_id) await cancelConditionWorkflow(owner,row.workflow_id);
     return {state:'cancelled'};
   }
-  if(row.workflow_id) return conditionWorkflowStatus(owner,row.workflow_id);
+  if(row.workflow_id) {
+    await resumeConditionWorkflow(owner,row.workflow_id);
+    return conditionWorkflowStatus(owner,row.workflow_id);
+  }
   if(row.state==='expired') return {state:'expired'};
   const parts=(await database().query('SELECT part_index,content FROM ai_condition_upload_parts WHERE owner=$1 AND digest=$2 ORDER BY part_index',[owner,p.digest])).rows;
   if(p.operation!=='finish') return {state:'uploading',received:parts.map(p=>p.part_index)};

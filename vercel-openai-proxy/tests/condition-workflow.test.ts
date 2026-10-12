@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { compactConditionEvidence,compactConditionPlan,ConditionPlan,validateConditionPlan,initialConditionState,nextConditionRequest,acceptConditionResponse } from '../api/_lib/condition-workflow';
-import { prepareConditionPlan,submitConditionWorkflow,prepareConditionStep,finishConditionStep,conditionWorkflowStatus,cancelConditionWorkflow,cancelConditionPlan,cleanupConditionWorkflows } from '../api/_lib/condition-workflow-store';
+import { compactConditionEvidence,compactConditionPlan,ConditionPlan,validateConditionPlan,initialConditionState,nextConditionRequest,acceptConditionResponse,repairVerificationContract } from '../api/_lib/condition-workflow';
+import { prepareConditionPlan,submitConditionWorkflow,prepareConditionStep,finishConditionStep,conditionWorkflowStatus,cancelConditionWorkflow,cancelConditionPlan,cleanupConditionWorkflows,resumeConditionWorkflow } from '../api/_lib/condition-workflow-store';
 import { runConditionWorkflow } from '../api/_lib/condition-workflow-worker';
 import { database,claim,settle } from '../api/_lib/ledger';
 import { readUsage } from '../api/v1/health-processing/usage';
@@ -325,6 +325,28 @@ test('PostgreSQL workflow continuation, interruption, concurrency, cancellation 
     await runConditionWorkflow(unfunded.id,()=>{throw new Error('Unfunded inference must not execute');},enqueue);
     assert.equal((await conditionWorkflowStatus('synthetic-owner',unfunded.id)).state,'budget_exhausted');
     assert.equal((await db.query('SELECT * FROM ai_condition_workflow_steps WHERE workflow_id=$1',[unfunded.id])).rows.length,0);
+
+    process.env.AI_BUDGET_ID='evaluation-v1';
+    const recoverPlan=plan('Synthetic recovery'),recover=await submitConditionWorkflow('recover-owner',recoverPlan);
+    const checking=acceptConditionResponse(recoverPlan,initialConditionState(recoverPlan),mapped);
+    await db.query('UPDATE ai_condition_workflow_payloads SET checkpoint=$2 WHERE workflow_id=$1',[recover.id,checking]);
+    const failedChild=await prepareConditionStep(recover.id);
+    const claimed=await claim(failedChild!);assert.ok(claimed);
+    await settle(failedChild!,'completed',{input_tokens:100,output_tokens:20},verified().replace('["r1"]','["r1","r8"]'));
+    // Emulate the old server's terminal transition, without changing its paid child.
+    await db.query("UPDATE ai_condition_workflows SET state='invalid',revision=1,current_step=NULL,finished_at=now() WHERE id=$1",[recover.id]);
+    const beforeBudget=(await db.query('SELECT used_nusd,reserved_nusd FROM ai_budgets')).rows;
+    assert.equal((await conditionWorkflowStatus('recover-owner',recover.id)).state,'invalid','GET never resumes work');
+    assert.equal(await resumeConditionWorkflow('wrong-owner',recover.id),null);
+    const resumed=await Promise.all([resumeConditionWorkflow('recover-owner',recover.id),resumeConditionWorkflow('recover-owner',recover.id)]);
+    assert.equal(resumed[0].revision,2);assert.equal(resumed[1].revision,2);
+    assert.equal(resumed[0].state,'queued');
+    assert.deepEqual((await db.query('SELECT used_nusd,reserved_nusd FROM ai_budgets')).rows,beforeBudget);
+    const repairChild=await prepareConditionStep(recover.id);assert.notEqual(repairChild,failedChild);
+    assert.ok(await claim(repairChild!));
+    await settle(repairChild!,'completed',{input_tokens:100,output_tokens:20},JSON.stringify({decisions:{g0:{ok:true,entries:['r1'],reason:null}}}));
+    assert.equal((await finishConditionStep(recover.id,repairChild!))!.state,'completed');
+    assert.equal((await resumeConditionWorkflow('recover-owner',recover.id)).state,'completed');
   } finally {await db.end();}
 });
 
@@ -508,4 +530,39 @@ test('release condition policy is frozen before hashing, idempotent, and leaves 
  assert.deepEqual(prepareConditionPlan(prepared),prepared);
  assert.equal(incoming.evidenceEncoding,undefined,'Never mutate the upload or cancellation body');
  assert.deepEqual(prepared.batches.flat(),old.batches.flat());assert.deepEqual(prepared.preserved,old.preserved);
+});
+
+test('unknown verifier ID repairs once with per-group constrained IDs and preserves checked history',()=>{
+  const p=plan(),checking=acceptConditionResponse(p,initialConditionState(p),mapped);
+  const raw=verified().replace('["r1"]','["r1","r8"]');
+  assert.throws(()=>acceptConditionResponse(p,checking,raw));
+  const repaired=repairVerificationContract(p,checking,raw)!;
+  assert.equal(repaired.verificationRepair,true);assert.deepEqual(repaired.result,checking.result);
+  assert.equal(checking.verificationRepair,undefined);
+  const request=nextConditionRequest(p,repaired)!;
+  assert.notDeepEqual(request.payload,nextConditionRequest(p,checking)!.payload,'Must not reuse the failed child response');
+  const schema:any=request.payload.response_format.json_schema;
+  assert.deepEqual(schema.schema.properties.decisions.properties.g0.properties.entries.items.enum,['r1']);
+  assert.deepEqual(request,nextConditionRequest(p,JSON.parse(JSON.stringify(repaired))));
+  assert.equal(repairVerificationContract(p,repaired,raw),null);
+  assert.equal(repairVerificationContract(p,checking,verified(false)),null,'A negative judgment is not a technical failure');
+  assert.equal(repairVerificationContract(p,checking,'not json'),null);
+  const done=acceptConditionResponse(p,repaired,JSON.stringify({decisions:{g0:{ok:true,entries:['r1'],reason:null}}}));
+  assert.equal(done.phase,'completed');assert.deepEqual(done.result.groups[0].entryIDs,[uuid(1),uuid(2)]);
+  assert.throws(()=>acceptConditionResponse(p,repaired,JSON.stringify({decisions:{g0:{ok:true,entries:['r8'],reason:null}}})));
+});
+
+test('renamed legacy verifier heading is rechecked with fixed group keys, never accepted as a clinical rename',()=>{
+  const p=plan(),checking=acceptConditionResponse(p,initialConditionState(p),mapped);
+  const renamed=verified().replace('"name":"Pregnancy"','"name":"Pregnancy with added qualifier"');
+  assert.throws(()=>acceptConditionResponse(p,checking,renamed));
+  const repair=repairVerificationContract(p,checking,renamed)!;
+  assert.equal(repair.verificationRepair,true);
+  assert.deepEqual(repair.result,checking.result);assert.deepEqual(repair.proposal,checking.proposal);
+  const schema:any=nextConditionRequest(p,repair)!.payload.response_format.json_schema;
+  assert.deepEqual(schema.schema.properties.decisions.required,['g0']);
+  assert.equal(schema.schema.properties.decisions.additionalProperties,false);
+  assert.equal(repairVerificationContract(p,repair,renamed),null);
+  const done=acceptConditionResponse(p,repair,JSON.stringify({decisions:{g0:{ok:false,entries:[],reason:'Original heading not supported.'}}}));
+  assert.deepEqual(done.result.groups,p.preserved.groups);assert.deepEqual(done.result.unassigned,[uuid(2)]);
 });

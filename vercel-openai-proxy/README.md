@@ -339,3 +339,35 @@ Authentication, per-owner job isolation, atomic cost reservations, and the share
 $1 ceiling remain enforced. No per-tester account enrollment is needed. Legacy
 unbudgeted endpoints remain blocked for durable-enabled authenticated users; they
 must use the updated app. This deployment does not start processing itself.
+
+### Condition verifier ID recovery (2026-10-12)
+
+Production deployment `dpl_H2kZrhz9N7KeM2eQp7eevUNNBs9p` repairs a legacy
+condition-verification response containing an unknown request-local entry ID.
+Previously this made the workflow permanently `invalid`, including on explicit
+resubmission. The malformed response is not accepted or edited: one new independent
+check uses per-group enumerated entry IDs and compact verdicts, with the existing
+checkpoint preserved. A second malformed response remains terminal. Rejected
+clinical judgments, uncertain charges, cancelled work and expired evidence are
+not revived by this recovery.
+
+Explicit POST/upload resubmission can resume that specific saved failure, or a
+budget-exhausted workflow; GET polling never starts paid work. Resumption is locked
+and increments the queue revision, preserving child job identity, costs and
+reservations. The user-approved shared cumulative ceiling is now $20; experiment
+sub-limits remain unchanged.
+
+Validation: TypeScript passed; 51 offline backend tests passed (2 database tests
+skipped in that run); all 29 condition-workflow tests passed with a fresh temporary
+local PostgreSQL database, including concurrent recovery, owner isolation,
+checkpoint preservation and unchanged accounting at resume. Production readiness
+checks passed during deployment. The patient's completed retry has not yet been
+observed. No patient payload was exported locally or used in tests.
+
+Follow-up: the first repair resumed the affected workflow and it reached revision
+79 before a later legacy checker changed a supplied heading. The bounded repair
+now covers response identity mismatches (renamed headings and wrong-group IDs),
+using fixed group keys rather than accepting a checker-supplied rename. Confirmed
+against the actual saved checkpoint locally without inference; the temporary
+private copy was removed. All 30 condition tests passed with PostgreSQL; 52 offline
+backend tests passed (2 database-dependent tests skipped in that separate run).

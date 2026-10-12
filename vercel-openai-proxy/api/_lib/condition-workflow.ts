@@ -11,6 +11,7 @@ export type ConditionPlan = { version: 1; evidenceEncoding?: 'table-v1'; workloa
 type Recovery = {batch:number;entryIDs:string[];rejectedNames:string[];rejectedByEntry?:Record<string,string[]>};
 export type ConditionState = { batch: number; phase: 'mapping'|'verification'|'completed';
   coverageRetry?: boolean;
+  verificationRepair?: boolean;
   linkRecoveries?: Recovery[];
   result: Synthesis; headingRecovery?: Omit<Recovery,'batch'>; recoveringHeading?: boolean; headingRecoveries?: Recovery[]; recoveryIndex?:number; proposal?: Synthesis; verificationBatches?: Group[][]; verificationIndex: number };
 const systems = new Set(['eye','neurological','musculoskeletal','cardiovascular','respiratory',
@@ -204,7 +205,7 @@ export function nextConditionRequest(plan: ConditionPlan,state: ConditionState):
   const encoded=plan.evidenceEncoding==='table-v1' ? compactConditionEvidence(input) : input;
   const compact=localRequest(encoded,verification);
   let compactVerification: Contract | undefined;
-  if (verification && plan.evidenceEncoding==='table-v1') {
+  if (verification && (plan.evidenceEncoding==='table-v1' || state.verificationRepair)) {
     const payload=JSON.parse(compact.input);
     const properties: Record<string,unknown>={};
     payload.groups.forEach((g:any,i:number)=>{
@@ -288,7 +289,7 @@ export function acceptConditionResponse(plan: ConditionPlan,previous: ConditionS
     state.phase='verification';
   } else {
     const groups=state.verificationBatches![state.verificationIndex];
-    if(plan.evidenceEncoding==='table-v1') {
+    if(plan.evidenceEncoding==='table-v1' || state.verificationRepair) {
       const decisions=response.decisions;
       requireValue(decisions && !Array.isArray(decisions) && Object.keys(decisions).length===groups.length);
       response.decisions=groups.map((group,i)=>{
@@ -334,6 +335,7 @@ export function acceptConditionResponse(plan: ConditionPlan,previous: ConditionS
         isPrimary:group.isPrimary && !state.result.groups.some(g=>g.isPrimary)});
     }
     state.verificationIndex++;
+    state.verificationRepair=undefined;
   }
   if(state.phase==='verification' && state.verificationIndex===state.verificationBatches!.length) {
     state.coverageRetry=undefined;
@@ -365,4 +367,31 @@ export function acceptConditionResponse(plan: ConditionPlan,previous: ConditionS
   }
   if(state.phase==='completed') coverage(state.result,[...ids(plan.preserved),...plan.batches.flat().map(e=>e.id)]);
   return state;
+}
+
+// Repair only an identifiable verifier transport error, never a rejected clinical
+// judgment. The original checkpoint remains untouched until a fresh check passes.
+export function repairVerificationContract(plan:ConditionPlan,state:ConditionState,raw:string):ConditionState|null {
+  if(state.phase!=='verification' || state.verificationRepair) return null;
+  try {
+    const request=nextConditionRequest(plan,state);
+    if(!request) return null;
+    const response=JSON.parse(raw),groups=state.verificationBatches![state.verificationIndex];
+    if(plan.evidenceEncoding==='table-v1') return null; // Already constrained.
+    if(!Array.isArray(response.decisions) || response.decisions.length!==groups.length) return null;
+    const seen=new Set<string>();let mismatch=false;
+    for(const d of response.decisions) {
+      const group=groups.find(g=>g.name===d.name && g.bodySystem===d.bodySystem);
+      if(typeof d.name!=='string' || !systems.has(d.bodySystem) || typeof d.nameSupported!=='boolean' ||
+        typeof d.reason!=='string' || !d.reason.trim() || !Array.isArray(d.supportedEntryIDs)) return null;
+      if(group && seen.has(key(group))) return null;
+      if(group) seen.add(key(group));else mismatch=true;
+      if(new Set(d.supportedEntryIDs).size!==d.supportedEntryIDs.length) return null;
+      for(const id of d.supportedEntryIDs) {
+        if(typeof id!=='string') return null;
+        if(!Object.hasOwn(request.map,id) || (group && !group.entryIDs.includes(request.map[id]))) mismatch=true;
+      }
+    }
+    return mismatch?{...structuredClone(state),verificationRepair:true}:null;
+  } catch {return null;}
 }
