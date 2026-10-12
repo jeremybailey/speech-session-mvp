@@ -407,10 +407,21 @@ final class ConditionSynthesisTests: XCTestCase {
         XCTAssertNil(result.applying(to: facts)[0].latest.evidence?.conditionGroup)
         result = synthesis(facts); result.groups[0].entryIDs = [UUID()]
         XCTAssertThrowsError(try result.validate(facts))
-        result = synthesis(facts); result.groups[0].name = "Heart findings"
+        result = synthesis(facts); result.groups[0].name = "   "
         XCTAssertThrowsError(try result.validate(facts))
         result = .init(groups: [], unassigned: [])
         XCTAssertThrowsError(try result.validate(facts))
+    }
+    func testCheckedServerHeadingsAreNotRejectedByLegacyWordFilter() throws {
+        let facts = [fact("Synthetic source detail")]
+        var result = synthesis(facts)
+        result.groups[0].name = "Screening test findings"
+        let raw = String(decoding: try JSONEncoder().encode(result), as: UTF8.self)
+        let decoded = try ConditionSynthesis.decode(raw, facts: facts)
+        let applied = decoded.applying(to: facts)
+        XCTAssertEqual(applied.flatMap(\.occurrences).map(\.id), facts.flatMap(\.occurrences).map(\.id))
+        XCTAssertEqual(applied[0].latest.evidence?.conditionSynthesisUnassigned, false)
+        XCTAssertTrue(ConditionSummaryProjection.groups(facts: applied, topics: []).contains { $0.name == "Screening test findings" })
     }
     func testManualAssignmentAndUnassignedChoiceWin() {
         var fact = fact("Concern")

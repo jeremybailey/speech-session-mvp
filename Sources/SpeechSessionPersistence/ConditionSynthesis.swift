@@ -650,6 +650,8 @@ public struct ConditionSynthesis: Codable, Sendable {
         try result.validate(facts)
         return result
     }
+    // Validate wire structure and occurrence coverage. Clinical heading suitability
+    // is assessed by the independent source checker, not a client word blacklist.
     public func validate(_ facts: [HealthFact]) throws {
         let expected = Set(facts.flatMap(\.occurrences).map(\.id))
         let ids = groups.flatMap(\.entryIDs) + unassigned
@@ -658,7 +660,7 @@ public struct ConditionSynthesis: Codable, Sendable {
               groups.filter(\.isPrimary).count <= 1,
               Set(groups.map { ConditionSummaryProjection.conditionKey($0.name) + "|" + $0.bodySystem }).count == groups.count,
               groups.allSatisfy({ group in
-                  !group.entryIDs.isEmpty && ConditionSummaryProjection.isConcernName(group.name) && group.name.count <= 80
+                  !group.entryIDs.isEmpty && !group.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && group.name.count <= 80
                   && !group.reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && group.reason.count <= 300
                   && systems.contains(group.bodySystem)
                   && (group.entryReasons ?? [:]).allSatisfy { group.entryIDs.contains($0.key) && !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.value.count <= 300 }

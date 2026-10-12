@@ -131,7 +131,9 @@ public enum ConditionSummaryProjection {
                         candidates = []
                     }
                 }
-                assignments.append((fact, entry, candidates.filter { fact.preference.topicIDs != nil || isConcernName($0.name) }))
+                // Explicit synthesis assignments have already passed independent review.
+                // The legacy fallback filter must not silently hide checked headings.
+                assignments.append((fact, entry, candidates.filter { fact.preference.topicIDs != nil || entry.evidence?.conditionSynthesisUnassigned == false || isConcernName($0.name) }))
             }
         }
         // Unknown body systems join a name only when there is at most one explicit system.

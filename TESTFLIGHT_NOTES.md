@@ -1,5 +1,25 @@
 # CollectiveCare TestFlight Notes
 
+## Version 1.0993 (15) — Accept independently checked condition headings
+
+Fixes a client/server validation mismatch: the backend completed condition work,
+but the app rejected the entire result when a checked heading matched a legacy
+word filter. Validation now checks structure, occurrence coverage and field bounds;
+clinical heading judgments remain with independent source verification. Explicit
+checked assignments are displayed without the legacy fallback heading filter.
+Originals, occurrence IDs, patient-edit protection and invalid-link rejection remain.
+
+The latest saved failing result reproduced the error in Swift before the fix.
+After the fix it passes decoding, validation, atomic save/reload and display with
+all 323 source occurrences retained. Private replay evidence stays local and is
+removed after validation. No diagnostic inference was requested. The full Swift
+suite completed 376 tests with two skips and zero failures. This proves the
+observed technical failure is fixed locally; device completion remains to verify.
+
+What to test: tap Organize conditions to retrieve the completed server result,
+then verify conditions and source links. Do not reprocess the original records.
+Build/upload/distribution pending.
+
 ## Version 1.0993 (14) — Condition recovery and regression coverage
 
 App commit: `244cfdbb7e92cdfddaf6d6cfe928205b89012571`, branch
