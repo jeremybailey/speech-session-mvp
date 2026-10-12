@@ -1,3 +1,4 @@
+import { processingOwner, isFastRequest } from '../../_lib/fast-details-experiment';
 import type { VercelRequest,VercelResponse } from '@vercel/node';
 import { verifyKindeBearer } from '../../_lib/verifyKinde';
 import { submitConditionWorkflow,conditionWorkflowStatus,cancelConditionWorkflow,cancelConditionPlan,cleanupConditionWorkflows } from '../../_lib/condition-workflow-store';
@@ -8,7 +9,7 @@ import {conditionUpload,cleanupConditionUploads} from '../../_lib/condition-uplo
 export default async function handler(req:VercelRequest,res:VercelResponse) {
   res.setHeader('Cache-Control','no-store');
   try {
-    const owner=await verifyKindeBearer(req.headers.authorization);
+    const owner=processingOwner(await verifyKindeBearer(req.headers.authorization), isFastRequest(req.headers));
     if(!conditionWorkflowsEnabled() || !durableEnabledForOwner(owner)) return res.status(503).json({error:{code:'pilot_disabled'}});
     await cleanupConditionWorkflows();
     await cleanupConditionUploads();

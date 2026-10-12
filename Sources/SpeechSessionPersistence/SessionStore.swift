@@ -576,8 +576,33 @@ public actor SessionStore {
         return undo
     }
 
+    public func saveContactGroupReview(_ key: String, groups: [[String]], expected: [HealthFact], sources: [Session]) throws -> [HealthCombinationUndo] {
+        let env = try loadEnvelope()
+        let current = HealthMemoryProjection.facts(in: .init(sessions: env.sessions, preferences: env.preferences))
+        let ids = expected.map(\.id), flattened = groups.flatMap { $0 }
+        guard flattened.count == ids.count, Set(flattened) == Set(ids), groups.allSatisfy({ !$0.isEmpty }),
+              expected.allSatisfy({ old in current.contains { $0.id == old.id && $0.revision == old.revision &&
+                  $0.category == .practitionerContact && $0.occurrences.allSatisfy { $0.evidence?.combinationExcluded != true } } }) else { return [] }
+        let sourceIDs = Set(expected.flatMap(\.occurrences).compactMap(\.sourceSessionID))
+        guard sourceIDs.allSatisfy({ id in
+            guard let old = sources.first(where: { $0.id == id }), let live = env.sessions.first(where: { $0.id == id }) else { return false }
+            return old.transcript == live.transcript
+        }) else { return [] }
+        // No actor suspension between revision checks and preference-guarded combinations.
+        var undos: [HealthCombinationUndo] = []
+        for group in groups {
+            for other in group.dropFirst() {
+                if let undo = try? combineHealthFacts(keeping: group[0], duplicateID: other) { undos.append(undo) }
+            }
+        }
+        var updated = try loadEnvelope()
+        updated.verifiedPairDecisions[key] = true
+        try saveEnvelope(updated)
+        return undos
+    }
+
     /// A durable run token prevents stale or overlapping extraction from publishing.
-    public func beginSummaryRun(sessionID: UUID, expected: Session) throws -> SummaryRun {
+    public func beginSummaryRun(sessionID: UUID, expected: Session, promptVersion: String = SummaryVerification.promptVersion) throws -> SummaryRun {
         var env = try loadEnvelope()
         guard let i = env.sessions.firstIndex(where: { $0.id == sessionID }),
               env.sessions[i].transcript == expected.transcript else { throw SummaryCommitError.sourceChanged }
@@ -585,7 +610,7 @@ public actor SessionStore {
            existing.stage != .complete,
            existing.sourceHash == SummaryVerification.hash(expected.transcript),
            existing.version == SummaryVerification.version,
-           existing.promptVersion == SummaryVerification.promptVersion,
+           existing.promptVersion == promptVersion,
            env.sessions[i].summaryDrafts != nil {
             existing.stage = .fetching
             existing.updatedAt = Date()
@@ -593,11 +618,34 @@ public actor SessionStore {
             try saveEnvelope(env)
             return existing
         }
-        let run = SummaryRun(source: expected.transcript)
+        let run = SummaryRun(source: expected.transcript, promptVersion: promptVersion)
         env.sessions[i].summaryRun = run
         env.sessions[i].summaryDrafts = []
         try saveEnvelope(env)
         return run
+    }
+
+    public func summaryWorkUnits(sessionID: UUID, runID: UUID) throws -> [String: FastDetailsWorkUnit] {
+        let env = try loadEnvelope()
+        guard let session = env.sessions.first(where: { $0.id == sessionID }),
+              session.summaryRun?.id == runID,
+              session.summaryRun?.sourceHash == SummaryVerification.hash(session.transcript) else { throw SummaryCommitError.sourceChanged }
+        return session.summaryRun?.workUnits ?? [:]
+    }
+
+    /// Per-unit merge, never a read/replace of another concurrently completed section.
+    public func checkpointSummaryUnit(sessionID: UUID, runID: UUID, key: String, unit: FastDetailsWorkUnit) throws {
+        var env = try loadEnvelope()
+        guard let i = env.sessions.firstIndex(where: { $0.id == sessionID }),
+              env.sessions[i].summaryRun?.id == runID,
+              env.sessions[i].summaryRun?.stage != .complete,
+              env.sessions[i].summaryRun?.sourceHash == SummaryVerification.hash(env.sessions[i].transcript) else { throw SummaryCommitError.sourceChanged }
+        var units = env.sessions[i].summaryRun?.workUnits ?? [:]
+        if let previous = units[key], previous != unit { throw SummaryCommitError.sourceChanged }
+        units[key] = unit
+        env.sessions[i].summaryRun?.workUnits = units
+        env.sessions[i].summaryRun?.updatedAt = Date()
+        try saveEnvelope(env)
     }
 
     public func summaryDrafts(sessionID: UUID, runID: UUID) throws -> [SummaryEntry] {

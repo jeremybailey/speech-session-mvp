@@ -1039,3 +1039,358 @@ A newer private export reproduced two contact pairs that survived exact-content 
 All → Care team & contacts now renders a single expandable heading for each normalized full name, with the original independently editable facts and saved contacts inside. This is navigation grouping, not identity consolidation: no persisted identities, address variants, source links, or patient preferences are changed. Explicit separation remains separate; hidden and superseded contacts are excluded. The category count reflects displayed headings. Different names still get separate headings; no organization-specific keyword rules or fuzzy identity assertions were added.
 
 Private export replay verified both reported pairs go from two top-level cards to one heading, preserving all eight occurrences for one and both occurrences for the other. Four new generic tests cover description differences, conflicting addresses, patient choices, explicit separation, stable grouping, and saved contacts. Full suite: 340 tests, two skipped, zero failures. Clinical replay material stays under ignored build/diagnostics/contact-latest; no model calls or uploads were needed.
+
+### Stalled source-check investigation (after build 10)
+
+A tester reported 45 minutes at “Checking section 1 of 7”. Inspection found an
+unbounded queued/running polling loop in the client durable request transport.
+A local fix bounds individual-job waiting to five minutes and whole-history workflow
+waiting to thirty minutes, with per-transfer request/resource timeouts. The timeout
+stops foreground waiting only; it neither cancels nor redispatches a paid request,
+and a completed result remains retrievable after background suspension.
+
+The focused production-transport checks passed for queued/running deadlines,
+completed late results, and explicit-stop behavior; simulator build succeeded.
+The older clinical-stage script could not compile its standalone schema fixture
+because it omits newer dependencies; focused checks live in scripts/test_durable_wait.py.
+This fix is local, not part of released build 10. The specific server-side cause is
+unconfirmed: narrowly filtered queue error logs showed only database configuration
+warnings. Broader production access was blocked by automatic approval review;
+metadata-only diagnostic approval is pending. No production settings, job states,
+or budget limits were changed.
+
+### Verified budget threshold (2026-10-11)
+
+After the user completed database identity verification, the Vercel/Neon budget
+table showed evaluation-v1 with limit 2,000,000,000 nano-USD, used 1,742,827,500,
+and reserved 45,600,000. Available headroom was therefore $0.2115725. This was the
+only row returned by the used_nusd > 0 filter. No clinical payloads were read.
+
+The deployed f7af55e ledger reserves for the entire supported input context plus
+6,000 output tokens. Its Luna reservation is $0.2145, exceeding that headroom by
+$0.0029275. These totals explain rejection of a new Luna request under this budget,
+although they do not identify the tester's exact job or establish the cause of the
+earlier stall. The $0.0456 held reservation has not been reconciled; it must not be
+assumed stale or released without checking job/provider accounting. The $2 limit
+is unchanged. A smaller reservation requires a verified, enforced input bound,
+not an unvalidated character-to-token estimate. No server fix was deployed.
+
+The user subsequently authorized raising the shared total cap from $2 to $5.
+Applied through the Vercel/Neon editor: only evaluation-v1.limit_nusd changed to
+5,000,000,000. The saved table confirmed the new limit; used spending remained
+1,742,827,500 nano-USD. No job states or reservations were modified. This restores
+headroom for Luna requests without an app release; completion on the tester's
+device remains to be verified. Confirmation: ignored
+build/diagnostics/stalled-check/budget-cap-5.png.
+
+### Full-reprocessing speed experiment (2026-10-11)
+
+The user approved an isolated comparison targeting half the full reprocessing time,
+with a cumulative $1 experiment allowance inside the existing shared $5 cap. The
+tracked harness is `scripts/benchmark_speed/README.md`; private inputs, frozen key,
+run traces and results are under ignored `build/benchmarks/2026-10-11-speed/`.
+It freezes client processing at build 10 (`0e499b6`) and backend inference behavior
+at `f7af55e`, excluding unrelated uncommitted experiments. Five export/key source
+hashes match, and the known duplicate is excluded. The key remains Draft/provisional.
+
+The default is the existing checker, with isolated variants for two concurrent
+checking batches and a Decisions hybrid. The hybrid requires original-source
+quotations covering all required fields, a semantic Pass, and a conservative 0.99
+confidence/probability threshold; this is an experimental threshold, not calibrated
+clinical confidence. Missing evidence, uncertainty, refusal, invalid answers and
+technical Decisions failures fall back to Responses; budget exhaustion stops.
+The adapter cannot generate quotations or directly discard assertions. Neither
+experimental path is imported by production routes or enabled in the shipping app.
+
+Full timing includes saved-text extraction/checking, contact/symptom reconciliation,
+conditions and explicit overview generation/save/readback. Diagnostic CLI overhead
+is included and distinguished from provider and queue timing; this is not an iPhone
+wall-clock measurement. Incomplete runs are excluded from completed medians. Existing
+hash-bound scorecard grading and per-row comparisons are required alongside timing;
+no speed or accuracy improvement is established merely by passing adapter tests.
+
+#### Observed result and stop decision
+
+The first baseline attempt stopped after 1,527.2 seconds (25m27s). Two records
+completed; extraction failed partway through the third. The independent concurrency
+attempt stopped after 36.2 seconds during the first extraction, before any concurrent
+checking. Both failed Responses jobs consumed all 6,000 output tokens and returned
+`incomplete`. The saved metadata does not include the provider's incomplete-details
+reason. Neither attempt reached reconciliation, conditions or overview. The shorter
+failed attempt is **not** a speed improvement. There is no completed full-run median,
+full-row accuracy comparison, measured hybrid fallback frequency or release candidate.
+Further full runs were stopped after this repeated upstream failure; the planned
+three repetitions per arm remain incomplete. Extraction settings were not changed.
+
+Decisions shadow replay used 12 identical assertions from three saved checking
+batches, without the answer key. It agreed with Responses on 8/12; two disagreements
+were Pass instead of Fail and two were Fail instead of Pass. Disagreements concern
+attribution/status and category/support judgments and require human adjudication;
+neither checker is treated as ground truth. Median batch time was 1.95s for Decisions
+versus 22.71s for the saved Responses calls. This small diagnostic sample lacks the
+hybrid's quote validation/fallback work and does not establish end-to-end acceleration.
+All shadow confidences were below the hybrid's 0.99 threshold.
+
+Five additional live synthetic cases used the actual hybrid prompt. Negation,
+conditional-plan, medication-dose and wrong-person errors all received Fail; the
+supported control received Pass but confidence 0.83, so all five would fall back.
+These checks supplement controlled Swift tests of quotations, malformed/refused
+responses, deterministic concurrency and cancellation. They do not establish clinical
+accuracy. The hybrid and combined full-pipeline candidates were not advanced.
+
+The baseline's completed checking requests consumed 1,057.0 seconds in total,
+including 268.4 seconds across 19 citation-repair calls. Completed extraction calls
+used 367.5 seconds and classification 71.7 seconds. These are partial-run stage sums;
+the failed extraction adds time, and later full-pipeline stages remain unmeasured.
+Queue wait was 149.4 seconds; provider timing was available for only 67 requests.
+
+Total settled experiment cost was **$0.1181780**, below the $1 sub-limit. There are
+zero unresolved experiment reservations. Cleanup verified zero experiment job,
+workflow and upload-part payloads; all three temporary deployments and local access
+files were removed. Production aliases were verified unchanged. Private evidence,
+partial semantic review notes and the generated timing report remain locally under
+the ignored experiment directory. No production policy change or TestFlight release
+was made. Next prerequisite: address the extraction completion failure in a separate
+comparison, then freeze that behavior for both speed arms and repeat the full runs.
+
+#### Extraction completion repair verified (2026-10-11)
+
+The existing unshipped extraction output-policy change was replayed against the
+**exact two failed request payloads**, three fresh repetitions per payload. All
+six completed and validated against their unchanged structured-output schemas.
+One successful response used **6,019 output tokens**, exceeding the original 6,000
+ceiling. The other five used 3,152–3,854 tokens. This establishes that the extra
+headroom is needed for at least one observed completion; it does not guarantee
+every future extraction will finish below 10,000 tokens.
+
+The fix allows 10,000 output tokens only for Luna extraction, reserves that bound
+before dispatch, leaves already-queued jobs at their funded bound, and changes
+extraction request identity to prevent reuse of old truncated results. Other stages,
+models, prompts, source context and checking are unchanged. Responses output limits
+include reasoning tokens as described in the
+[official OpenAI documentation](https://developers.openai.com/api/docs/guides/reasoning).
+New bounded diagnostic metadata records provider status, incomplete reason,
+configured limit and reasoning-token usage, including responses without visible
+text. It excludes free-form error text and does not modify patient-data formats.
+
+The six replays cost $0.0149976, bringing the same cumulative experiment to
+$0.1331756 of its $1 allowance; no cap was reset or increased. Median request elapsed
+time was 27.35 seconds, which is a completion diagnostic, not a full-reprocessing
+speed comparison. Backend typechecking and 33 tests passed; two database-dependent
+tests were skipped. Four benchmark reporting/isolation tests also passed. Live
+replays exercised reservation, settlement and diagnostic persistence.
+
+Private evidence is in `build/benchmarks/2026-10-11-speed/extraction-fix/`. The same
+experiment prefix was retained for accounting. Cleanup verified zero scoped remote
+clinical payloads, removed the follow-up deployment and local access files, and
+confirmed unchanged production aliases. Ledger charges were preserved, with zero
+unresolved experiment reservations. This repair has not been promoted to production or TestFlight.
+Use the repaired extraction behavior for **both** sides of the next speed comparison;
+the old incomplete build-10 timings remain historical failures, not a valid baseline.
+Full-run accuracy, condition generation, consolidation and speed remain unverified.
+
+#### Full rerun exposed an overview citation failure (2026-10-11)
+
+With the extraction repair, all five records and the conditions workflow completed.
+The serial run then correctly failed the overview number-grounding guard: a documented
+pregnancy age appeared in prose without the supporting fact among its citations.
+The run took 2,434.407 seconds and cost $0.1949923, bringing cumulative experiment
+spending to $0.3281679 before overview diagnostics. This is **incomplete**, not a
+40-minute successful baseline. All 166 saved source occurrences were preserved.
+
+A setup error was also corrected before grading: the original key snapshot had
+expectations for only three of the five selected records. The complete frozen
+2026-10-09 record-context key contains 89 rows across all five, with 85 provisionally
+scorable rows; Draft and unresolved labels remain separate. All source hashes
+matched. Both snapshots and the correction are retained privately. Preparation
+now rejects selected records without expectations.
+
+The overview repair encodes durable fact IDs as short request-only letter codes,
+then translates returned citations back to the original IDs. Clinical prompts,
+models, facts, source records, stored formats and number/reference guards remain
+unchanged. The adapter does not choose citations or match clinical keywords.
+Three fresh overview-only replays from the failed run's saved snapshot all completed,
+saved and read back successfully (50.365, 43.863 and 41.672 seconds). These are
+completion checks, **not full cold speed or clinical accuracy results**. Synthetic
+tests cover exact ID boundaries, deterministic mapping, prefix collisions, unknown
+and empty citations, and rejection of numbers supported only by a different fact.
+The iOS simulator build succeeded.
+
+Private evidence: `build/benchmarks/2026-10-11-speed/repaired-comparison/`. A fresh
+comparison must apply both completion repairs equally to both arms, use new request
+owners under the original cumulative $1 prefix, and exclude these failed/partial
+runs from completed timings. Production and TestFlight have not been updated.
+
+#### Concurrent full rerun exposed duplicate condition headings (2026-10-11)
+
+With both completion repairs, the concurrent arm processed all five records and
+preserved all 148 saved occurrences. It stopped during condition generation after
+1,576.250 seconds. The model emitted two exactly named Pregnancy groups with the
+same body system and priority, containing disjoint source IDs. The frozen build-10
+backend rejected this duplicate heading. This is another **incomplete** full run,
+not a measured speed improvement. Cumulative experiment spending was $0.48850865.
+
+The working tree already contained exact-heading structural consolidation. An
+offline replay proved that the frozen validator rejects the captured response and
+the narrow formatting repair passes all seven source entries to independent
+verification. Overlapping IDs, conflicting priorities, invented IDs and omitted
+entries still fail; simulated unsupported judgments leave all entries unassigned.
+No clinical association is inferred by consolidation and no mapper rationale is
+forwarded as evidence. Only this formatting change is carried into the next frozen
+backend; other working-tree condition changes are not silently included.
+
+A targeted provisional-key review also found unsupported urinary specificity in
+the visible leakage title in both partial runs. Successful processing is not a
+clinical accuracy pass. No full-row score, equal-accuracy claim or release approval
+is established by these incomplete runs. Private evidence is under
+`build/benchmarks/2026-10-11-speed/completion-repaired-comparison/`. The next cold
+run is a serial baseline under `all-completion-repairs/`, retaining the same $1
+cumulative allowance and full in-flight reservations.
+
+The app now adds a stable condition `clientRevision` before serializing either a
+direct request or a chunked upload. This changes both workflow content identity and
+upload digest, preventing a completed upload from returning a pre-repair terminal
+failure. Identical revised retries and explicit Stop still use the same body/digest;
+ordinary requests and stored patient records are unchanged. Backend validation
+retains the bounded revision as identity metadata without forwarding it to models.
+Offline tests verify changed body/upload identities, stable retries, unchanged
+clinical payloads and unchanged model requests. Existing workflow IDs and their
+reservations are not modified. The live experiment uses separate versioned owners;
+this app transport change has not been deployed to production or TestFlight.
+
+#### Empty-heading validation repair and saved-record replay (2026-10-11)
+
+The next serial cold run again processed all five records, preserving 151 saved
+occurrences, but stopped after 1,813.583 seconds when its second mapping response
+contained an empty heading. Every source ID was otherwise covered. Cumulative
+spending reached $0.62399335. This run remains incomplete and contributes no
+successful cold timing.
+
+Mapper normalization now omits well-formed zero-entry headings before coverage
+validation. It neither discards source entries nor accepts clinical links; preserved
+and final groups still require nonempty source sets. The captured six-entry response
+passes into independent verification, while overlapping IDs, conflicting priorities,
+unknown IDs, missing entries and malformed empty-heading metadata remain rejected.
+A regression test also rejects empty groups in saved/preserved state.
+
+The next diagnostic uses the already-processed private snapshot and reruns only
+conditions plus saved/readback overview. Its `cold` flag is false and its durations
+must never enter full-reprocessing medians. See
+`build/benchmarks/2026-10-11-speed/downstream-completion-replay/`.
+
+#### Completion-repair outcome and remaining benchmark limit (2026-10-11)
+
+The saved-record downstream replay completed and saved/read back both conditions
+and overview in **491.688 seconds (8 minutes 12 seconds)**: conditions took 458.901
+seconds and overview took 32.787 seconds. All **151 source occurrences** and all
+five original transcripts were preserved. Its 43 model requests cost **$0.04414365**;
+recorded provider time was 367.799 seconds and queue wait was 9.804 seconds. This is
+a successful **saved-record retry**, not a cold full-reprocessing benchmark.
+
+The observed extraction, overview-reference, duplicate-heading and empty-heading
+completion failures have targeted validation. Swift tests retain reference/number
+rejection, stable revised retry identities and cancellation behavior. Backend
+typechecking and 35 tests passed, with two database-dependent tests skipped; eight
+harness tests passed. The iOS simulator build succeeded.
+
+**No faster-and-equally-accurate claim is established.** Earlier cold runs failed
+before the final formatting repair. There is no completed matched cold pair, no
+full-row/dimension comparison, no valid repeated median and no release-qualified
+candidate. The source-unspecified leakage becoming urinary leakage remains a
+targeted provisional-key failure; it is not erased by successful completion.
+
+The original cumulative experiment spent **$0.668137 of $1**, with **$0 unresolved
+reservations**. Remaining headroom is $0.331863; two checking requests require
+$0.429 in reservations before dispatch, so another concurrent run cannot fit the
+existing cap even though actual charges per request are much smaller. Any increase
+requires user authorization; the shared $5 cap and experiment $1 cap remain unchanged.
+A fresh serial/concurrent pair with all repairs held constant is still needed.
+
+Cleanup verified **zero** scoped job payloads, workflow payloads and upload parts;
+removed all four remaining follow-up diagnostic deployments and their local access
+files; and confirmed unchanged production aliases. Ledger charges were retained.
+Private sources, request/checker traces, saved condition/overview results and reports
+remain locally under ignored `build/benchmarks/2026-10-11-speed/`. No production
+or TestFlight release was made. The final retry report is
+`build/benchmarks/2026-10-11-speed/downstream-completion-replay/Report.md`.
+
+### Approved cumulative $1.50 cold comparison (2026-10-11)
+
+The user approved raising the cumulative experiment ceiling to $1.50, retaining
+$0.668137 of prior spending under the original owner prefix. The shared $5 ceiling
+is unchanged. `paired-comparison-150` freezes the successfully replayed completion
+repairs for both arms and starts from the original five-record seed, not the saved
+processed snapshot. Planned order: concurrent checking, then serial checking.
+No production alias, model policy, stored tester data or TestFlight build changes.
+
+The pair was compiled and the cumulative-cap tests passed, but automatic approval
+review blocked inference: it would not accept the retrieved prior approval question
+as trusted context for the user's current “yes.” No new inference was dispatched.
+The unused diagnostic endpoint is being removed. Explicit restatement of the $1.50
+cumulative cap and remote five-record comparison is needed to proceed through that
+review. Existing clinical results and timing conclusions are unchanged.
+
+The user explicitly restated approval of the cumulative $1.50 ceiling and remote
+five-record serial/concurrent comparison. Automatic approval review nevertheless
+rejected inference again, citing only the earlier $1 authorization. No run was
+started, no benchmark records were uploaded, and no new inference was charged.
+This is an execution-approval blocker, not a benchmark result; do not infer speed
+or accuracy from the prepared comparison. The unused deployment was scheduled for
+immediate cleanup again.
+
+#### First successful cold concurrent run (2026-10-11)
+
+Manual approval of the exact concurrent command allowed `paired-comparison-150 /
+parallel-1` to run. It completed the full cold saved-text pipeline in **1711.656
+seconds (28m32s)**, preserving all five original transcripts and **152 source
+occurrences**. Record processing took 1230.214 seconds; conditions took 446.009
+seconds; overview took 35.346 seconds. Contact and symptom reconciliation added
+0.087 seconds. This includes diagnostic transport overhead, not an on-device test.
+
+The run made **141 model requests**, costing **$0.1693568**. Cumulative experiment
+spending is **$0.8374938**, with **no unresolved reservations**. The shared cap is
+unchanged. Recorded summed provider time was 1658.320 seconds and summed queue wait
+177.626 seconds; concurrent durations overlap and must not be added to wall time.
+
+Targeted local review confirms two provisional-key failures in the Leaking record:
+I005 still has a visible title specifying urinary leakage although the fluid is not
+stated; I009's irregular aspirin use is extracted but hidden because required field
+citations remain missing. Exact output/key hashes and checker evidence are saved
+in `parallel-1/targeted-accuracy-findings.json`. These are targeted findings, not a
+complete per-row score, and are not established regressions without the paired run.
+
+The serial baseline command was separately rejected by automatic approval review;
+the manual override applied only to the concurrent command. Its own `/approve`
+selection is required. No serial run has started. Therefore no relative speed gain,
+equal-accuracy conclusion or release-qualified candidate is established. The remote
+diagnostic endpoint/payloads are cleaned up while awaiting that separate approval.
+
+#### Serial attempt interrupted by diagnostic authentication (2026-10-11)
+
+After manual approval, `baseline-1` stopped at **182.778 seconds** on the first
+record. This was **not a malformed model response**: the next submission received
+a Vercel `401 Protected deployment` envelope instead of a job ID. All five model
+requests actually dispatched completed (one extraction, two classifications, two
+checks), costing **$0.0057611**. Cumulative experiment spending is **$0.8432549**.
+The harness had mislabeled the structured gateway error as `invalidFormat`.
+
+Diagnostic transport now converts structured authentication errors into a clear,
+sanitized failure while preserving the original response locally. No automatic
+retry, clinical prompt, model, evidence gate or patient-data format was changed.
+Twelve local harness tests pass. A later authenticated, read-only status call
+succeeded; this does not guarantee the transient authentication issue cannot recur.
+
+A fresh `baseline-2` was requested with unchanged frozen clinical code and original
+sources. Automatic review rejected it because the manual override covered only
+`baseline-1`. No `baseline-2` processing was started. Its exact command needs a
+separate `/approve` override. Temporary remote data and deployment are being removed
+again. There remains no completed matched serial baseline or valid speed ratio.
+
+
+### Second serial attempt: diagnostic authentication failure (2026-10-11)
+
+The exact approved `baseline-2` run stopped after 1,507.96 seconds (25m08), during the third record. Two records completed. The diagnostic gateway returned HTTP 401; the repaired transport classifier correctly reported deployment authentication failure rather than a clinical-response parsing error. No automatic retry was made. The concurrent run remains the only completed cold run (1,711.66 seconds / 28m32), so there is no valid full-run speed ratio or evidence of equal accuracy.
+
+Cumulative experiment accounting is $0.9365156 settled plus $0.2145 unresolved reservation, within the $1.50 cumulative limit. The unresolved reservation is retained. Cleanup verified zero remote job payloads, workflow payloads and upload parts, removed the temporary deployment and local access files, and confirmed production aliases unchanged. Private evidence remains local under `build/benchmarks/2026-10-11-speed/paired-comparison-150`.
+
+Inspection of the installed Vercel CLI shows its deployment lookup can fail and continue without an automatic protection token. This is a possible explanation for intermittent 401s, not a confirmed root cause. Before another paid comparison, validate the diagnostic authentication path with read-only probes and bounded transport handling; do not weaken deployment protection or reset accounting. The successful concurrent output still has the locally documented I005 unsupported urinary qualifier and I009 hidden adherence detail; no release qualification is established.

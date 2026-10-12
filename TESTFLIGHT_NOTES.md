@@ -1,5 +1,40 @@
 # CollectiveCare TestFlight Notes
 
+## Version 1.0993 (11) — Release candidate: faster checked health details
+
+Candidate branch: `codex/release-candidate-11`. Build 11 has a successful signed
+local archive; it has not been uploaded or distributed through TestFlight.
+
+Health-detail reprocessing now uses the checked-facts pipeline in the normal app
+scheme: combined extraction/classification, compact independent source checking,
+bounded concurrency, persistent section checkpoints and a final consolidation
+pass. Original text, source occurrences, edits and previously checked summaries
+remain protected. Existing checked summaries are not automatically invalidated.
+
+Includes recent contact grouping, malformed duplicate-response recovery, connection
+retry and oversized-output fixes. Conditions and overview continue to consume saved
+checked facts. Independent verification remains required. No Decisions dependency
+or new model is introduced. Condition mapping and checking remain at medium reasoning;
+packed recovery and low-reasoning experiments are not enabled in this candidate.
+
+The normal build uses the existing shared pilot allowance. The explicit Fast Health
+Details development scheme retains the cumulative experiment sub-limit. Neither cap
+is raised or reset. Older TestFlight clients retain their existing behavior.
+
+What to test: reopen existing records; explicitly reprocess health details once;
+check progress, completion and duplicate contacts; close/reopen and retry unfinished
+work; compare retained details and source links against originals. Organize conditions
+and create the overview separately. Review omissions, qualifiers, attribution and
+body-system placement. This candidate is an evaluation build; accuracy limitations
+remain and a 10× whole-flow speedup has not been demonstrated. The latest separate
+details comparison had 39/86 provisional visible-retention passes versus 41/86 for
+the earlier fast variant; this is not full-row clinical accuracy or proof of equivalence.
+
+Validation: 364 Swift tests passed with two skips, 50 backend tests passed with two
+database-dependent skips, and all 15 offline regression scripts passed. The packed
+condition trials completed with all 87 input facts preserved, but remain excluded
+from the defaults because clinical assignment results were mixed.
+
 ## Version 1.0993 (10) — Contact grouping and processing fixes
 
 Signed archive, upload, Apple processing, and export compliance completed October

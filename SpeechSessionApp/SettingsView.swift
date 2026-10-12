@@ -542,6 +542,7 @@ struct SettingsView: View {
             url.queryItems = [URLQueryItem(name: "timezone", value: TimeZone.current.identifier)]
             var request = URLRequest(url: url.url!)
             request.setValue("Bearer \(try await kindeAuth.freshAccessToken())", forHTTPHeaderField: "Authorization")
+            if FastDetailsConfiguration.experimental { request.setValue("fast-details", forHTTPHeaderField: "X-CollectiveCare-Pipeline") }
             request.cachePolicy = .reloadIgnoringLocalCacheData
             let (data, response) = try await URLSession.shared.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }

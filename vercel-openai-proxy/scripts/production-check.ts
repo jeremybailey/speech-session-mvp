@@ -16,7 +16,7 @@ async function main() {
   try {
     assert.ok((await db.query("SELECT to_regclass('public.ai_condition_upload_parts') AS name")).rows[0].name,'Chunked-upload migration missing');
     const budget=(await db.query('SELECT limit_nusd,used_nusd,reserved_nusd FROM ai_budgets WHERE id=$1',[process.env.AI_BUDGET_ID])).rows[0];
-    assert.ok(budget&&BigInt(budget.limit_nusd)<=1000000000n,'Shared pilot ceiling must not exceed $1');
+    assert.ok(budget&&BigInt(budget.limit_nusd)<=5000000000n,'Shared pilot ceiling must not exceed approved $5');
     assert.ok(BigInt(budget.used_nusd)+BigInt(budget.reserved_nusd)<BigInt(budget.limit_nusd),'Pilot budget exhausted');
     for(const [table,column] of [['ai_jobs','reasoning_effort'],['ai_jobs','workload_type'],['ai_condition_workflows','model'],['ai_condition_workflows','reasoning_effort'],['ai_condition_workflow_steps','incurs_cost']]) {
       assert.equal((await db.query('SELECT 1 FROM information_schema.columns WHERE table_schema=$1 AND table_name=$2 AND column_name=$3',['public',table,column])).rows.length,1,'Required migration missing');

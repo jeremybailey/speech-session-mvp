@@ -2,7 +2,7 @@ import { createHmac, createHash, randomUUID } from 'node:crypto';
 import type {PoolClient} from 'pg';
 import { database, transaction, submitWithinTransaction,workloadType } from './ledger';
 import { conditionModel, conditionReasoning } from './model-policy';
-import { ConditionState, validateConditionPlan, initialConditionState, nextConditionRequest, acceptConditionResponse } from './condition-workflow';
+import { ConditionState, compactConditionPlan, validateConditionPlan, initialConditionState, nextConditionRequest, acceptConditionResponse } from './condition-workflow';
 
 const active = (state:string) => ['queued','running'].includes(state);
 function canonical(value:any):string {
@@ -10,8 +10,15 @@ function canonical(value:any):string {
   if(value && typeof value==='object') return `{${Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+canonical(value[k])).join(',')}}`;
   return JSON.stringify(value);
 }
+// Freeze release-specific transport/recovery policy before hashing and persistence.
+// Older clients and already saved workflows retain their original plan.
+export function prepareConditionPlan(value:unknown) {
+  const plan=validateConditionPlan(value);
+  if(plan.clientRevision!=='condition-packed-recovery-v1') return plan;
+  return compactConditionPlan({...plan,...(plan.repairRejectedHeadings?{repairRejectedLinks:true,packRecovery:true}:{})});
+}
 export async function submitConditionWorkflow(owner:string,value:unknown,stopBeforeSubmission=false,client?:PoolClient) {
-  const plan=validateConditionPlan(value), secret=process.env.AI_DEDUPE_SECRET;
+  const plan=prepareConditionPlan(value), secret=process.env.AI_DEDUPE_SECRET;
   if(!secret) throw new Error('dedupe_secret_unavailable');
   const {workload_type,...clinicalPlan}=plan;
   const hash=createHmac('sha256',secret).update(canonical([owner,'condition-workflow-v1',clinicalPlan])).digest('hex');

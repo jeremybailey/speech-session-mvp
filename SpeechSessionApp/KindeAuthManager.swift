@@ -86,11 +86,17 @@ final class KindeAuthManager: ObservableObject {
         syncState()
         let trimmed = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
         if isSignedIn, let url = CloudOpenAIConfiguration.chatCompletionsURL() {
-            return OpenAIChatTransport.kindeProxy(chatURL: url) { [weak self] in
+            let transport = OpenAIChatTransport.kindeProxy(chatURL: url) { [weak self] in
                 guard let self else { throw KindeAuthError.noAccessToken }
                 let t = try await self.freshAccessToken()
                 return "Bearer \(t)"
             }
+            do { return FastDetailsConfiguration.enabled ? try transport.fastDetailsTransport() : transport }
+            catch { sessionNotice = error.localizedDescription; return nil }
+        }
+        if FastDetailsConfiguration.enabled {
+            sessionNotice = "Sign in to process your health details."
+            return nil
         }
         guard !trimmed.isEmpty else {
             sessionNotice = "Sign in to use cloud transcription and summaries. Your records are saved."

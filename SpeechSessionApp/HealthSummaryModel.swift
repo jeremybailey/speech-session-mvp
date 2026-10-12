@@ -344,14 +344,18 @@ final class HealthSummaryModel: ObservableObject {
         }
     }
 
-    func prepareSummaries(transport: OpenAIChatTransport?, onDevice: Bool, forceSessionID: UUID? = nil,
+    func prepareSummaries(transport configuredTransport: OpenAIChatTransport?, onDevice: Bool, forceSessionID: UUID? = nil,
                           forceAll: Bool = false, retryUnfinished: Bool = false,
                           organizeConditionsAfterRecords: Bool = true, overviewOnly: Bool = false) async {
         if overviewOnly {
-            await createOverview(transport: transport, onDevice: onDevice)
+            await createOverview(transport: configuredTransport, onDevice: onDevice)
             return
         }
         guard !isProcessing, !isTransferringData else { return }
+        let transport: OpenAIChatTransport?
+        do {
+            transport = FastDetailsConfiguration.enabled && !onDevice ? try configuredTransport?.fastDetailsTransport() : configuredTransport
+        } catch { self.error = error.localizedDescription; return }
         isProcessing = true
         error = nil
         if !overviewOnly { processingIssue = nil }
@@ -377,7 +381,34 @@ final class HealthSummaryModel: ObservableObject {
         if !overviewOnly { retryRecordIDs = Set(pending.map(\.id)) }
         var failures: [(Session, Error)] = []
         var completed = 0
+        var stopAfterDetails = false
         do {
+            if FastDetailsConfiguration.enabled && !onDevice && !pending.isEmpty {
+                guard let transport else { throw SummaryResponseError.signInRequired }
+                let isolated = try transport.fastDetailsTransport()
+                guard isolated.durableJobsURL != nil else { throw SummaryProcessingError.unavailable("Fast details requires budgeted durable jobs.") }
+                let scheduler = FastDetailsScheduler(limit: try await isolated.fastDetailsCapacity())
+                let outcomes = try await SummaryParallelWork.map(pending, limit: 3) { session -> FastRecordOutcome in
+                    do {
+                        try await FastRecordProcessing.process(session, store: self.store, transport: isolated, scheduler: scheduler) { stage in
+                            await MainActor.run { self.progress = session.displayTitle + " · " + stage }
+                        }
+                        await MainActor.run {
+                            self.retryRecordIDs.remove(session.id)
+                            self.progressCurrent = pending.count - self.retryRecordIDs.count
+                            self.progressValue = Double(self.progressCurrent)
+                        }
+                        await self.refresh()
+                        return FastRecordOutcome(session: session, error: nil)
+                    } catch is CancellationError { throw CancellationError() }
+                    catch { return FastRecordOutcome(session: session, error: error) }
+                }
+                stopAfterDetails = await scheduler.isStopped
+                for outcome in outcomes {
+                    if let error = outcome.error { failures.append((outcome.session, error)) }
+                    else { completed += 1 }
+                }
+            } else {
             try await SummaryRecordBatch.run(records: pending) { session, index in
                 progressCurrent = index + 1
                 progressValue = Double(index)
@@ -396,8 +427,15 @@ final class HealthSummaryModel: ObservableObject {
             } failed: { session, error in
                 failures.append((session, error))
             }
+            }
         } catch is CancellationError { return }
         catch { self.error = error.localizedDescription; return }
+        if stopAfterDetails {
+            if let first = failures.first {
+                processingIssue = SummaryProcessingIssue(error: first.1, session: first.0, completed: completed, remaining: retryRecordIDs.count)
+            }
+            return
+        }
         var contactReviewAttempted = false
         if !overviewOnly && !Task.isCancelled && (!pending.isEmpty || retryUnfinished) {
             progressTitle = "Finishing health details"
@@ -551,7 +589,7 @@ struct SummaryProcessingIssue {
             let unfinished = remaining == 1 ? "1 record still needs updating." : "\(remaining) records still need updating."
             message = "\(name) · \(date)\n\(failure?.stage ?? "Processing"): \(explanation)\n\nYour originals are safe. This record’s previous checked summary is unchanged. \(saved) \(unfinished)\n\n\(recovery)"
         } else {
-            message = "\(explanation)\n\nChecked summary details are saved. Similar symptoms remain separate until duplicate checking finishes. Your originals are safe.\n\n\(recovery)"
+            message = "\(explanation)\n\nChecked summary details are saved. Repeated contacts or similar symptoms remain separate until duplicate checking finishes. Your originals are safe.\n\n\(recovery)"
         }
     }
 }
@@ -574,6 +612,44 @@ struct OverviewProgressUpdate: Sendable {
 struct ConditionProgressUpdate: Sendable {
     let message: String
     let fraction: Double
+}
+
+/// Request-only citation codes keep long storage IDs out of the model's prose.
+/// This translates identifiers only; it never chooses evidence or changes claims.
+struct OverviewReferenceEncoding {
+    let originalByCode: [String: String]
+    var codes: [String] { originalByCode.keys.sorted() }
+
+    init(ids: [String], input: String) {
+        var prefix = "REF_"
+        while input.contains(prefix) { prefix = String(prefix.dropLast()) + "X_" }
+        func letters(_ index: Int) -> String {
+            var n = index + 1, result = ""
+            while n > 0 { n -= 1; result = String(UnicodeScalar(65 + n % 26)!) + result; n /= 26 }
+            return result
+        }
+        originalByCode = Dictionary(uniqueKeysWithValues: Set(ids).sorted().enumerated().map { (prefix + letters($0.offset), $0.element) })
+    }
+    private func replace(_ text: String, _ from: String, _ to: String) -> String {
+        let pattern = "(?<![A-Za-z0-9_|-])" + NSRegularExpression.escapedPattern(for: from) + "(?![A-Za-z0-9_|-])"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+        return regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: NSRegularExpression.escapedTemplate(for: to))
+    }
+    func encode(_ input: String) -> String {
+        originalByCode.sorted { $0.value.count > $1.value.count }.reduce(input) { replace($0, $1.value, $1.key) }
+    }
+    func restore(_ raw: String) throws -> String {
+        var narrative = try OverviewResponseContract.decodeNarrative(raw)
+        for index in narrative.sentences.indices {
+            let codes = narrative.sentences[index].factIDs
+            guard !codes.isEmpty, codes.allSatisfy({ originalByCode[$0] != nil }) else { throw OverviewFailure.invalidReferences }
+            for code in Set(codes) {
+                narrative.sentences[index].text = replace(narrative.sentences[index].text, code, originalByCode[code]!)
+            }
+            narrative.sentences[index].factIDs = codes.map { originalByCode[$0]! }
+        }
+        return String(decoding: try JSONEncoder().encode(narrative), as: UTF8.self)
+    }
 }
 
 
@@ -773,6 +849,10 @@ actor RecordSummaryProcessor {
     func reconcileContacts(store: SessionStore, transport: OpenAIChatTransport?, onDevice: Bool,
                            didCombine: (HealthCombinationUndo) async -> Void) async throws {
         guard !onDevice else { return }
+        if FastDetailsConfiguration.enabled {
+            try await reconcileContactGroups(store: store, transport: transport, didCombine: didCombine)
+            return
+        }
         let initial = try await store.healthSnapshot()
         let contacts = HealthMemoryProjection.facts(in: initial).filter { $0.category == .practitionerContact }
         let buckets = Dictionary(grouping: contacts, by: ContactIdentityReview.candidateName)
@@ -811,6 +891,39 @@ actor RecordSummaryProcessor {
                     }
                 }
             }
+        }
+    }
+
+    private func reconcileContactGroups(store: SessionStore, transport: OpenAIChatTransport?,
+                                        didCombine: (HealthCombinationUndo) async -> Void) async throws {
+        var reviewedBatches = 0
+        while true {
+            var combined = false
+            let snapshot = try await store.healthSnapshot()
+            let contacts = HealthMemoryProjection.facts(in: snapshot).filter {
+                $0.category == .practitionerContact && $0.occurrences.allSatisfy { $0.evidence?.combinationExcluded != true }
+            }
+            let buckets = Dictionary(grouping: contacts, by: ContactIdentityReview.candidateName)
+            for name in buckets.keys.sorted() where !name.isEmpty {
+                let ordered = buckets[name]!.sorted { $0.id < $1.id }
+                for (facts, input) in try ContactIdentityReview.groupBatches(ordered, sessions: snapshot.sessions) {
+                    try Task.checkCancellation()
+                    let key = SummaryVerification.hash("contact-assignments-v2|" + input)
+                    if try await store.verifiedPairDecision(key) != nil { continue }
+                    guard reviewedBatches < 64 else { throw SummaryProcessingError.unavailable("Contact review paused after this batch. Your saved details are unchanged.") }
+                    reviewedBatches += 1
+                    let groups = try await ContactIdentityReview.reviewGroups(input: input, count: facts.count) { instructions, input in
+                        try await self.request(stage: "duplicates", system: instructions, user: input,
+                            transport: transport, onDevice: false, formatOverride: ContactIdentityReview.groupResponseFormat(count: facts.count))
+                    }
+                    try Task.checkCancellation()
+                    let undos = try await store.saveContactGroupReview(key, groups: groups.map { $0.map { facts[$0].id } },
+                        expected: facts, sources: snapshot.sessions)
+                    combined = combined || !undos.isEmpty
+                    for undo in undos { await didCombine(undo) }
+                }
+            }
+            if !combined { return }
         }
     }
 
@@ -1289,7 +1402,7 @@ actor RecordSummaryProcessor {
         }
     }
 
-    private func request(stage: String, system: String, user: String, transport: OpenAIChatTransport?, onDevice: Bool, contract: OverviewResponseContract? = nil, allowedFactIDs: [String] = [], expectedCheckIDs: [UUID] = [], model: String = "gpt-4o-mini") async throws -> String {
+    private func request(stage: String, system: String, user: String, transport: OpenAIChatTransport?, onDevice: Bool, contract: OverviewResponseContract? = nil, allowedFactIDs: [String] = [], expectedCheckIDs: [UUID] = [], formatOverride: [String: Any]? = nil, model: String = "gpt-4o-mini") async throws -> String {
         try Task.checkCancellation()
         let started = Date(), label = stage
         defer { timing.info("model_request stage=\(label, privacy: .public) seconds=\(Date().timeIntervalSince(started), privacy: .public)") }
@@ -1319,22 +1432,25 @@ actor RecordSummaryProcessor {
             return response.content
         }
         guard let transport else { throw SummaryProcessingError.unavailable("Sign in in Settings to check cloud summaries.") }
+        let references = contract == .narrative && !allowedFactIDs.isEmpty ? OverviewReferenceEncoding(ids: allowedFactIDs, input: user + system) : nil
+        let requestInput = references?.encode(user) ?? user
         let requestInstructions = ClinicalDraftFormat.instructions(for: system, stage: stage)
-        let responseFormat = contract?.responseFormat(allowedFactIDs: allowedFactIDs) ?? ClinicalResponseFormat.forStage(label, expectedCheckIDs: expectedCheckIDs)
+        let responseFormat = formatOverride ?? contract?.responseFormat(allowedFactIDs: references?.codes ?? allowedFactIDs) ?? ClinicalResponseFormat.forStage(label, expectedCheckIDs: expectedCheckIDs)
         let typedPayload: [String: Any] = [
             "stage": label,
             "instructions": requestInstructions,
-            "input": user,
+            "input": requestInput,
             "response_format": responseFormat,
             "request_id": UUID().uuidString
         ]
         if transport.durableJobsURL != nil {
-            return try await transport.durableRequest(payload: typedPayload)
+            let raw = try await transport.durableRequest(payload: typedPayload)
+            return try references?.restore(raw) ?? raw
         }
         var legacyPayload: [String: Any] = [
             "model": model,
             "response_format": responseFormat,
-            "messages": [["role": "system", "content": requestInstructions], ["role": "user", "content": user]]
+            "messages": [["role": "system", "content": requestInstructions], ["role": "user", "content": requestInput]]
         ]
         if model == ConditionSynthesis.model {
             legacyPayload["reasoning_effort"] = "low"
@@ -1383,7 +1499,7 @@ actor RecordSummaryProcessor {
                 timing.info("model_usage stage=\(label, privacy: .public) input=\(usage["input_tokens"] as? Int ?? 0, privacy: .public) output=\(usage["output_tokens"] as? Int ?? 0, privacy: .public) cached=\(usage["cached_tokens"] as? Int ?? 0, privacy: .public)")
             }
             guard let content = json["output"] as? String, !content.isEmpty else { throw invalidResponse }
-            return content
+            return try references?.restore(content) ?? content
         }
         guard
               let choices = json["choices"] as? [[String: Any]], let choice = choices.first else { throw invalidResponse }
@@ -1393,6 +1509,66 @@ actor RecordSummaryProcessor {
             throw OverviewFailure.refused
         }
         guard let content = message["content"] as? String else { throw invalidResponse }
-        return content
+        return try references?.restore(content) ?? content
+    }
+}
+
+
+private struct FastRecordOutcome: @unchecked Sendable {
+    let session: Session
+    let error: Error?
+}
+
+/// Stateless record adapter. Every request owns its context; no shared activeJobID.
+enum FastRecordProcessing {
+    static func process(_ session: Session, store: SessionStore, transport: OpenAIChatTransport,
+                        scheduler: FastDetailsScheduler,
+                        progress: @escaping @Sendable (String) async -> Void) async throws {
+        let units = StructuredHealthReport.units(in: session.transcript).map { StructuredHealthReport.batches($0, limit: 12_000, maxUnits: 16) }
+        let sources = units?.map(\.source) ?? FastDetailsPipeline.extractionSources(session.transcript)
+        let kind: SummaryContentKind = session.entryIntent == .personalJournal ? .personalJournal : (session.inputType == .audio ? .visitEncounter : .mixedOther)
+        let prompts = SummaryPromptAssembly.openAISummaryPrompts(contentKind: kind)
+        let categories = SummaryEntryCategory.allCases.map { "\($0.rawValue): \(SummaryCategoryClassification.definition(for: $0))" }.joined(separator: "\n")
+        let instructions = ClinicalDraftFormat.instructions(for: prompts.system, stage: "extraction") + """
+
+        EXPERIMENT fast-details-v2.2. Assign the final category in this extraction using the definitions below.
+        Include explicitly named care-team contacts and the explicit primary reason for care in this same
+        response. Do not infer a primary complaint when none is stated. Every contact is an independent
+        fact; do not borrow patient or another provider's contact details. Omit unsupported optional fields.
+        Keep each fact's source excerpt verbatim. Preserve uncertainty, medication adherence, negation,
+        conditional plans, exact timing and who made the statement. Do not infer an unspecified clinical mechanism or diagnosis. Do not merge distinct source occurrences or invent missing context.
+        \(categories)
+        """
+        let send: FastDetailsPipeline.Send = { request in
+            let started = ProcessInfo.processInfo.systemUptime
+            defer {
+                Logger(subsystem: "CollectiveCare", category: "FastDetails").notice("phase=\(request.phase, privacy: .public) elapsed=\(ProcessInfo.processInfo.systemUptime - started, privacy: .public)")
+            }
+            let payload: [String: Any] = ["stage": request.stage,
+                "instructions": "Pipeline: " + FastDetailsPipeline.version + "\n" + request.instructions,
+                "input": request.input,
+                "response_format": try JSONSerialization.jsonObject(with: request.responseFormat),
+                "workload_type": transport.fastExperiment ? "development" : "incremental", "diagnostic_phase": request.phase]
+            do { return try await transport.durableRequest(payload: payload) }
+            catch {
+                let value = error as NSError
+                if value.domain == "AIProcessingOutput" && value.code == 1 { throw SummaryResponseError.responseTooLong }
+                throw error
+            }
+        }
+        try await FastDetailsPipeline(scheduler: scheduler).process(session: session, sources: sources, store: store,
+            extract: { source, index in
+                let unit = units?[index]
+                if let unit, unit.source == source, let parsed = StructuredHealthReport.labDrafts(in: unit, session: session) {
+                    return parsed.map { StructuredHealthReport.prepare($0, for: unit) } + StructuredHealthReport.orderingContacts(in: source, session: session)
+                }
+                let request = try FastDetailsRequest(stage: "extraction", instructions: instructions,
+                    input: prompts.userPrefix + source, responseFormat: ClinicalDraftFormat.responseFormat)
+                let raw = try await send(request)
+                guard let fields = VisitSummaryJSONParser.fields(fromAssistantContent: raw) else { throw SummaryResponseError.invalidFormat }
+                return SummaryEntryFactory.entries(from: fields, session: session).map { entry in
+                    unit.map { StructuredHealthReport.prepare(entry, for: $0) } ?? entry
+                }
+            }, send: send, progress: progress)
     }
 }

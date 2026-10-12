@@ -64,12 +64,12 @@ public enum StructuredHealthReport {
     }
 
     /// Batch adjacent compatible units without cutting a row away from its inherited context.
-    public static func batches(_ units: [Unit], limit: Int) -> [Unit] {
+    public static func batches(_ units: [Unit], limit: Int, maxUnits: Int = 3) -> [Unit] {
         var result: [Unit] = []
         var count = 0
         for unit in units {
             if let previous = result.last, previous.kind == unit.kind, previous.heading == unit.heading,
-               count < 3, previous.source.count + unit.source.count + 2 <= limit {
+               count < max(1, maxUnits), previous.source.count + unit.source.count + 2 <= limit {
                 result[result.count - 1] = Unit(kind: unit.kind, source: previous.source + "\n\n" + unit.source, heading: unit.heading)
                 count += 1
             } else { result.append(unit); count = 1 }

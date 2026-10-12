@@ -2,6 +2,18 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class StructuredHealthReportTests: XCTestCase {
+    func testLargerBatchesPreserveRowsAndSectionBoundaries() {
+        let units = (0..<48).map { i in StructuredHealthReport.Unit(kind: .medication,
+            source: "Medications (Fills)\nMedication name | Date filled\nMedicine \(i) | 2026-01-01", heading: "Medications (Fills)") }
+        let old = StructuredHealthReport.batches(units, limit: 2500)
+        let larger = StructuredHealthReport.batches(units, limit: 12_000, maxUnits: 16)
+        XCTAssertEqual(old.count, 16)
+        XCTAssertEqual(larger.count, 3)
+        XCTAssertEqual(larger.map(\.source).joined(separator: "\n\n"), units.map(\.source).joined(separator: "\n\n"))
+        let other = StructuredHealthReport.Unit(kind: .medication, source: "Stopped medicine", heading: "Medications (Discontinued)")
+        XCTAssertEqual(StructuredHealthReport.batches([units[0],other], limit: 12_000, maxUnits: 16).count, 2)
+        XCTAssertTrue(larger.allSatisfy { $0.source.count <= 12_000 })
+    }
     let report = """
     PERSONAL HEALTH REPORT
     Lab Results

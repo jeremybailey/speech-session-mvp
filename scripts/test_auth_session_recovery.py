@@ -14,7 +14,9 @@ struct CloudOpenAIConfiguration {
  static func chatCompletionsURL() -> URL? { URL(string:"https://example.invalid/chat") }
  static func audioTranscriptionsURL() -> URL? { URL(string:"https://example.invalid/audio") }
 }
+enum FastDetailsConfiguration { static let enabled = true }
 struct OpenAIChatTransport {
+ func fastDetailsTransport() throws -> Self { self }
  let header: @Sendable () async throws -> String
  static func kindeProxy(chatURL: URL, accessToken: @escaping @Sendable () async throws -> String) -> Self { .init(header:accessToken) }
  static func direct(apiKey: String) -> Self { .init(header:{apiKey}) }

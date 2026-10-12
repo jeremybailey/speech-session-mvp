@@ -9,7 +9,17 @@ method = source[source.index('    func prepareSummaries('):source.index('    ///
 program = r'''
 import Foundation
 import SpeechSessionPersistence
-struct OpenAIChatTransport {}
+enum FastDetailsConfiguration { static var enabled = false }
+struct OpenAIChatTransport: Sendable {
+ var durableJobsURL: URL? { URL(string:"https://example.invalid/jobs") }
+ func fastDetailsTransport() throws -> Self { self }
+ func fastDetailsCapacity() async throws -> Int { 4 }
+}
+enum SummaryProcessingError: Error { case unavailable(String) }
+struct FastRecordOutcome: Sendable { let session: Session; let error: Error? }
+enum FastRecordProcessing {
+ static func process(_ session: Session, store: SessionStore, transport: OpenAIChatTransport, scheduler: FastDetailsScheduler, progress: @escaping @Sendable (String) async -> Void) async throws { await progress("Synthetic checked record") }
+}
 struct SummaryProcessingIssue {
  init(error: Error, session: Session?, completed: Int, remaining: Int) {}
 }
@@ -63,6 +73,11 @@ struct SummaryProcessingIssue {
   failed.processor.failContacts = false
   await failed.prepareSummaries(transport: nil, onDevice: false, retryUnfinished: true, organizeConditionsAfterRecords: false)
   assert(failed.processor.contacts == 2 && failed.processingIssue == nil)
+  FastDetailsConfiguration.enabled = true
+  let fast = Model(store:store)
+  await fast.prepareSummaries(transport:OpenAIChatTransport(),onDevice:false,forceAll:true,organizeConditionsAfterRecords:false)
+  assert(fast.processor.records == 0 && fast.processor.contacts == 1 && fast.processor.symptoms == 1)
+  assert(fast.retryRecordIDs.isEmpty && fast.conditions == 0 && fast.processingIssue == nil)
   let overview = Model(store: store)
   await overview.prepareSummaries(transport: nil, onDevice: false, overviewOnly: true)
   assert(overview.overviews == 1 && overview.processor.contacts == 0)
@@ -70,12 +85,14 @@ struct SummaryProcessingIssue {
  }
 }
 '''
-products = root/'.build/out/Products/Debug'
-maps = root/'.build/out/Intermediates.noindex/GeneratedModuleMaps'
+products = (root/'.build/debug').resolve()
+maps = products.parent.parent/'Intermediates.noindex/GeneratedModuleMaps'
+if (maps/'macosx').exists(): maps = maps/'macosx'
+def object_file(name): return products/(name+('_Module.o' if (products/(name+'_Module.o')).exists() else '.o'))
 with tempfile.TemporaryDirectory() as tmp:
     path = Path(tmp); (path/'Run.swift').write_text(program)
-    args = ['swiftc','-parse-as-library','-module-cache-path',str(path/'cache'),'-I',str(products),'-L',str(products),'-lSpeechSessionPersistence','-lz','-framework','Security']
+    args = ['swiftc','-parse-as-library','-module-cache-path',str(path/'cache'),'-I',str(products),'-L',str(products),str(object_file('SpeechSessionPersistence')),'-lz','-framework','Security']
     for module in ['ZipArchive','TransferZip']:
-        args += ['-Xcc','-fmodule-map-file='+str(maps/(module+'.modulemap')),str(products/(module+'.o'))]
+        args += ['-Xcc','-fmodule-map-file='+str(maps/(module+'.modulemap')),str(object_file(module))]
     subprocess.run(args+[str(path/'Run.swift'),'-o',str(path/'run')],check=True)
     subprocess.run([str(path/'run')],check=True)

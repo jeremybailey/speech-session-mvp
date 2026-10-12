@@ -1,3 +1,4 @@
+import { processingOwner, isFastRequest } from '../../_lib/fast-details-experiment';
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { verifyKindeBearer } from "../../_lib/verifyKinde";
 import { transaction } from "../../_lib/ledger";
@@ -55,7 +56,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Cache-Control","no-store");
   if (req.method !== "GET") return res.status(405).end();
   try {
-    const owner = await verifyKindeBearer(req.headers.authorization);
+    const owner = processingOwner(await verifyKindeBearer(req.headers.authorization), isFastRequest(req.headers));
     const timezone = typeof req.query.timezone === "string" ? req.query.timezone : "UTC";
     try { new Intl.DateTimeFormat("en-US",{timeZone:timezone}); } catch { return res.status(400).end(); }
     const result = await readUsage(owner,timezone);

@@ -35,6 +35,9 @@ for stage in re.findall(r'request\(stage: "([^"]+)"', source):
 schema = (root / 'Sources/SpeechSessionPersistence/ClinicalResponseFormat.swift').read_text().split('public enum ClinicalResponseFormat', 1)[1]
 program = '''import Foundation
 enum SummaryEntryCategory: String, CaseIterable { case symptoms }
+// Dependencies of unexercised extraction/condition branches; tested in Swift package tests.
+enum ConditionSynthesis { static let bodySystems = ["unknown"] }
+enum ClinicalDraftFormat { static var responseFormat: [String: Any] { fatalError("Not exercised by routing test") } }
 private enum ClinicalResponseFormat''' + schema + '''
 func decision(_ stage: String) -> [String: Any] {
  let format = ClinicalResponseFormat.forStage(stage)
