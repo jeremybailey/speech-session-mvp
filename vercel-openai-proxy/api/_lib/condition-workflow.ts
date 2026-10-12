@@ -6,10 +6,11 @@ export type Group = { name: string; bodySystem: string; isPrimary: boolean; reas
   entryIDs: string[]; stableID?: string; entryReasons?: string[] };
 export type Synthesis = { groups: Group[]; unassigned: string[] };
 type Contract = { instructions: string; response_format: Record<string, unknown> };
-export type ConditionPlan = { version: 1; workload_type?:WorkloadType; preserved: Synthesis; batches: Entry[][];
-  contextEntries: Entry[]; mapping: Contract; verification: Contract };
+export type ConditionPlan = { version: 1; workload_type?:WorkloadType; clientRevision?:string; preserved: Synthesis; batches: Entry[][];
+  contextEntries: Entry[]; repairRejectedHeadings?: boolean; headingRecoveryInstructions?: string; mapping: Contract; verification: Contract };
 export type ConditionState = { batch: number; phase: 'mapping'|'verification'|'completed';
-  result: Synthesis; proposal?: Synthesis; verificationBatches?: Group[][]; verificationIndex: number };
+  coverageRetry?: boolean;
+  result: Synthesis; headingRecovery?: { entryIDs: string[]; rejectedNames: string[] }; recoveringHeading?: boolean; headingRecoveries?: {batch:number;entryIDs:string[];rejectedNames:string[]}[]; recoveryIndex?:number; proposal?: Synthesis; verificationBatches?: Group[][]; verificationIndex: number };
 const systems = new Set(['eye','neurological','musculoskeletal','cardiovascular','respiratory',
   'digestive','endocrine','reproductive','urinary','skin','immune','mental','ear','unknown']);
 function requireValue(ok: unknown): asserts ok { if (!ok) throw new Error('invalid_condition_workflow'); }
@@ -28,17 +29,18 @@ function conditionKey(name:string) {
 }
 const key = (g: Pick<Group,'name'|'bodySystem'>) => `${conditionKey(g.name)}|${g.bodySystem.toLowerCase()}`;
 const ids = (value: Synthesis) => [...value.groups.flatMap(g=>g.entryIDs),...value.unassigned];
-function validGroup(g: Group) {
+const coverageRepairInstruction = 'The previous mapping omitted supplied entries. Return every supplied entry ID exactly once, either in a group or unassigned. Do not invent a clinical link to satisfy coverage. This is the only coverage retry.';
+function validGroup(g: Group, allowEmpty=false) {
   requireValue(g && typeof g.name==='string' && g.name.trim().length>0 && [...g.name].length<=80 &&
     typeof g.reason==='string' && g.reason.trim().length>0 && [...g.reason].length<=300 &&
-    systems.has(g.bodySystem) && typeof g.isPrimary==='boolean' && Array.isArray(g.entryIDs) && g.entryIDs.length>0);
+    systems.has(g.bodySystem) && typeof g.isPrimary==='boolean' && Array.isArray(g.entryIDs) && (allowEmpty || g.entryIDs.length>0));
   const name=normalized(g.name);
   requireValue(!/(?:^|\s)(findings?|results?|structures?)$/.test(name) &&
     !['heart','lungs','lung','bones','mediastinum','lung volume','heart size','normal','normal examination','unremarkable'].includes(name));
 }
 function coverage(value: Synthesis, expected: string[]) {
   requireValue(value && Array.isArray(value.groups) && Array.isArray(value.unassigned));
-  value.groups.forEach(validGroup);
+  value.groups.forEach(group=>validGroup(group));
   const found=ids(value);
   requireValue(found.length===expected.length && new Set(found).size===found.length &&
     found.every(id=>typeof id==='string' && expected.includes(id)) &&
@@ -52,6 +54,9 @@ function checkedConditionPlan(value: unknown): ConditionPlan {
   const p=value as ConditionPlan;
   requireValue(p && p.version===1 && bytes(p)<=60_000_000 && Array.isArray(p.batches) && p.batches.length<=10000 &&
     Array.isArray(p.contextEntries));
+  requireValue(p.clientRevision===undefined || (typeof p.clientRevision==='string' && /^[A-Za-z0-9-]{1,80}$/.test(p.clientRevision)));
+  requireValue(p.repairRejectedHeadings===undefined || typeof p.repairRejectedHeadings==='boolean');
+  if(p.repairRejectedHeadings) requireValue(typeof p.headingRecoveryInstructions==='string' && p.headingRecoveryInstructions.trim().length>0 && p.headingRecoveryInstructions.length<=4000);
   const preserved=ids(p.preserved), candidates=p.batches.flat();
   coverage(p.preserved,preserved);
   requireValue(new Set([...preserved,...candidates.map(e=>e.id)]).size===preserved.length+candidates.length);
@@ -72,7 +77,8 @@ export function initialConditionState(plan: ConditionPlan): ConditionState {
   return {batch:0,phase:plan.batches.length?'mapping':'completed',result:structuredClone(plan.preserved),verificationIndex:0};
 }
 function source(entry: Entry, withID: boolean) {
-  const fields=['title','details','fields','excerpt','date',...(withID?['id','category','sourceAdmission']:[])];
+  const fields=['title','details','fields','excerpt','date','status','statusExplicit','actionKind','sourceWindows',
+    ...(withID?['id','category','sourceAdmission']:[])];
   return Object.fromEntries(fields.filter(k=>entry[k]!==undefined).map(k=>[k,entry[k]]));
 }
 function verifierInput(plan: ConditionPlan,state: ConditionState,groups: Group[]) {
@@ -103,29 +109,39 @@ function localRequest(input: Record<string,any>, verification: boolean) {
   else input.entries=input.entries.map(compact);
   return {input:JSON.stringify(input),map};
 }
-function boundedCatalogue(groups:Group[],entries:Entry[]) {
+function boundedCatalogue(groups:Group[],entries:Entry[],limit=15_000) {
   const catalogue=groups.map(g=>({name:g.name,bodySystem:g.bodySystem,isPrimary:g.isPrimary}));
-  if(bytes(catalogue)<=15_000) return {existingGroups:catalogue};
+  if(bytes(catalogue)<=limit) return {existingGroups:catalogue};
   // Retrieval only, never an association decision. The mapper must still prove
   // links from the candidate's source, then the independent verifier checks them.
   const text=JSON.stringify(entries).toLowerCase();
   const score=(name:string)=>normalized(name).split(' ').filter(w=>w.length>2&&text.includes(w)).length;
   catalogue.sort((a,b)=>score(b.name)-score(a.name)||a.name.localeCompare(b.name)||a.bodySystem.localeCompare(b.bodySystem));
   const selected:typeof catalogue=[];
-  for(const item of catalogue) if(bytes([...selected,item])<=15_000) selected.push(item);
+  for(const item of catalogue) if(bytes([...selected,item])<=limit) selected.push(item);
   return {existingGroups:selected,catalogueIncomplete:true,
     cataloguePolicy:'This is a retrieved subset, not complete history. Absence does not prove a new concern. Use only explicit source evidence; leave ambiguous links unassigned.'};
 }
+function mappingEntries(plan:ConditionPlan,state:ConditionState) {
+  return state.recoveringHeading
+    ? plan.batches[state.batch].filter(e=>state.headingRecovery!.entryIDs.includes(e.id))
+    : plan.batches[state.batch];
+}
 export function nextConditionRequest(plan: ConditionPlan,state: ConditionState): {payload:Payload;map:Record<string,string>}|null {
   if(state.phase==='completed') return null;
-  const verification=state.phase==='verification';
+  const verification=state.phase==='verification', entries=mappingEntries(plan,state);
   const input=verification?verifierInput(plan,state,state.verificationBatches![state.verificationIndex]):{
-    entries:plan.batches[state.batch].map(e=>{const copy={...e};delete copy.manualReviewed;return copy;}),
-    ...boundedCatalogue(state.result.groups,plan.batches[state.batch])};
+    entries:entries.map(e=>{const copy={...e};delete copy.manualReviewed;return copy;}),
+    ...boundedCatalogue(state.result.groups,entries,state.recoveringHeading?10_000:15_000),
+    ...(state.coverageRetry?{coverageRetry:true}:{}),
+    ...(state.recoveringHeading?{headingRecovery:true,rejectedHeadings:state.headingRecovery!.rejectedNames}: {})};
   requireValue(bytes(input)<=(verification?60_000:40_000));
   const compact=localRequest(input,verification);
   return {payload:validatePayload({stage:verification?'condition-verification':'condition-synthesis',
-    ...(verification?plan.verification:plan.mapping),input:compact.input}),map:compact.map};
+    ...(verification?plan.verification:plan.mapping),
+    ...(!verification?{instructions:plan.mapping.instructions+
+      (state.recoveringHeading?'\n'+plan.headingRecoveryInstructions:'')+
+      (state.coverageRetry?'\n'+coverageRepairInstruction:'')}:{}),input:compact.input}),map:compact.map};
 }
 export function acceptConditionResponse(plan: ConditionPlan,previous: ConditionState,raw: string): ConditionState {
   const state=structuredClone(previous), request=nextConditionRequest(plan,state);
@@ -139,12 +155,42 @@ export function acceptConditionResponse(plan: ConditionPlan,previous: ConditionS
   if(state.phase==='mapping') {
     requireValue(Array.isArray(response.groups));
     // Do not accept model-supplied stable identities or per-record metadata.
-    const groups:Group[]=response.groups.map((g:any)=>({name:g.name,bodySystem:g.bodySystem,
+    const proposedGroups:Group[]=response.groups.map((g:any)=>({name:g.name,bodySystem:g.bodySystem,
       isPrimary:g.isPrimary,reason:g.reason,entryIDs:restore(g.entryIDs)}));
-    state.proposal={groups,unassigned:restore(response.unassigned)};
-    coverage(state.proposal,plan.batches[state.batch].map(e=>e.id));
+    const groups:Group[]=[];
+    for(const group of proposedGroups) {
+      validGroup(group,true);
+      // An empty mapper heading contains no source occurrence or proposed link.
+      // Omit the heading, then require complete coverage of the original entries.
+      if(!group.entryIDs.length) continue;
+      const same=groups.find(g=>g.name===group.name && g.bodySystem===group.bodySystem);
+      if(same) {
+        requireValue(same.isPrimary===group.isPrimary);
+        // Formatting consolidation only. Coverage below still rejects overlapping
+        // IDs. The independent verifier never receives these mapper rationales.
+        same.entryIDs.push(...group.entryIDs);
+      } else groups.push(group);
+    }
+    const proposal={groups,unassigned:restore(response.unassigned)};
+    const expected=mappingEntries(plan,state).map(e=>e.id),found=ids(proposal);
+    // Only omission is recoverable. Duplicates, invented IDs and invalid groups
+    // still fail closed. No partial proposal or clinical link is accepted here.
+    coverage(proposal,found);
+    requireValue(found.every(id=>expected.includes(id)));
+    if(found.length<expected.length && !state.coverageRetry) {
+      state.coverageRetry=true;
+      return state;
+    }
+    coverage(proposal,expected);
+    state.proposal=proposal;
+    if(state.recoveringHeading) {
+      // Never resubmit a rejected heading until a checker happens to approve it.
+      const rejected=new Set(state.headingRecovery!.rejectedNames.map(conditionKey));
+      state.proposal.unassigned.push(...groups.filter(g=>rejected.has(conditionKey(g.name))).flatMap(g=>g.entryIDs));
+      state.proposal.groups=groups.filter(g=>!rejected.has(conditionKey(g.name)));
+    }
     state.verificationBatches=[];
-    for(const group of groups) {
+    for(const group of state.proposal.groups) {
       const current=state.verificationBatches.at(-1);
       if(current && current.length<20 && bytes(verifierInput(plan,state,[...current,group]))<=60_000) current.push(group);
       else { requireValue(bytes(verifierInput(plan,state,[group]))<=60_000);state.verificationBatches.push([group]); }
@@ -163,6 +209,12 @@ export function acceptConditionResponse(plan: ConditionPlan,previous: ConditionS
       requireValue(typeof d.nameSupported==='boolean' && typeof d.reason==='string' && d.reason.trim().length>0);
       const supported=restore(d.supportedEntryIDs);
       requireValue(supported.every(id=>group.entryIDs.includes(id)));
+      if(!d.nameSupported && plan.repairRejectedHeadings && !state.recoveringHeading) {
+        state.headingRecovery??={entryIDs:[],rejectedNames:[]};
+        state.headingRecovery.entryIDs.push(...group.entryIDs);
+        state.headingRecovery.rejectedNames.push(group.name);
+        continue;
+      }
       const kept=d.nameSupported?group.entryIDs.filter(id=>supported.includes(id)):[];
       state.result.unassigned.push(...group.entryIDs.filter(id=>!kept.includes(id)));
       if(!kept.length) continue;
@@ -176,8 +228,27 @@ export function acceptConditionResponse(plan: ConditionPlan,previous: ConditionS
     state.verificationIndex++;
   }
   if(state.phase==='verification' && state.verificationIndex===state.verificationBatches!.length) {
-    state.batch++;state.proposal=undefined;state.verificationBatches=undefined;state.verificationIndex=0;
-    state.phase=state.batch===plan.batches.length?'completed':'mapping';
+    state.coverageRetry=undefined;
+    state.proposal=undefined;state.verificationBatches=undefined;state.verificationIndex=0;
+    if(!state.recoveringHeading) {
+      if(state.headingRecovery?.entryIDs.length) {
+        state.headingRecoveries??=[];
+        state.headingRecoveries.push({batch:state.batch,...state.headingRecovery});
+      }
+      state.headingRecovery=undefined;
+      state.batch++;
+      if(state.batch<plan.batches.length) {state.phase='mapping';return state;}
+      state.recoveryIndex=0;
+    } else state.recoveryIndex=(state.recoveryIndex??0)+1;
+    const recovery=state.headingRecoveries?.[state.recoveryIndex??0];
+    if(recovery) {
+      state.batch=recovery.batch;state.headingRecovery=recovery;
+      state.recoveringHeading=true;state.phase='mapping';
+    } else {
+      state.batch=plan.batches.length;state.phase='completed';
+      state.headingRecovery=undefined;state.headingRecoveries=undefined;
+      state.recoveringHeading=undefined;state.recoveryIndex=undefined;
+    }
   }
   if(state.phase==='completed') coverage(state.result,[...ids(plan.preserved),...plan.batches.flat().map(e=>e.id)]);
   return state;

@@ -577,7 +577,7 @@ public actor SessionStore {
     }
 
     /// A durable run token prevents stale or overlapping extraction from publishing.
-    public func beginSummaryRun(sessionID: UUID, expected: Session) throws -> SummaryRun {
+    public func beginSummaryRun(sessionID: UUID, expected: Session, promptVersion: String = SummaryVerification.promptVersion) throws -> SummaryRun {
         var env = try loadEnvelope()
         guard let i = env.sessions.firstIndex(where: { $0.id == sessionID }),
               env.sessions[i].transcript == expected.transcript else { throw SummaryCommitError.sourceChanged }
@@ -585,7 +585,7 @@ public actor SessionStore {
            existing.stage != .complete,
            existing.sourceHash == SummaryVerification.hash(expected.transcript),
            existing.version == SummaryVerification.version,
-           existing.promptVersion == SummaryVerification.promptVersion,
+           existing.promptVersion == promptVersion,
            env.sessions[i].summaryDrafts != nil {
             existing.stage = .fetching
             existing.updatedAt = Date()
@@ -593,11 +593,34 @@ public actor SessionStore {
             try saveEnvelope(env)
             return existing
         }
-        let run = SummaryRun(source: expected.transcript)
+        let run = SummaryRun(source: expected.transcript, promptVersion: promptVersion)
         env.sessions[i].summaryRun = run
         env.sessions[i].summaryDrafts = []
         try saveEnvelope(env)
         return run
+    }
+
+    public func summaryWorkUnits(sessionID: UUID, runID: UUID) throws -> [String: FastDetailsWorkUnit] {
+        let env = try loadEnvelope()
+        guard let session = env.sessions.first(where: { $0.id == sessionID }),
+              session.summaryRun?.id == runID,
+              session.summaryRun?.sourceHash == SummaryVerification.hash(session.transcript) else { throw SummaryCommitError.sourceChanged }
+        return session.summaryRun?.workUnits ?? [:]
+    }
+
+    /// Per-unit merge, never a read/replace of another concurrently completed section.
+    public func checkpointSummaryUnit(sessionID: UUID, runID: UUID, key: String, unit: FastDetailsWorkUnit) throws {
+        var env = try loadEnvelope()
+        guard let i = env.sessions.firstIndex(where: { $0.id == sessionID }),
+              env.sessions[i].summaryRun?.id == runID,
+              env.sessions[i].summaryRun?.stage != .complete,
+              env.sessions[i].summaryRun?.sourceHash == SummaryVerification.hash(env.sessions[i].transcript) else { throw SummaryCommitError.sourceChanged }
+        var units = env.sessions[i].summaryRun?.workUnits ?? [:]
+        if let previous = units[key], previous != unit { throw SummaryCommitError.sourceChanged }
+        units[key] = unit
+        env.sessions[i].summaryRun?.workUnits = units
+        env.sessions[i].summaryRun?.updatedAt = Date()
+        try saveEnvelope(env)
     }
 
     public func summaryDrafts(sessionID: UUID, runID: UUID) throws -> [SummaryEntry] {

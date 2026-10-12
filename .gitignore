@@ -39,6 +39,10 @@ build/
 Pods/
 
 # Node (Vercel proxy and other JS)
-node_modules/
+node_modules
 .vercel/
 .vercel
+
+# Python test/build caches
+__pycache__/
+*.py[cod]

@@ -1,7 +1,10 @@
+import { enforceFastDetailsBudget, fastDetailsEnabled } from './fast-details-experiment';
 import { Pool, PoolClient } from "pg";
 import { createHmac, randomUUID } from "node:crypto";
 import { estimate, pricingVersion, reservation, Usage } from "./pricing";
 import { modelIdentity, ProcessingModel, summaryModelPolicy } from "./model-policy";
+import { outputTokenLimit } from './output-policy';
+import type { ResponseDiagnostics } from './response-diagnostics';
 
 let pool: Pool | undefined;
 export function database(): Pool {
@@ -27,6 +30,7 @@ export function validatePayload(value: unknown): Payload {
   if (!p || !stages.has(p.stage) || typeof p.instructions !== "string" || typeof p.input !== "string" ||
       !p.response_format || !["json_schema","json_object"].includes(String(p.response_format.type)) ||
       Buffer.byteLength(JSON.stringify(p)) > 200_000) throw new Error("invalid_request");
+  if (p.instructions.startsWith('Pipeline: fast-details-') && !fastDetailsEnabled()) throw new Error('fast_experiment_disabled');
   const schema = p.response_format.json_schema as Record<string, unknown>;
   if (p.response_format.type === "json_schema" &&
       (!schema || typeof schema.name !== "string" || !schema.schema || schema.strict !== true)) throw new Error("invalid_schema");
@@ -43,7 +47,9 @@ export function requestHash(owner: string, payload: Payload, model: ProcessingMo
   const secret = process.env.AI_DEDUPE_SECRET;
   if (!secret) throw new Error("dedupe_secret_unavailable");
   const {workload_type,...clinicalRequest}=payload;
-  return createHmac("sha256", secret).update(canonical([owner, "durable-v1", modelIdentity(model, effort), clinicalRequest])).digest("hex");
+  const limit = outputTokenLimit(model, payload.stage);
+  const identity = limit === 6000 ? modelIdentity(model, effort) : [modelIdentity(model, effort), `output-${limit}-v1`];
+  return createHmac("sha256", secret).update(canonical([owner, "durable-v1", identity, clinicalRequest])).digest("hex");
 }
 export async function submit(owner: string, payload: Payload) {
   const {model,effort}=summaryModelPolicy(payload.stage);
@@ -58,8 +64,9 @@ export async function submitWithinTransaction(db: PoolClient, owner: string, pay
     if (!budget) throw new Error("budget_unavailable");
     const prior = (await db.query("SELECT id,state FROM ai_jobs WHERE owner=$1 AND request_hash=$2", [owner, hash])).rows[0];
     if (prior) return {...prior,reused:true};
-    const reserve = reservation(model, 6000);
+    const reserve = reservation(model, outputTokenLimit(model, payload.stage));
     if (BigInt(budget.used_nusd) + BigInt(budget.reserved_nusd) + BigInt(reserve) > BigInt(budget.limit_nusd)) throw new Error("budget_exhausted");
+    await enforceFastDetailsBudget(db, owner, reserve);
     const id = randomUUID();
     await db.query("UPDATE ai_budgets SET reserved_nusd=reserved_nusd+$2 WHERE id=$1", [budgetID, reserve]);
     await db.query(`INSERT INTO ai_jobs(id,owner,request_hash,stage,model,pricing_version,budget_id,state,reserve_nusd,workload_type,reasoning_effort)
@@ -78,7 +85,7 @@ export async function claim(id?: string) {
     return { ...job, payload: payload as Payload };
   });
 }
-export async function settle(id: string, state: "completed"|"incomplete"|"uncertain", usage?: Usage, output?: string, providerID?: string) {
+export async function settle(id: string, state: "completed"|"incomplete"|"uncertain", usage?: Usage, output?: string, providerID?: string, diagnostics?: ResponseDiagnostics) {
   await transaction(async db => {
     const job = (await db.query("SELECT * FROM ai_jobs WHERE id=$1 FOR UPDATE", [id])).rows[0];
     if (!job || job.state !== "running") return;
@@ -91,7 +98,7 @@ export async function settle(id: string, state: "completed"|"incomplete"|"uncert
       provider_id=$7,finished_at=now() WHERE id=$1`,
       [id,finalState,cost,usage?.input_tokens ?? null,usage?.output_tokens ?? null,
         usage?.input_tokens_details?.cached_tokens ?? null,providerID ?? null]);
-    if (output) await db.query("UPDATE ai_payloads SET result=$2 WHERE job_id=$1 AND expires_at>now()", [id,{output}]);
+    if (output || diagnostics) await db.query("UPDATE ai_payloads SET result=$2 WHERE job_id=$1 AND expires_at>now()", [id,{...(output ? {output} : {}), ...(diagnostics ? {diagnostics} : {})}]);
   });
 }
 export async function cancel(owner: string, id: string) {

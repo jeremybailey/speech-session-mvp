@@ -24,6 +24,63 @@ actor DurableProcessingStop {
     }
 }
 
+/// Bounds foreground waiting only. It never cancels or resubmits a paid job.
+struct DurableProcessingWait {
+    let startedAt: Date
+    let timeout: TimeInterval
+    init(conditionWorkflow: Bool, now: Date = Date()) {
+        startedAt = now
+        timeout = conditionWorkflow ? 30 * 60 : 5 * 60
+    }
+    func check(state: String, now: Date = Date()) throws {
+        guard ["queued", "running"].contains(state), now.timeIntervalSince(startedAt) >= timeout else { return }
+        throw NSError(domain: "AIProcessing", code: 408, userInfo: [NSLocalizedDescriptionKey:
+            "The processing service has not returned a result within the waiting limit. Your saved records are unchanged. The submitted request may still finish in the background; no new paid request was started. Contact support if this keeps happening."])
+    }
+}
+
+/// Version the content before either direct submission or chunked-upload hashing.
+/// Repeating the same repaired request stays idempotent, including explicit Stop.
+enum DurableRequestIdentity {
+    static func body(_ payload: [String: Any], conditionWorkflow: Bool) throws -> Data {
+        var value = payload
+        if conditionWorkflow { value["clientRevision"] = "condition-exact-heading-v2" }
+        return try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+    }
+}
+
+/// Opt-in development scheme. A separate URL is required; never silently use the pilot.
+enum FastDetailsConfiguration {
+    static var enabled: Bool { ProcessInfo.processInfo.environment["COLLECTIVECARE_FAST_DETAILS"] == "1" }
+    static func endpoint() throws -> URL {
+        guard let raw = ProcessInfo.processInfo.environment["COLLECTIVECARE_FAST_DETAILS_URL"],
+              let url = URL(string: raw), url.scheme == "https", let host = url.host,
+              !["speech-session-mvp.vercel.app", "speech-session-mvp-jeremy-baileys-projects.vercel.app"].contains(host),
+              url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else {
+            throw NSError(domain: "AIProcessing", code: 400, userInfo: [NSLocalizedDescriptionKey:
+                "The fast-details experiment needs its isolated service URL in the Fast Health Details scheme. No request was sent to the pilot service."])
+        }
+        return url
+    }
+}
+
+/// Retries only the same HTTP operation/body. Polling never resubmits a job.
+enum DurableNetworkRecovery {
+    static func run<T>(sleep: (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) }, _ operation: () async throws -> T) async throws -> T {
+        for attempt in 0...2 {
+            do { try Task.checkCancellation(); return try await operation() }
+            catch {
+                try Task.checkCancellation()
+                let code = (error as? URLError)?.code
+                guard attempt < 2, let code,
+                      [.timedOut, .networkConnectionLost, .cannotConnectToHost, .notConnectedToInternet].contains(code) else { throw error }
+                try await sleep(UInt64(attempt + 1) * 1_000_000_000)
+            }
+        }
+        throw URLError(.cannotConnectToHost)
+    }
+}
+
 /// Chat completions endpoint + async `Authorization` header (BYOK or refreshed Kinde access token).
 struct OpenAIChatTransport: Sendable {
     let chatCompletionsURL: URL
@@ -53,6 +110,31 @@ struct OpenAIChatTransport: Sendable {
                     authorizationHeader: accessToken)
     }
 
+    func isolatedFastDetailsTransport() throws -> Self {
+        let base = try FastDetailsConfiguration.endpoint()
+        var result = Self(chatCompletionsURL: base.appendingPathComponent("api/v1/chat/completions"),
+            healthProcessingURL: base.appendingPathComponent("api/v1/health-processing/stages"),
+            authorizationHeader: authorizationHeader)
+        result.explicitStop = explicitStop
+        return result
+    }
+
+    func fastDetailsCapacity() async throws -> Int {
+        guard let jobs = durableJobsURL else { throw URLError(.unsupportedURL) }
+        var url = URLComponents(url: jobs, resolvingAgainstBaseURL: false)!
+        url.queryItems = [URLQueryItem(name: "capacity", value: "fast-details")]
+        var request = URLRequest(url: url.url!)
+        request.timeoutInterval = 15
+        request.setValue(try await makeAuthorizationHeader(), forHTTPHeaderField: "Authorization")
+        let (data, response) = try await DurableNetworkRecovery.run { try await URLSession.shared.data(for: request) }
+        try Self.validateDurableResponse(data: data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              value["pipeline"] as? String == "fast-details-v1", let limit = value["maxInFlight"] as? Int,
+              (0...4).contains(limit) else { throw URLError(.cannotDecodeContentData) }
+        guard limit > 0 else { throw NSError(domain: "AIProcessing", code: 402, userInfo: [NSLocalizedDescriptionKey: "The experiment has insufficient remaining allowance for one request. No processing was started."]) }
+        return limit
+    }
+
     func makeAuthorizationHeader() async throws -> String {
         try await authorizationHeader()
     }
@@ -73,8 +155,18 @@ struct OpenAIChatTransport: Sendable {
     func durableRequest(payload: [String: Any], conditionWorkflow: Bool = false,
                         transferProgress: (@Sendable (String) async -> Void)? = nil) async throws -> String {
         guard let url = conditionWorkflow ? durableConditionWorkflowsURL : durableJobsURL else { throw URLError(.unsupportedURL) }
+        let waiting = DurableProcessingWait(conditionWorkflow: conditionWorkflow)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 45
+        let session = URLSession(configuration: configuration)
+        defer { session.finishTasksAndInvalidate() }
         struct Job: Decodable {
-            struct Result: Decodable { let output: String?; let chunkCount: Int?; let digest: String?; let chunk: String? }
+            struct Result: Decodable {
+                struct Diagnostics: Decodable { let incompleteReason: String? }
+                let output: String?; let chunkCount: Int?; let digest: String?; let chunk: String?
+                let diagnostics: Diagnostics?
+            }
             let id: String
             let state: String
             let result: Result?
@@ -85,12 +177,12 @@ struct OpenAIChatTransport: Sendable {
             request.httpBody = body
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue(try await makeAuthorizationHeader(), forHTTPHeaderField: "Authorization")
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await DurableNetworkRecovery.run { try await session.data(for: request) }
             try Self.validateDurableResponse(data: data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
             return try JSONDecoder().decode(Job.self, from: data)
         }
         // Server hashes canonical content, ignoring transient request IDs. Re-submission is safe.
-        let body = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+        let body = try DurableRequestIdentity.body(payload, conditionWorkflow: conditionWorkflow)
         let chunked = conditionWorkflow && body.count > 350_000
         let chunkSize = 240_000
         let chunkCount = (body.count + chunkSize - 1) / chunkSize
@@ -108,7 +200,7 @@ struct OpenAIChatTransport: Sendable {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue(try await makeAuthorizationHeader(), forHTTPHeaderField: "Authorization")
             request.httpBody = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await DurableNetworkRecovery.run { try await session.data(for: request) }
             try Self.validateDurableResponse(data: data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
             return try JSONSerialization.jsonObject(with: data) as! [String: Any]
         }
@@ -180,13 +272,22 @@ struct OpenAIChatTransport: Sendable {
                 }
                 throw URLError(.cannotDecodeContentData)
             case "queued", "running":
+                try waiting.check(state: job.state)
                 try await Task.sleep(for: .seconds(3))
                 job = try await exchange(statusURL.url!, method: "GET")
             default:
                 if let stopID { await explicitStop?.completed(stopID) }
                 NotificationCenter.default.post(name: Notification.Name("AIProcessingCompleted"), object: nil)
+                try Self.validateDurableCompletion(state: job.state, incompleteReason: job.result?.diagnostics?.incompleteReason)
                 throw NSError(domain: "AIProcessing", code: 409, userInfo: [NSLocalizedDescriptionKey: "Processing stopped (\(job.state)). Check AI usage in Settings. No automatic paid retry was made."])
             }
+        }
+    }
+
+    static func validateDurableCompletion(state: String, incompleteReason: String?) throws {
+        if state == "incomplete" && incompleteReason == "max_output_tokens" {
+            throw NSError(domain: "AIProcessingOutput", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                "The checking response reached its output limit; the unfinished batch needs a smaller request."])
         }
     }
 

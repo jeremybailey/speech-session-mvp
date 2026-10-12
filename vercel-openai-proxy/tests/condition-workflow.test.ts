@@ -17,6 +17,77 @@ function plan(title='Follow-up for this pregnancy'):ConditionPlan {
 }
 const mapped=JSON.stringify({groups:[{name:'Pregnancy',bodySystem:'reproductive',isPrimary:false,reason:'Explicit pregnancy care',entryIDs:['r1'],stableID:'invented'}],unassigned:[]});
 const verified=(supported=true)=>JSON.stringify({decisions:[{name:'Pregnancy',bodySystem:'reproductive',nameSupported:true,supportedEntryIDs:supported?['r1']:[],reason:'Source episode checked'}]});
+test('client revision survives identity validation without changing model input',()=>{
+  const original=validateConditionPlan(plan());
+  const revised=validateConditionPlan({...original,clientRevision:'condition-exact-heading-v2'});
+  assert.equal(revised.clientRevision,'condition-exact-heading-v2');
+  assert.deepEqual(nextConditionRequest(original,initialConditionState(original)),nextConditionRequest(revised,initialConditionState(revised)));
+  for(const clientRevision of [12,'','x'.repeat(81),'unexpected revision'])
+    assert.throws(()=>validateConditionPlan({...original,clientRevision}));
+});
+test('identical disjoint headings coalesce structurally but every link is independently checked',()=>{
+  const p=plan();p.batches[0].push({id:uuid(3),title:'Unrelated observation'});
+  const a=JSON.parse(mapped).groups[0],b={...a,reason:'Separate mapper rationale',entryIDs:['r2']};
+  const checking=acceptConditionResponse(p,initialConditionState(p),JSON.stringify({groups:[a,b],unassigned:[]}));
+  assert.equal(checking.coverageRetry,undefined);
+  const groups=JSON.parse(nextConditionRequest(p,checking)!.payload.input).groups;
+  assert.equal(groups.length,1);assert.equal(groups[0].entries.length,2);
+  assert.equal(groups[0].reason,undefined);
+  const done=acceptConditionResponse(p,checking,verified());
+  assert.equal(done.phase,'completed');
+  assert.deepEqual(done.result.groups[0].entryIDs,[uuid(1),uuid(2)]);
+  assert.deepEqual(done.result.unassigned,[uuid(3)]);
+});
+test('heading consolidation cannot resolve overlap, priority conflicts or nonidentical aliases',()=>{
+  const p=plan();p.batches[0].push({id:uuid(3),title:'Another observation'});
+  const a=JSON.parse(mapped).groups[0];
+  for(const b of [{...a},{...a,entryIDs:['r2'],isPrimary:true}])
+    assert.throws(()=>acceptConditionResponse(p,initialConditionState(p),JSON.stringify({groups:[a,b],unassigned:[]})));
+  const first={...a,name:'Headache',bodySystem:'neurological'},second={...first,name:'Headaches',entryIDs:['r2']};
+  assert.throws(()=>acceptConditionResponse(p,initialConditionState(p),JSON.stringify({groups:[first,second],unassigned:[]})));
+});
+test('empty mapper headings are omitted without losing source coverage or accepting links',()=>{
+  const p=plan(),group=JSON.parse(mapped).groups[0];
+  const response={groups:[{...group,name:'Unused concern',entryIDs:[]},group],unassigned:[]};
+  const checking=acceptConditionResponse(p,initialConditionState(p),JSON.stringify(response));
+  assert.equal(checking.phase,'verification');assert.equal(checking.proposal!.groups.length,1);
+  assert.deepEqual(checking.result,p.preserved);
+  assert.equal(JSON.parse(nextConditionRequest(p,checking)!.payload.input).groups[0].entries.length,1);
+  const missing=JSON.stringify({...response,groups:[response.groups[0]]});
+  const retry=acceptConditionResponse(p,initialConditionState(p),missing);
+  assert.equal(retry.coverageRetry,true);assert.deepEqual(retry.result,p.preserved);
+  assert.throws(()=>acceptConditionResponse(p,retry,missing));
+  assert.throws(()=>acceptConditionResponse(p,initialConditionState(p),JSON.stringify({...response,groups:[{...response.groups[0],bodySystem:'invented'},group]})));
+  const done=acceptConditionResponse(p,checking,verified(false));
+  assert.deepEqual(done.result.unassigned,[uuid(2)]);
+  const badPreserved=structuredClone(p);
+  badPreserved.preserved.groups.push({...badPreserved.preserved.groups[0],name:'Empty saved heading',isPrimary:false,entryIDs:[]});
+  assert.throws(()=>validateConditionPlan(badPreserved));
+});
+test('verification preserves occurrence status and hypothetical care without forwarding mapper rationale',()=>{
+  const p=plan();
+  Object.assign(p.contextEntries[0],{status:'past',statusExplicit:true,actionKind:'treatment_received'});
+  Object.assign(p.batches[0][0],{status:'current',statusExplicit:false,actionKind:'uncertain'});
+  const state=acceptConditionResponse(p,initialConditionState(p),mapped);
+  const group=JSON.parse(nextConditionRequest(p,state)!.payload.input).groups[0];
+  assert.equal(group.acceptedContext[0].status,'past');
+  assert.equal(group.acceptedContext[0].statusExplicit,true);
+  assert.equal(group.entries[0].status,'current');
+  assert.equal(group.entries[0].statusExplicit,false);
+  assert.equal(group.entries[0].actionKind,'uncertain');
+  assert.equal(group.reason,undefined);
+});
+test('both model stages receive original source windows without adopting mapper explanations',()=>{
+  const p=plan();
+  p.batches[0][0].sourceWindows=['We are discussing this pregnancy. Return in two weeks.'];
+  const initial=initialConditionState(validateConditionPlan(p));
+  const mapping=JSON.parse(nextConditionRequest(p,initial)!.payload.input);
+  assert.deepEqual(mapping.entries[0].sourceWindows,p.batches[0][0].sourceWindows);
+  const checking=acceptConditionResponse(p,initial,mapped);
+  const group=JSON.parse(nextConditionRequest(p,checking)!.payload.input).groups[0];
+  assert.deepEqual(group.entries[0].sourceWindows,p.batches[0][0].sourceWindows);
+  assert.equal(group.reason,undefined);
+});
 test('large preserved histories keep verifier requests bounded without changing accepted links',()=>{
   const p=plan();
   p.contextEntries=Array.from({length:1200},(_,i)=>({id:uuid(100+i),title:'Pregnancy',excerpt:'Explicit pregnancy episode '+ 'care '.repeat(100)}));
@@ -61,10 +132,41 @@ test('weak links are rejected without altering accepted associations',()=>{
 test('invalid coverage, invented IDs, renamed verification and manual candidates fail closed',()=>{
   const p=plan(),s=initialConditionState(p);
   assert.throws(()=>acceptConditionResponse(p,s,mapped.replace('r1','r999')));
-  assert.throws(()=>acceptConditionResponse(p,s,'{"groups":[],"unassigned":[]}'));
+  const retry=acceptConditionResponse(p,s,'{"groups":[],"unassigned":[]}');
+  assert.equal(retry.coverageRetry,true);
+  assert.throws(()=>acceptConditionResponse(p,retry,'{"groups":[],"unassigned":[]}'));
   const checking=acceptConditionResponse(p,s,mapped);
   assert.throws(()=>acceptConditionResponse(p,checking,verified().replace('Pregnancy','Invented diagnosis')));
   p.batches[0][0].patientAssigned=true;assert.throws(()=>validateConditionPlan(p));
+});
+test('one missing-coverage retry preserves state and independently checks the complete replacement',()=>{
+  const p=plan();p.batches[0].push({id:uuid(3),title:'Unrelated symptom'});
+  p.batches.push([{id:uuid(4),title:'Another record'}]);
+  let s=initialConditionState(p);
+  const before=structuredClone(s.result);
+  s=acceptConditionResponse(p,s,mapped);
+  assert.equal(s.phase,'mapping');assert.equal(s.coverageRetry,true);
+  assert.equal(s.proposal,undefined);assert.deepEqual(s.result,before);
+  const request=nextConditionRequest(p,s)!;
+  assert.equal(JSON.parse(request.payload.input).coverageRetry,true);
+  assert.match(request.payload.instructions,/only coverage retry/);
+  const complete=JSON.parse(mapped);complete.unassigned=['r2'];
+  s=acceptConditionResponse(p,s,JSON.stringify(complete));
+  assert.equal(s.phase,'verification');
+  assert.deepEqual(s.result.groups,before.groups,'No link accepted before independent checking');
+  s=acceptConditionResponse(p,s,verified());
+  assert.equal(s.batch,1);assert.equal(s.coverageRetry,undefined);
+  assert.deepEqual(s.result.groups[0].entryIDs,[uuid(1),uuid(2)]);
+  assert.deepEqual(s.result.unassigned,[uuid(3)]);
+  assert.equal(JSON.parse(nextConditionRequest(p,s)!.payload.input).coverageRetry,undefined);
+});
+test('duplicate or conflicting mappings cannot use coverage recovery',()=>{
+  const p=plan();const s=initialConditionState(p);
+  assert.throws(()=>acceptConditionResponse(p,s,'{"groups":[],"unassigned":["r1","r1"]}'));
+  const conflicting=JSON.parse(mapped);conflicting.unassigned=['r1'];
+  assert.throws(()=>acceptConditionResponse(p,s,JSON.stringify(conflicting)));
+  const invalid=JSON.parse(mapped);invalid.groups[0].name='Normal';invalid.groups[0].entryIDs=[];
+  assert.throws(()=>acceptConditionResponse(p,s,JSON.stringify(invalid)));
 });
 test('unchanged plan requires zero requests; all-unassigned batch skips verification',()=>{
   const p=plan();p.batches=[];
@@ -224,4 +326,63 @@ test('PostgreSQL workflow continuation, interruption, concurrency, cancellation 
     assert.equal((await conditionWorkflowStatus('synthetic-owner',unfunded.id)).state,'budget_exhausted');
     assert.equal((await db.query('SELECT * FROM ai_condition_workflow_steps WHERE workflow_id=$1',[unfunded.id])).rows.length,0);
   } finally {await db.end();}
+});
+
+
+test('rejected heading gets one fresh mapping and independent verification while old links stay fixed',()=>{
+  const p=plan();p.repairRejectedHeadings=true;p.headingRecoveryInstructions='Make one simpler source-supported heading proposal, never repeat rejected names.';
+  const original=initialConditionState(validateConditionPlan(p));
+  let state=acceptConditionResponse(p,original,mapped);
+  const reject=JSON.stringify({decisions:[{name:'Pregnancy',bodySystem:'reproductive',nameSupported:false,supportedEntryIDs:[],reason:'Unsupported heading'}]});
+  state=acceptConditionResponse(p,state,reject);
+  assert.equal(state.phase,'mapping');assert.equal(state.recoveringHeading,true);
+  const input=JSON.parse(nextConditionRequest(p,state)!.payload.input);
+  assert.ok(nextConditionRequest(p,state)!.payload.instructions.includes(p.headingRecoveryInstructions!));
+  assert.equal(input.headingRecovery,true);assert.deepEqual(input.rejectedHeadings,['Pregnancy']);
+  assert.equal(input.entries.length,1);assert.equal(input.entries[0].id,'r1');
+  assert.equal(state.result.groups[0].entryIDs.length,1);
+  state=acceptConditionResponse(p,JSON.parse(JSON.stringify(state)),mapped.replaceAll('Pregnancy','Reported pelvic pain'));
+  assert.equal(state.phase,'verification');
+  state=acceptConditionResponse(p,state,verified().replaceAll('Pregnancy','Reported pelvic pain'));
+  assert.equal(state.phase,'completed');assert.equal(state.result.groups.length,2);
+  assert.deepEqual(state.result.groups[0].entryIDs,[uuid(1)]);
+  assert.deepEqual(state.result.groups[1].entryIDs,[uuid(2)]);
+});
+test('heading recovery cannot retry an unchanged rejected heading or loop after another rejection',()=>{
+  for(const unchanged of [true,false]) {
+    const p=plan();p.repairRejectedHeadings=true;p.headingRecoveryInstructions='Make one simpler source-supported heading proposal, never repeat rejected names.';
+    const rejected=(name:string)=>JSON.stringify({decisions:[{name,bodySystem:'reproductive',nameSupported:false,supportedEntryIDs:[],reason:'No explicit support'}]});
+    let s=acceptConditionResponse(p,initialConditionState(p),mapped);
+    s=acceptConditionResponse(p,s,rejected('Pregnancy'));
+    s=acceptConditionResponse(p,s,unchanged?mapped:mapped.replaceAll('Pregnancy','Pelvic pain'));
+    if(!unchanged) s=acceptConditionResponse(p,s,rejected('Pelvic pain'));
+    assert.equal(s.phase,'completed');assert.equal(nextConditionRequest(p,s),null);
+    assert.deepEqual(s.result.unassigned,[uuid(2)]);
+    assert.deepEqual(s.result.groups[0].entryIDs,[uuid(1)]);
+  }
+});
+test('edge rejection does not trigger heading recovery; opt-in is validated',()=>{
+  const p=plan();p.repairRejectedHeadings=true;p.headingRecoveryInstructions='Make one simpler source-supported heading proposal, never repeat rejected names.';
+  const s=acceptConditionResponse(p,acceptConditionResponse(p,initialConditionState(p),mapped),verified(false));
+  assert.equal(s.phase,'completed');assert.deepEqual(s.result.unassigned,[uuid(2)]);
+  assert.throws(()=>validateConditionPlan({...p,repairRejectedHeadings:'yes'}));
+});
+
+test('heading recovery waits until all ordinary batches finish without changing their requests',()=>{
+  const p=plan();p.repairRejectedHeadings=true;p.headingRecoveryInstructions='One simpler descriptive heading, independently checked.';
+  p.batches.push([{id:uuid(3),title:'Another pregnancy follow-up',excerpt:'Explicit pregnancy follow-up'}]);
+  const control={...p,repairRejectedHeadings:false};
+  let candidate=initialConditionState(p), baseline=initialConditionState(control);
+  for(let batch=0;batch<2;batch++) {
+    assert.deepEqual(nextConditionRequest(p,candidate),nextConditionRequest(control,baseline));
+    candidate=acceptConditionResponse(p,candidate,mapped);baseline=acceptConditionResponse(control,baseline,mapped);
+    assert.deepEqual(nextConditionRequest(p,candidate),nextConditionRequest(control,baseline));
+    const response=batch===0?verified().replace('"nameSupported":true','"nameSupported":false'):verified();
+    candidate=acceptConditionResponse(p,candidate,response);baseline=acceptConditionResponse(control,baseline,response);
+  }
+  assert.equal(baseline.phase,'completed');assert.equal(candidate.recoveringHeading,true);
+  const input=JSON.parse(nextConditionRequest(p,candidate)!.payload.input);
+  assert.equal(input.entries.length,1);
+  assert.equal(input.entries[0].title,p.batches[0][0].title);
+  assert.deepEqual(candidate.result.groups[0].entryIDs,[uuid(1),uuid(3)]);
 });

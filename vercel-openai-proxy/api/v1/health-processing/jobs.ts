@@ -1,14 +1,27 @@
+import { fastDetailsEnabled, readFastDetailsCapacity } from '../../_lib/fast-details-experiment';
+import { reservation } from '../../_lib/pricing';
+import { summaryModelPolicy } from '../../_lib/model-policy';
+import { outputTokenLimit } from '../../_lib/output-policy';
+import { processingOwner } from '../../_lib/fast-details-experiment';
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { verifyKindeBearer } from "../../_lib/verifyKinde";
-import { cancel, cancelPayload, database, submit, validatePayload } from "../../_lib/ledger";
+import { cancel, cancelPayload, database, submit, transaction, validatePayload } from "../../_lib/ledger";
 import { enqueueJob } from "../../_lib/queue";
 import { durableEnabledForOwner } from '../../_lib/pilot';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Cache-Control", "no-store");
   try {
-    const owner = await verifyKindeBearer(req.headers.authorization);
+    const owner = processingOwner(await verifyKindeBearer(req.headers.authorization));
     if (!durableEnabledForOwner(owner)) return res.status(503).json({error:{code:"pilot_disabled"}});
+    if (req.method === 'GET' && req.query.capacity === 'fast-details') {
+      if (!fastDetailsEnabled() || !process.env.AI_BUDGET_ID) return res.status(503).json({error:{code:'fast_experiment_disabled'}});
+      const reserves = ['extraction','checking'].map(stage => {
+        const {model} = summaryModelPolicy(stage); return reservation(model, outputTokenLimit(model, stage));
+      });
+      const result = await transaction(db => readFastDetailsCapacity(db, process.env.AI_BUDGET_ID!, Math.max(...reserves)));
+      return res.status(200).json(result);
+    }
     if (req.method === "POST") {
       const job = await submit(owner, validatePayload(req.body));
       // A failed publish leaves a durable queued row. Resubmitting reuses that

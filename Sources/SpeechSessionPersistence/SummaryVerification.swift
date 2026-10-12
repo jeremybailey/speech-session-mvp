@@ -28,11 +28,12 @@ public struct SummaryRun: Codable, Hashable, Sendable {
     public var version: Int
     public var updatedAt: Date
     public var completedSourceChunks: Int?
+    public var workUnits: [String: FastDetailsWorkUnit]?
     public var promptVersion: String?
-    public init(source: String, stage: Stage = .fetching) {
+    public init(source: String, stage: Stage = .fetching, promptVersion: String = SummaryVerification.promptVersion) {
         id = UUID(); sourceHash = SummaryVerification.hash(source); self.stage = stage
         version = SummaryVerification.version; updatedAt = Date()
-        completedSourceChunks = 0; promptVersion = SummaryVerification.promptVersion
+        completedSourceChunks = 0; self.promptVersion = promptVersion
     }
 }
 public struct SummaryRevision: Codable, Hashable, Sendable {
@@ -41,7 +42,7 @@ public struct SummaryRevision: Codable, Hashable, Sendable {
     public var entries: [SummaryEntry]
     public init(runID: UUID, entries: [SummaryEntry]) { self.runID = runID; date = Date(); self.entries = entries }
 }
-public struct SummaryCheck: Codable, Sendable {
+public struct SummaryCheck: Codable, Hashable, Sendable {
     public var id: UUID
     public var supported: Bool
     public var reason: String

@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 import { claim, cleanup, database, settle } from "./ledger";
 import { modelOptions } from "./model-policy";
+import { reservedOutputTokenLimit } from './output-policy';
+import { responseDiagnostics } from './response-diagnostics';
 
 /** Shared by explicit maintenance and durable queue delivery. Only a successful
  * atomic ledger claim can dispatch inference; queue retries are not model retries. */
@@ -23,14 +25,17 @@ export async function runJob(id?: string): Promise<number> {
     } else {
       const schema = job.payload.response_format.json_schema as Record<string, unknown>;
       const client = new OpenAI({ maxRetries: 0, timeout: 100_000 });
-      const result = await client.responses.create({ model: job.model, store: false, service_tier: "default", max_output_tokens: 6000,
+      const outputLimit = reservedOutputTokenLimit(job.model, job.payload.stage, job.reserve_nusd);
+      const providerStarted = performance.now();
+      const result = await client.responses.create({ model: job.model, store: false, service_tier: "default",
+        max_output_tokens: outputLimit,
         ...modelOptions(job.model, job.reasoning_effort),
         input: [{ role: "system", content: job.payload.instructions }, { role: "user", content: job.payload.input }],
         text: { format: job.payload.response_format.type === "json_schema"
           ? { type: "json_schema", name: schema.name, strict: true, schema: schema.schema }
           : { type: "json_object" } } } as never);
       await settle(job.id, result.status === "completed" && result.output_text ? "completed" : "incomplete",
-        result.usage ?? undefined, result.output_text, result.id);
+        result.usage ?? undefined, result.output_text, result.id, {...responseDiagnostics(result, outputLimit), providerSeconds: (performance.now() - providerStarted) / 1000});
     }
   } catch {
     await settle(job.id, "uncertain");
