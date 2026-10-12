@@ -2,7 +2,7 @@ import { createHmac, createHash, randomUUID } from 'node:crypto';
 import type {PoolClient} from 'pg';
 import { database, transaction, submitWithinTransaction,workloadType } from './ledger';
 import { conditionModel, conditionReasoning } from './model-policy';
-import { ConditionState, compactConditionPlan, validateConditionPlan, initialConditionState, nextConditionRequest, acceptConditionResponse, repairVerificationContract } from './condition-workflow';
+import { ConditionState, compactConditionPlan, validateConditionPlan, initialConditionState, nextConditionRequest, acceptConditionResponse, repairVerificationContract, recoverSavedMapping } from './condition-workflow';
 
 const active = (state:string) => ['queued','running'].includes(state);
 function canonical(value:any):string {
@@ -143,7 +143,7 @@ export async function resumeConditionWorkflow(owner:string,id:string,client?:Poo
         JOIN ai_payloads p ON p.job_id=j.id AND p.expires_at>now()
         WHERE s.workflow_id=$1 AND s.revision=$3`,[id,owner,w.revision-1])).rows[0];
       const checkpoint=last?.state==='completed' && typeof last.result?.output==='string'
-        ? repairVerificationContract(p.plan,p.checkpoint,last.result.output):null;
+        ? repairVerificationContract(p.plan,p.checkpoint,last.result.output)??recoverSavedMapping(p.plan,p.checkpoint,last.result.output):null;
       if(!checkpoint) return {id:w.id,state:w.state,revision:w.revision};
       await db.query('UPDATE ai_condition_workflow_payloads SET checkpoint=$2 WHERE workflow_id=$1',[id,checkpoint]);
     }

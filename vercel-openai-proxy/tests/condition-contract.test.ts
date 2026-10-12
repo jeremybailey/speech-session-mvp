@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ConditionPlan,initialConditionState,acceptConditionResponse,nextConditionRequest,repairVerificationContract} from '../api/_lib/condition-workflow';
+import {ConditionPlan,initialConditionState,acceptConditionResponse,nextConditionRequest,repairVerificationContract,recoverSavedMapping} from '../api/_lib/condition-workflow';
 
 const id=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const contract={instructions:'Synthetic source-only contract',response_format:{type:'json_schema',json_schema:{name:'test',strict:true,schema:{type:'object',properties:{},additionalProperties:false}}}};
@@ -105,4 +105,26 @@ test('mapping omission repairs once without silently dropping an occurrence',()=
  const checking=acceptConditionResponse(p,retry,JSON.stringify(mapping()));
  const done=acceptConditionResponse(p,checking,JSON.stringify(verdict()));
  assert.equal(done.phase,'completed');assert.deepEqual(done.result.groups.flatMap(g=>g.entryIDs),[id(1),id(2)]);
+});
+
+for(const compact of [false,true]) test(`generic report headings reach independent review, compact=${compact}`,()=>{
+ const p=fixture(compact), before=initialConditionState(p), value=mapping();
+ value.groups[0].name='Screening test findings';
+ const checking=recoverSavedMapping(p,before,JSON.stringify(value))!;
+ assert.equal(checking.phase,'verification');
+ assert.deepEqual(checking.result,before.result,'Unverified mappings cannot publish');
+ assert.match(nextConditionRequest(p,checking)!.payload.instructions,/Judge meaning in context/);
+ const answer=compact?{decisions:{g0:{ok:false,entries:[],reason:'Report heading only.'},g1:{ok:true,entries:['r2'],reason:null}}}
+  :{decisions:[{name:'Screening test findings',bodySystem:'musculoskeletal',nameSupported:false,supportedEntryIDs:[],reason:'Report heading only.'},verdict().decisions[1]]};
+ const done=acceptConditionResponse(p,checking,JSON.stringify(answer));
+ assert.equal(done.phase,'completed');
+ assert.deepEqual(done.result.unassigned,[id(1)]);
+ assert.deepEqual(done.result.groups.flatMap(g=>g.entryIDs),[id(2)]);
+ assert.deepEqual(before,initialConditionState(p));
+ assert.equal(recoverSavedMapping(p,checking,JSON.stringify(value)),null);
+});
+test('saved mapping recovery never bypasses occurrence validation or invents paid repairs',()=>{
+ const p=fixture(),s=initialConditionState(p);
+ for(const raw of ['null','{',JSON.stringify({groups:[],unassigned:[]}),JSON.stringify({groups:[],unassigned:['r99']}),JSON.stringify({groups:[],unassigned:['r1','r1']})])
+  assert.equal(recoverSavedMapping(p,s,raw),null);
 });

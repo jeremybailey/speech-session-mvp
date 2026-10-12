@@ -166,7 +166,7 @@ test('duplicate or conflicting mappings cannot use coverage recovery',()=>{
   const conflicting=JSON.parse(mapped);conflicting.unassigned=['r1'];
   assert.throws(()=>acceptConditionResponse(p,s,JSON.stringify(conflicting)));
   const invalid=JSON.parse(mapped);invalid.groups[0].name='Normal';invalid.groups[0].entryIDs=[];
-  assert.throws(()=>acceptConditionResponse(p,s,JSON.stringify(invalid)));
+  assert.equal(acceptConditionResponse(p,s,JSON.stringify(invalid)).coverageRetry,true,'Empty heading is omitted; missing occurrence receives bounded coverage retry');
 });
 test('unchanged plan requires zero requests; all-unassigned batch skips verification',()=>{
   const p=plan();p.batches=[];
@@ -347,6 +347,25 @@ test('PostgreSQL workflow continuation, interruption, concurrency, cancellation 
     await settle(repairChild!,'completed',{input_tokens:100,output_tokens:20},JSON.stringify({decisions:{g0:{ok:true,entries:['r1'],reason:null}}}));
     assert.equal((await finishConditionStep(recover.id,repairChild!))!.state,'completed');
     assert.equal((await resumeConditionWorkflow('recover-owner',recover.id)).state,'completed');
+
+    // Replay an already-paid mapping rejected by the obsolete heading-word gate.
+    const headingPlan=plan('Report heading recovery'),headingRun=await submitConditionWorkflow('heading-owner',headingPlan);
+    const headingChild=await prepareConditionStep(headingRun.id);assert.ok(await claim(headingChild!));
+    const headingOutput=JSON.parse(mapped);headingOutput.groups[0].name='Screening test findings';
+    await settle(headingChild!,'completed',{input_tokens:100,output_tokens:20},JSON.stringify(headingOutput));
+    await db.query("UPDATE ai_condition_workflows SET state='invalid',revision=1,current_step=NULL,finished_at=now() WHERE id=$1",[headingRun.id]);
+    const headingBudget=(await db.query('SELECT used_nusd,reserved_nusd FROM ai_budgets')).rows;
+    const headingResume=await Promise.all([resumeConditionWorkflow('heading-owner',headingRun.id),resumeConditionWorkflow('heading-owner',headingRun.id)]);
+    assert.ok(headingResume.every(r=>r.state==='queued' && r.revision===2));
+    assert.deepEqual((await db.query('SELECT used_nusd,reserved_nusd FROM ai_budgets')).rows,headingBudget);
+    const headingCheckpoint=(await db.query('SELECT checkpoint FROM ai_condition_workflow_payloads WHERE workflow_id=$1',[headingRun.id])).rows[0].checkpoint;
+    assert.equal(headingCheckpoint.phase,'verification');assert.deepEqual(headingCheckpoint.result,headingPlan.preserved);
+    const headingCheck=await prepareConditionStep(headingRun.id);assert.notEqual(headingCheck,headingChild);
+    assert.ok(await claim(headingCheck!));
+    await settle(headingCheck!,'completed',{input_tokens:100,output_tokens:20},JSON.stringify({decisions:[{name:'Screening test findings',bodySystem:'reproductive',nameSupported:false,supportedEntryIDs:[],reason:'Report heading is not a patient concern.'}]}));
+    assert.equal((await finishConditionStep(headingRun.id,headingCheck!))!.state,'completed');
+    const headingResult=(await db.query('SELECT checkpoint FROM ai_condition_workflow_payloads WHERE workflow_id=$1',[headingRun.id])).rows[0].checkpoint.result;
+    assert.deepEqual(headingResult.groups,headingPlan.preserved.groups);assert.deepEqual(headingResult.unassigned,[uuid(2)]);
 
     // Full-size workflow: fail early, midway and on the last verification batch.
     // Run the real durable worker/store/ledger with a synthetic provider, no API.

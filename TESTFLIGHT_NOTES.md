@@ -14,8 +14,17 @@ opt-in. The deployed backend now recovers once from condition-checker entry-ID o
 heading mismatches using an independent constrained repair, preserving completed
 work and source occurrences. Clinical rejections remain rejections; exhausted
 repairs stop without repeated paid retries. The pilot's approved cumulative shared
-allowance is $20; the separate experiment cap is unchanged. Asha's previously
-failing condition organization has now completed, as confirmed by Jeremy.
+allowance is $20; the separate experiment cap is unchanged. The initial report of Asha's successful completion was retracted by Jeremy after
+another invalid-condition error. Build 14 is distributed, but end-to-end recovery
+is not confirmed. Follow-up diagnosis found that the final mapping batch was
+rejected by a local heading-word rule before independent verification. The server
+fix removes that clinical keyword gate from transport validation, explicitly asks
+the independent checker to reject generic report/normal-finding headings, and lets
+an explicit retry reuse the already-paid mapping while preserving every occurrence.
+Structural failures and unsupported clinical judgments still fail closed or remain
+unassigned. Validation: 103 offline tests passed; 81 dedicated recovery tests passed
+with zero skips, including concurrent database-backed resume and unchanged spending.
+No patient payload was changed and no diagnostic model call was made.
 
 Validation: 100 offline backend tests passed; the dedicated condition recovery
 suite passed 78 tests with zero skips, including real PostgreSQL workflow and
