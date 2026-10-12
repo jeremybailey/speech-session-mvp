@@ -40,7 +40,6 @@ struct HealthSummaryView: View {
     @State private var showProcessingConsent = false
     @State private var reprocessAllRecordsRequest = false
     @State private var resumeAfterConsent = false
-    @State private var attemptedRepair: Set<String> = []
     @State private var preparationTask: Task<Void, Never>?
     @State private var durableStop: DurableProcessingStop?
     @State private var stopError: String?
@@ -48,23 +47,6 @@ struct HealthSummaryView: View {
     @State private var preparationWasBackgrounded = false
     @State private var automaticResumeAlreadyAttempted = false
     @AppStorage("speechSession.pendingSummaryJob") private var pendingSummaryJob = ""
-
-    private var showingStoryPlaceholder: Bool {
-        SummaryStoryLoadingPolicy.showsPlaceholder(
-            hasLoaded: model.hasLoaded,
-            needsConditionOrganization: model.needsConditionOrganization,
-            isWorking: model.isProcessing || isLaunchingPreparation,
-            hasFailure: model.conditionNotice != nil || model.processingIssue != nil || model.error != nil
-        )
-    }
-
-    private var launchingProgressTitle: String {
-        switch pendingSummaryJob {
-        case "overview": return "Creating overview"
-        case "conditions": return "Organizing conditions"
-        default: return "Processing health details"
-        }
-    }
 
     private var pendingCount: Int {
         model.snapshot.sessions.filter(\.needsSummaryVerification).count
@@ -95,86 +77,27 @@ struct HealthSummaryView: View {
             if model.undoRemoval != nil {
                 Section { Button("Undo removal", systemImage: "arrow.uturn.backward") { Task { await model.restoreRemovedDetail() } } }
             }
-            if model.isProcessing || isLaunchingPreparation {
+            if model.displayedOverview != nil || !model.facts.isEmpty || model.isUpdatingStory {
                 Section {
-                    HealthProcessingProgressView(
-                        title: model.isProcessing && !model.progressTitle.isEmpty
-                            ? model.progressTitle : launchingProgressTitle,
-                        status: !model.isProcessing || model.progress.isEmpty ? "Starting…" : model.progress,
-                        value: model.isProcessing && model.progressTotal > 0 ? model.progressValue : nil,
-                        total: model.isProcessing && model.progressTotal > 0 ? Double(model.progressTotal) : nil,
-                        currentRecord: model.progressCurrent,
-                        totalRecords: model.progressTotal,
-                        showsRecordCount: model.isProcessing && model.progressShowsRecordCount
-                    ) {
-                        pendingSummaryJob = ""
-                        preparationTask?.cancel()
-                        let stop = durableStop
-                        Task {
-                            do { try await stop?.stop() }
-                            catch { stopError = "Could not confirm the server stopped. Processing may continue. Check AI usage in Settings before retrying." }
-                        }
-                    }
-                }
-            } else if let issue = model.processingIssue {
-                Section {
-                    SummaryProcessingIssueView(issue: issue, retry: { prepare(retryUnfinished: true) })
-                    if let id = issue.recordID, let record = model.snapshot.sessions.first(where: { $0.id == id }) {
-                        Button("Open original record", systemImage: "doc.text") { taskSheet = .record(record) }
-                    }
-                }
-            } else if pendingCount > 0 {
-                Section {
-                    Button("Update summary from records", systemImage: "arrow.clockwise") {
-                        if backend == "onDevice" || cloudConsent { prepare() }
-                        else { showProcessingConsent = true }
-                    }
-                }
-            }
-            if showingStoryPlaceholder {
-                Section {
-                    HealthStoryLoadingPlaceholder()
-                        .listRowInsets(EdgeInsets(top: 20, leading: 20, bottom: 20, trailing: 20))
-                }.transition(.opacity)
-            } else {
-            if let overview = model.overview {
-                Section("Overview") {
-                    Text(overview).textSelection(.enabled)
-                }
-            } else if !model.facts.isEmpty && !model.isProcessing {
-                Section("Overview") {
-                    Text(model.overviewNotice ?? "Your health details are ready. Create a readable introduction to your health story.")
-                        .foregroundStyle(.secondary)
-                    if let explanation = model.overviewCheckerExplanation {
-                        DisclosureGroup("Why it stopped") {
-                            Text("Automatic checker feedback — this may itself be mistaken.")
+                    if let overview = model.displayedOverview {
+                        Text(overview).textSelection(.enabled)
+                            .contentTransition(.opacity)
+                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: overview)
+                        if !model.overviewIsCurrent {
+                            Text(model.isUpdatingStory ? "Updating with your latest records." : "Last saved overview. Latest changes aren’t included yet.")
                                 .font(.caption).foregroundStyle(.secondary)
-                            Text(verbatim: explanation).textSelection(.enabled)
                         }
+                    } else {
+                        Text("Your overview will appear here as your records are organized.")
+                            .foregroundStyle(.secondary)
                     }
-                    Button("Create overview", systemImage: "text.bubble") {
-                        guard !isLaunchingPreparation else { return }
-                        overviewOnlyRequest = true
-                        prepare()
-                    }
-                }
-            }
-            if let notice = model.conditionNotice {
-                Section {
-                    Text(notice).foregroundStyle(.secondary)
-                    organizeConditionsButton
-                }
-            } else if model.needsConditionOrganization && !model.isProcessing && !isLaunchingPreparation {
-                Section {
-                    Text("Your saved details are ready to organize into conditions.")
-                        .foregroundStyle(.secondary)
-                    organizeConditionsButton
-                }
+                    regionRecovery(.overview)
+                } header: { regionHeader("Overview", region: .overview) }
             }
             conditionSections
-            }
             if !categories.isEmpty {
                 Section {
+                    regionRecovery(.details)
                     DisclosureGroup(isExpanded: $allExpanded) {
                     ForEach(categories, id: \.self) { category in
                         let facts = categoryFacts[category] ?? []
@@ -205,9 +128,12 @@ struct HealthSummaryView: View {
                         Label("All", systemImage: "square.grid.2x2.fill")
                             .font(.headline).foregroundStyle(.primary).padding(.vertical, 8)
                     }
-                }
+                } header: { regionHeader("Details", region: .details) }
             }
             Section {
+                if (pendingCount > 0 || !model.facts.isEmpty) && !model.isProcessing && !isLaunchingPreparation && backend != "onDevice" && !cloudConsent {
+                    Button("Prepare my health story") { prepare() }
+                }
                 DisclosureGroup(isExpanded: $recordsExpanded) {
                     if model.snapshot.sessions.isEmpty {
                         Text("No records added yet").foregroundStyle(.secondary)
@@ -302,16 +228,12 @@ struct HealthSummaryView: View {
         .alert("Stop not confirmed", isPresented: Binding(get: { stopError != nil }, set: { if !$0 { stopError = nil } })) {
             Button("OK", role: .cancel) { stopError = nil }
         } message: { Text(stopError ?? "") }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: showingStoryPlaceholder)
-        .task(id: "\(ConditionSynthesis.fingerprint(model.facts))|\(model.isProcessing)|\(model.hasLoaded)|\(cloudConsent)|\(backend)|\(pendingSummaryJob)") {
-            guard !connectionCheckOnly, model.automaticProcessingAllowed else { return }
+        .task(id: "\(model.updateInputKey)|\(model.hasLoaded)|\(cloudConsent)|\(backend)|\(isLaunchingPreparation)|\(scenePhase)") {
+            guard !connectionCheckOnly, scenePhase == .active, !isLaunchingPreparation else { return }
             if resumePendingSummaryJobIfPossible() { return }
-            guard !model.isProcessing, model.needsConditionOrganization, pendingCount == 0,
-                  backend != "onDevice", cloudConsent else { return }
-            let key = "conditions:" + ConditionSynthesis.fingerprint(model.facts)
-            guard attemptedRepair.insert(key).inserted else { return }
-            conditionsOnlyRequest = true
-            prepare()
+            if model.shouldAutomaticallyUpdate(onDevice: backend == "onDevice", consent: cloudConsent) {
+                prepare(automatic: true)
+            }
         }
         .task(id: connectionCheckOnly ? "ai-connection-check" : String(describing: home.revision)) {
             #if DEBUG
@@ -416,8 +338,6 @@ struct HealthSummaryView: View {
                 return
             }
             #endif
-            let repairKey = model.snapshot.sessions.map { $0.id.uuidString + SummaryVerification.hash($0.transcript) }.sorted().joined()
-            if model.automaticProcessingAllowed, model.processingIssue == nil, pendingCount > 0, backend == "onDevice" || cloudConsent, attemptedRepair.insert(repairKey).inserted { prepare() }
             #if DEBUG
             if !didOpenCareQA, ProcessInfo.processInfo.arguments.contains("--care-qa"),
                let fact = model.facts.first(where: { $0.category == .carePlan }) {
@@ -469,6 +389,7 @@ struct HealthSummaryView: View {
             case .add(let category):
                 HealthManualEntryView(model: model, home: home, store: store, topicID: nil, initialCategory: category)
             case .contact(let member): CareTeamEditor(member: member, model: model)
+            case .progress: SummaryUpdateProgressSheet(model: model, progress: model.processingProgress, supportsConditions: backend != "onDevice", onStop: stopPreparation)
             case .share: HealthShareView(model: model)
             case .condition(let id): ConditionAssignmentSheet(factID: id, model: model)
             case .combine(let id): FactDuplicateSheet(factID: id, model: model)
@@ -494,24 +415,53 @@ struct HealthSummaryView: View {
         }
     }
 
-    private var organizeConditionsButton: some View {
-        Button("Organize conditions", systemImage: "square.grid.2x2") {
-            conditionsOnlyRequest = true
-            prepare()
-        }.disabled(model.isProcessing || isLaunchingPreparation || model.isTransferringData || backend == "onDevice")
+    private func stopPreparation() {
+        model.stopAutomaticUpdates()
+        pendingSummaryJob = ""
+        preparationTask?.cancel()
+        let stop = durableStop
+        Task {
+            do { try await stop?.stop() }
+            catch { stopError = "Could not confirm the server stopped. Processing may continue. Check AI usage in Settings before retrying." }
+        }
+    }
+
+    private func regionHeader(_ title: String, region: SummaryUpdateRegion) -> some View {
+        SummaryRegionHeader(title: title, region: region, state: model.state(for: region),
+                            progress: model.processingProgress) {
+            taskSheet = .progress
+        }
+    }
+
+    @ViewBuilder private func regionRecovery(_ region: SummaryUpdateRegion) -> some View {
+        if model.state(for: region) == .needsAttention {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Couldn’t finish updating").font(.subheadline).foregroundStyle(.secondary)
+                Button("Retry") {
+                    prepare(retryUnfinished: true)
+                }.frame(minHeight: 44)
+                Button("View progress") { taskSheet = .progress }.font(.caption)
+            }
+        } else if model.state(for: region) == .interrupted {
+            Text(model.isExplicitlyPaused ? "Update paused. Resume whenever you’re ready." : "Update paused. We’ll continue when you return.")
+                .font(.subheadline).foregroundStyle(.secondary)
+            Button("Resume") { prepare(retryUnfinished: true) }.frame(minHeight: 44)
+        }
     }
 
     @ViewBuilder private var conditionSections: some View {
-        let conditions = ConditionSummaryProjection.groups(facts: model.conditionFacts, topics: model.snapshot.topics)
-        if conditions.filter({ !$0.isUncategorized }).isEmpty {
-            Section { Text(model.facts.isEmpty
-                ? "Add records to start organizing your health story by condition."
-                : model.needsConditionOrganization
-                    ? (model.isProcessing ? "Organizing your conditions. Your saved details are available in All." : "Your conditions will appear here after organization. Your saved details are available in All.")
-                    : "Your saved details are available in All.").foregroundStyle(.secondary) }
-        }
+        let conditions = model.conditionGroups
         Section {
-            ForEach(HealthAreaProjection.groups(conditions)) { area in
+            if conditions.filter({ !$0.isUncategorized }).isEmpty {
+                Text(model.facts.isEmpty
+                    ? "Your conditions will appear here after you add records."
+                    : backend == "onDevice"
+                        ? "Your saved details are available in All. Condition organization uses cloud processing."
+                        : "Your conditions will appear here as your records are organized.")
+                    .foregroundStyle(.secondary)
+            }
+            regionRecovery(.conditions)
+            ForEach(model.healthAreas) { area in
                 NavigationLink(value: area.id) {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: area.id.symbol)
@@ -531,7 +481,7 @@ struct HealthSummaryView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityHint("Opens concerns and their health details")
             }
-        }
+        } header: { regionHeader("Conditions", region: .conditions) }
     }
 
     @ViewBuilder private func conditionCategories(_ condition: ConditionSummary) -> some View {
@@ -697,7 +647,7 @@ struct HealthSummaryView: View {
     @State private var overviewOnlyRequest = false
     @State private var conditionsOnlyRequest = false
 
-    private func prepare(retryUnfinished: Bool = false, automaticResume: Bool = false) {
+    private func prepare(retryUnfinished: Bool = false, automaticResume: Bool = false, automatic: Bool = false) {
         guard !connectionCheckOnly else { return }
         guard !isLaunchingPreparation && !model.isProcessing else { return }
         if !automaticResume { automaticResumeAlreadyAttempted = false }
@@ -714,10 +664,13 @@ struct HealthSummaryView: View {
         overviewOnlyRequest = false
         let recordsOnly = reprocessAllRecordsRequest
         reprocessAllRecordsRequest = false
-        let job = conditionsOnly ? "conditions" : (overviewOnly ? "overview" : (recordsOnly ? "records" : "summary"))
+        let forceConditions = conditionsOnly && (!automaticResume || pendingSummaryJob == "regenerateConditions")
+        let job = conditionsOnly ? (forceConditions ? "regenerateConditions" : "conditions")
+            : (overviewOnly ? "overview" : (recordsOnly ? "records" : "summary"))
         pendingSummaryJob = job
         preparationWasBackgrounded = scenePhase == .background
         isLaunchingPreparation = true
+        model.beginLaunchingUpdate(conditionsOnly ? .conditions : (overviewOnly ? .overview : .details))
         let stop = DurableProcessingStop()
         durableStop = stop
         preparationTask = Task {
@@ -734,25 +687,28 @@ struct HealthSummaryView: View {
                     appIsActive: scenePhase == .active
                 )
                 if !retainPendingJob, pendingSummaryJob == job { pendingSummaryJob = "" }
+                if Task.isCancelled { model.interruptUpdates() }
                 isLaunchingPreparation = false
                 preparationTask = nil
             }
             var transport = backend == "onDevice" ? nil : await auth.openAIChatTransport(byokFallback: apiKey)
             transport?.explicitStop = stop
             if conditionsOnly {
-                await model.organizeConditions(transport: transport, onDevice: backend == "onDevice")
+                await model.updateHealthStory(transport: transport, onDevice: backend == "onDevice",
+                                             explicitlyRequested: true, forceConditionRefresh: forceConditions)
                 completedSuccessfully = model.conditionNotice == nil && !model.needsConditionOrganization
+                    && (model.facts.isEmpty || model.overviewIsCurrent)
             } else if overviewOnly {
                 await model.createOverview(transport: transport, onDevice: backend == "onDevice")
                 completedSuccessfully = model.overview != nil && model.overviewNotice == nil
             } else {
-                await model.prepareSummaries(
-                    transport: transport,
-                    onDevice: backend == "onDevice",
-                    forceAll: recordsOnly,
-                    retryUnfinished: resume,
-                    organizeConditionsAfterRecords: !recordsOnly
-                )
+                if recordsOnly {
+                    await model.prepareSummaries(transport: transport, onDevice: backend == "onDevice",
+                                                 forceAll: true, retryUnfinished: resume, organizeConditionsAfterRecords: false)
+                } else {
+                    await model.updateHealthStory(transport: transport, onDevice: backend == "onDevice",
+                                                 explicitlyRequested: !automatic || automaticResume)
+                }
                 await home.loadSessions()
                 // Read the checkpointed run state before deciding that a background
                 // job is done. Cancellation can leave no visible error while one or
@@ -762,7 +718,7 @@ struct HealthSummaryView: View {
                     hasProcessingIssue: model.processingIssue != nil,
                     hasError: model.error != nil,
                     unfinishedRecordCount: pendingCount,
-                    conditionOrganizationFailed: !recordsOnly && model.conditionNotice != nil
+                    conditionOrganizationFailed: !recordsOnly && (model.conditionNotice != nil || (!model.facts.isEmpty && !model.overviewIsCurrent))
                 )
             }
         }
@@ -782,7 +738,7 @@ struct HealthSummaryView: View {
         ) else { return false }
         automaticResumeAlreadyAttempted = true
         switch pendingSummaryJob {
-        case "conditions": conditionsOnlyRequest = true
+        case "conditions", "regenerateConditions": conditionsOnlyRequest = true
         case "overview": overviewOnlyRequest = true
         case "records": reprocessAllRecordsRequest = true
         case "summary": break
@@ -802,9 +758,7 @@ private struct HealthAreaDetailView<Content: View>: View {
     @ViewBuilder var conditionContent: (ConditionSummary) -> Content
 
     private var area: HealthArea? {
-        HealthAreaProjection.groups(ConditionSummaryProjection.groups(
-            facts: model.conditionFacts, topics: model.snapshot.topics
-        )).first { $0.id == kind }
+        model.healthAreas.first { $0.id == kind }
     }
 
     var body: some View {
@@ -830,117 +784,11 @@ private struct HealthAreaDetailView<Content: View>: View {
     }
 }
 
-private struct HealthProcessingProgressView: View {
-    let title: String
-    let status: String
-    let value: Double?
-    let total: Double?
-    let currentRecord: Int
-    let totalRecords: Int
-    let showsRecordCount: Bool
-    let stop: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var typeSize
-    @State private var displayedFraction = 0.0
-
-    private struct Sample: Equatable {
-        let title: String
-        let total: Double?
-        let fraction: Double?
-    }
-
-    private var sample: Sample {
-        let fraction: Double?
-        if let value, let total, total > 0, value.isFinite, total.isFinite {
-            fraction = min(1, max(0, value / total))
-        } else {
-            fraction = nil
-        }
-        return Sample(title: title, total: total, fraction: fraction)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if typeSize.isAccessibilitySize {
-                titleLabel
-                stopButton
-            } else {
-                HStack(alignment: .center, spacing: 12) {
-                    titleLabel.frame(maxWidth: .infinity, alignment: .leading)
-                    stopButton
-                }
-            }
-            // Keep the track's footprint during indeterminate startup; the spinner below
-            // communicates activity without advancing an invented percentage.
-            ProgressView(value: displayedFraction, total: 1)
-                .progressViewStyle(.linear)
-                .opacity(sample.fraction == nil ? 0 : 1)
-                .accessibilityLabel(title)
-                .accessibilityHidden(sample.fraction == nil)
-            HStack(alignment: .top, spacing: 10) {
-                ProgressView().progressViewStyle(.circular).controlSize(.small)
-                    .padding(.top, 2)
-                    .accessibilityHidden(true)
-                statusLabel.frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if showsRecordCount && totalRecords > 0 {
-                Text("Record \(currentRecord) of \(totalRecords)")
-                    .font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
-            }
-        }
-        .padding(.vertical, 8)
-        .onAppear { setFraction(sample.fraction ?? 0, animated: false) }
-        .onChange(of: sample) { old, new in
-            let forwardUpdate = old.title == new.title && old.total == new.total
-                && old.fraction != nil && new.fraction != nil
-                && (new.fraction ?? 0) >= (old.fraction ?? 0)
-            setFraction(new.fraction ?? 0, animated: forwardUpdate && !reduceMotion)
-        }
-        .onChange(of: reduceMotion) { _, reduced in
-            if reduced { setFraction(sample.fraction ?? 0, animated: false) }
-        }
-    }
-
-    private var titleLabel: some View {
-        Text(title).font(.headline).foregroundStyle(.primary)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityAddTraits(.isHeader)
-    }
-
-    private var stopButton: some View {
-        Button("Stop", action: stop)
-            .font(.body)
-            .controlSize(.regular)
-            .frame(minHeight: 44)
-            .summarySecondaryButtonStyle()
-            .accessibilityLabel("Stop " + title.lowercased())
-    }
-
-    @ViewBuilder private var statusLabel: some View {
-        if typeSize.isAccessibilitySize {
-            Text(status).font(.subheadline).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        } else {
-            Text(status).font(.subheadline).foregroundStyle(.secondary)
-                .lineLimit(2, reservesSpace: true)
-        }
-    }
-
-    private func setFraction(_ fraction: Double, animated: Bool) {
-        if animated {
-            withAnimation(.easeInOut(duration: 0.3)) { displayedFraction = fraction }
-        } else {
-            var transaction = Transaction(animation: nil)
-            transaction.disablesAnimations = true
-            withTransaction(transaction) { displayedFraction = fraction }
-        }
-    }
-}
-
 private enum HealthSheet: Identifiable {
-    case condition(String), fact(String), record(Session), add(SummaryEntryCategory), contact(CareTeamMember), combine(String), combineContact(UUID), share
+    case progress, condition(String), fact(String), record(Session), add(SummaryEntryCategory), contact(CareTeamMember), combine(String), combineContact(UUID), share
     var id: String {
         switch self {
+        case .progress: "progress"
         case .condition(let id): "condition-\(id)"
         case .fact(let id): "fact-\(id)"
         case .record(let session): "record-\(session.id)"
@@ -1237,7 +1085,7 @@ private struct ConditionAssignmentSheet: View {
     @State private var saving = false
     @State private var error: String?
     private var conditions: [ConditionSummary] {
-        ConditionSummaryProjection.groups(facts: model.conditionFacts, topics: model.snapshot.topics).filter { !$0.isUncategorized }
+        model.conditionGroups.filter { !$0.isUncategorized }
     }
     var body: some View {
         NavigationStack {
@@ -1286,47 +1134,173 @@ private struct ConditionAssignmentSheet: View {
     }
 }
 
-/// Abstract content, never stale patient text, while the organized story becomes ready.
-private struct HealthStoryLoadingPlaceholder: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var shimmer = false
 
-    private var shapes: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            RoundedRectangle(cornerRadius: 5).frame(width: 100, height: 16)
-            RoundedRectangle(cornerRadius: 5).frame(height: 12)
-            RoundedRectangle(cornerRadius: 5).frame(height: 12).padding(.trailing, 28)
-            RoundedRectangle(cornerRadius: 5).frame(height: 12).padding(.trailing, 75)
-            ForEach(0..<3) { index in
-                HStack(spacing: 14) {
-                    RoundedRectangle(cornerRadius: 12).frame(width: 42, height: 42)
-                    VStack(alignment: .leading, spacing: 9) {
-                        RoundedRectangle(cornerRadius: 5).frame(height: 14).padding(.trailing, CGFloat(index * 20 + 35))
-                        RoundedRectangle(cornerRadius: 4).frame(width: 65, height: 10)
+/// Section-local feedback leaves saved content and navigation available.
+private struct SummaryRegionHeader: View {
+    let title: String
+    let region: SummaryUpdateRegion
+    let state: SummaryUpdateState?
+    @ObservedObject var progress: HealthSummaryProgress
+    let viewProgress: () -> Void
+
+    private var fraction: Double? {
+        region == .details && progress.showsRecordCount && progress.total > 0
+            ? progress.value / Double(progress.total) : nil
+    }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showCompletion = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if state == .updating {
+                Button(action: viewProgress) {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text(region.workingLabel)
+                            .font(.subheadline)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right").font(.caption)
+                            .accessibilityHidden(true)
                     }
-                }.padding(.top, 12)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel(region.workingLabel + " View progress")
+                SummaryActivityLine(fraction: fraction).accessibilityHidden(true)
+            } else {
+                HStack(spacing: 6) {
+                    Text(title).font(.headline)
+                        .accessibilityAddTraits(.isHeader)
+                    if state == .ready && showCompletion {
+                        Image(systemName: "checkmark").font(.caption)
+                            .accessibilityLabel(region.completionLabel)
+                    }
+                }
+                .foregroundStyle(.primary)
             }
+        }
+        .textCase(nil)
+        .padding(.vertical, 4)
+        .task(id: state) {
+            showCompletion = state == .ready
+            guard showCompletion else { return }
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { showCompletion = false }
         }
     }
 
+}
+
+private struct SummaryActivityLine: View {
+    let fraction: Double?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var moving = false
+
     var body: some View {
-        shapes.foregroundStyle(.secondary.opacity(0.12))
-            .overlay {
-                if !reduceMotion {
-                    GeometryReader { geometry in
-                        LinearGradient(colors: [.clear, .white.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
-                            .frame(width: geometry.size.width * 0.65)
-                            .offset(x: shimmer ? geometry.size.width : -geometry.size.width * 0.65)
-                    }.mask(shapes)
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            Capsule().fill(Color.secondary.opacity(0.12))
+                .overlay(alignment: .leading) {
+                    if let fraction {
+                        Capsule().fill(BrandPalette.systemBlue)
+                            .frame(width: width * min(1, max(0, fraction)))
+                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: fraction)
+                    } else {
+                        Capsule().fill(BrandPalette.systemBlue.opacity(0.65))
+                            .frame(width: width * 0.3)
+                            .offset(x: reduceMotion ? width * 0.35 : (moving ? width : -width * 0.3))
+                    }
+                }
+                .clipShape(Capsule())
+        }
+        .frame(height: 3)
+        .task(id: "\(reduceMotion)|\(fraction == nil)") {
+            moving = false
+            guard !reduceMotion, fraction == nil else { return }
+            withAnimation(.linear(duration: 1.8).repeatForever(autoreverses: false)) { moving = true }
+        }
+    }
+}
+
+private struct SummaryUpdateProgressSheet: View {
+    @ObservedObject var model: HealthSummaryModel
+    @ObservedObject var progress: HealthSummaryProgress
+    let supportsConditions: Bool
+    let onStop: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(SummaryUpdateRegion.allCases.filter { supportsConditions || $0 != .conditions }) { region in
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: symbol(model.state(for: region)))
+                                .foregroundStyle(model.state(for: region) == .updating ? BrandPalette.systemBlue : .secondary)
+                                .frame(width: 22)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(region.title).font(.headline)
+                                Text(label(model.state(for: region)))
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                                if model.state(for: region) == .updating {
+                                    if region == .details && progress.showsRecordCount && progress.total > 0 {
+                                        Text("Record \(progress.current) of \(progress.total)")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Text(progress.message).font(.caption).foregroundStyle(.secondary)
+                                        .textSelection(.enabled)
+                                }
+                            }
+                        }.accessibilityElement(children: .combine)
+                    }
+                }
+                if let issue = model.processingIssue {
+                    Section("Record update") { Text(issue.message).textSelection(.enabled) }
+                }
+                if let notice = model.conditionNotice {
+                    Section("Conditions") { Text(notice).textSelection(.enabled) }
+                }
+                if let notice = model.overviewNotice {
+                    Section("Overview") {
+                        Text(notice).textSelection(.enabled)
+                        if let explanation = model.overviewCheckerExplanation {
+                            DisclosureGroup("Why it stopped") { Text(explanation).textSelection(.enabled) }
+                        }
+                    }
+                }
+                if let error = model.updateError ?? model.error { Section("Update") { Text(error).textSelection(.enabled) } }
+                Section {
+                    Button("Stop updating", role: .destructive) { onStop(); dismiss() }
+                        .disabled(!model.isUpdatingStory && !model.isProcessing)
+                } footer: {
+                    Text("Your saved details remain available. If the app is interrupted, unfinished work can resume when you return.")
                 }
             }
-            .clipped()
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Loading your organized health story")
-            .task(id: reduceMotion) {
-                guard !reduceMotion else { shimmer = false; return }
-                shimmer = false
-                withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) { shimmer = true }
-            }
+            .navigationTitle("Updating your health story")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+    }
+
+    private func symbol(_ state: SummaryUpdateState?) -> String {
+        switch state {
+        case .ready: "checkmark.circle.fill"
+        case .updating: "circle.dotted"
+        case .interrupted: "pause.circle"
+        case .needsAttention: "exclamationmark.circle"
+        default: "circle"
+        }
+    }
+    private func label(_ state: SummaryUpdateState?) -> String {
+        switch state {
+        case .ready: "Updated"
+        case .updating: "Updating…"
+        case .interrupted: "Paused"
+        case .needsAttention: "Couldn’t finish updating"
+        default: "Waiting"
+        }
     }
 }

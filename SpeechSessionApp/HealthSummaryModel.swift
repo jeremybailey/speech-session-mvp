@@ -32,6 +32,18 @@ final class SummaryBackgroundTaskLease {
     }
 }
 
+/// High-frequency processing feedback is observed only by the progress UI.
+/// Publishing it on HealthSummaryModel would rebuild the entire story for each stage.
+@MainActor
+final class HealthSummaryProgress: ObservableObject {
+    @Published var message = ""
+    @Published var title = ""
+    @Published var current = 0
+    @Published var total = 0
+    @Published var value = 0.0
+    @Published var showsRecordCount = false
+}
+
 @MainActor
 final class HealthSummaryModel: ObservableObject {
     @Published private(set) var hasLoaded = false
@@ -42,11 +54,17 @@ final class HealthSummaryModel: ObservableObject {
     func resetAfterDataImport() async {
         refreshRevision += 1
         hasLoaded = false
+        conditionGroups = []; healthAreas = []
         snapshot = HealthMemorySnapshot(); facts = []; conditionFacts = []
-        overview = nil; overviewNotice = nil; overviewCheckerExplanation = nil
+        overview = nil; displayedOverview = nil; overviewIsCurrent = false
+        updateStates = [:]
+        automaticPolicy = SummaryAutomaticUpdatePolicy()
+        UserDefaults.standard.removeObject(forKey: "collectivecare.stoppedSummaryInput")
+        UserDefaults.standard.removeObject(forKey: "collectivecare.stoppedSummarySources")
+        overviewNotice = nil; overviewCheckerExplanation = nil
         conditionNotice = nil; needsConditionOrganization = false
         undoCombination = nil; contactReviewUndos = []; undoRemoval = nil; retryRecordIDs = []
-        processingIssue = nil; error = nil
+        processingIssue = nil; updateError = nil; error = nil
         await refresh()
     }
     @Published private(set) var snapshot = HealthMemorySnapshot()
@@ -61,14 +79,173 @@ final class HealthSummaryModel: ObservableObject {
     @Published private(set) var contactReviewUndos: [HealthCombinationUndo] = []
     @Published private(set) var undoRemoval: HealthFactPreference?
     @Published private(set) var isProcessing = false
-    @Published private(set) var progress = ""
-    @Published private(set) var progressTitle = ""
-    @Published private(set) var progressCurrent = 0
-    @Published private(set) var progressTotal = 0
-    @Published private(set) var progressValue = 0.0
-    @Published private(set) var progressShowsRecordCount = false
+    let processingProgress = HealthSummaryProgress()
+    private(set) var progress: String {
+        get { processingProgress.message }
+        set { processingProgress.message = newValue }
+    }
+    private(set) var progressTitle: String {
+        get { processingProgress.title }
+        set { processingProgress.title = newValue }
+    }
+    private(set) var progressCurrent: Int {
+        get { processingProgress.current }
+        set { processingProgress.current = newValue }
+    }
+    private(set) var progressTotal: Int {
+        get { processingProgress.total }
+        set { processingProgress.total = newValue }
+    }
+    private(set) var progressValue: Double {
+        get { processingProgress.value }
+        set { processingProgress.value = newValue }
+    }
+    private(set) var progressShowsRecordCount: Bool {
+        get { processingProgress.showsRecordCount }
+        set { processingProgress.showsRecordCount = newValue }
+    }
     @Published var error: String?
     @Published private(set) var processingIssue: SummaryProcessingIssue?
+    @Published private(set) var updateError: String?
+    @Published private(set) var updateStates: [SummaryUpdateRegion: SummaryUpdateState] = [:]
+    @Published private(set) var displayedOverview: String?
+    var displayedConditions: [HealthFact] { conditionFacts }
+    // Prepared off the main actor once per saved snapshot, not during view rendering.
+    // Published content below invalidates the view after these caches are installed.
+    private(set) var conditionGroups: [ConditionSummary] = []
+    private(set) var healthAreas: [HealthArea] = []
+    @Published private(set) var overviewIsCurrent = false
+    @Published private(set) var isUpdatingStory = false
+    private var automaticPolicy = SummaryAutomaticUpdatePolicy(
+        stoppedInput: UserDefaults.standard.string(forKey: "collectivecare.stoppedSummaryInput")
+    )
+    private var explicitlyStopped = false
+    private var overviewInputChanged = false
+    private var conditionInputChanged = false
+
+    private var sourceInputKey = ""
+    @Published private(set) var updateInputKey = ""
+
+    // Hashing long transcripts belongs off the main actor, alongside projection.
+    nonisolated private static func updateKeys(snapshot: HealthMemorySnapshot, facts: [HealthFact],
+                                                conditionFacts: [HealthFact]) -> (sources: String, inputs: String) {
+        let sources = snapshot.sessions.map { session in
+            let manual = (session.summaryEntries ?? [])
+                .filter { $0.origin == .userAdded || $0.origin == .userEdited }
+                .map { $0.id.uuidString + SummaryVerification.contentHash($0) }.sorted().joined(separator: "|")
+            return session.id.uuidString + SummaryVerification.hash(session.transcript) + manual
+        }.sorted().joined(separator: "|")
+        let sourceKey = SummaryVerification.hash(sources)
+        let readiness = snapshot.sessions.map {
+            $0.id.uuidString + ($0.processingState?.rawValue ?? "saved")
+        }.sorted().joined(separator: "|")
+        let inputKey = SummaryVerification.hash(sources + readiness + StoryOverview.fingerprint(facts)
+            + StoryOverview.conditionContext(facts: conditionFacts, topics: snapshot.topics))
+        return (sourceKey, inputKey)
+    }
+
+    private var stoppedForCurrentSources: Bool {
+        UserDefaults.standard.string(forKey: "collectivecare.stoppedSummarySources") == sourceInputKey
+    }
+
+    var isExplicitlyPaused: Bool { stoppedForCurrentSources }
+
+    func state(for region: SummaryUpdateRegion) -> SummaryUpdateState? { updateStates[region] }
+
+    func shouldAutomaticallyUpdate(onDevice: Bool, consent: Bool) -> Bool {
+        guard automaticProcessingAllowed, !isProcessing, !isUpdatingStory,
+              onDevice || consent, !stoppedForCurrentSources, automaticPolicy.allows(updateInputKey) else { return false }
+        return snapshot.sessions.contains { $0.needsSummaryVerification && $0.processingState != .failed && $0.processingState != .transcribing && !$0.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            || (!facts.isEmpty && ((!onDevice && needsConditionOrganization) || !overviewIsCurrent))
+    }
+
+    func beginLaunchingUpdate(_ region: SummaryUpdateRegion) {
+        updateStates[region] = .updating
+        progressTitle = region.workingLabel
+        progress = "Starting…"
+        progressTotal = 0
+        progressValue = 0
+        progressShowsRecordCount = false
+    }
+
+    func interruptUpdates() {
+        for region in SummaryUpdateRegion.allCases where updateStates[region] == .updating || updateStates[region] == .waiting {
+            updateStates[region] = .interrupted
+        }
+    }
+
+    func stopAutomaticUpdates() {
+        explicitlyStopped = true
+        automaticPolicy.stop(updateInputKey)
+        UserDefaults.standard.set(updateInputKey, forKey: "collectivecare.stoppedSummaryInput")
+        UserDefaults.standard.set(sourceInputKey, forKey: "collectivecare.stoppedSummarySources")
+        for region in SummaryUpdateRegion.allCases where updateStates[region] == .updating || updateStates[region] == .waiting {
+            updateStates[region] = .interrupted
+        }
+    }
+
+    /// One owner for the full update. New saved inputs are coalesced after each pass;
+    /// already-current stages use their validated cache instead of making requests.
+    func updateHealthStory(transport: OpenAIChatTransport?, onDevice: Bool, explicitlyRequested: Bool = false,
+                           forceConditionRefresh: Bool = false) async {
+        guard (explicitlyRequested ? hasLoaded && !isTransferringData : automaticProcessingAllowed),
+              !isUpdatingStory, !isProcessing, !Task.isCancelled else { return }
+        guard explicitlyRequested || !stoppedForCurrentSources else { return }
+        guard automaticPolicy.claim(updateInputKey, explicitlyRequested: explicitlyRequested) else { return }
+        if explicitlyRequested {
+            UserDefaults.standard.removeObject(forKey: "collectivecare.stoppedSummaryInput")
+            UserDefaults.standard.removeObject(forKey: "collectivecare.stoppedSummarySources")
+        }
+        explicitlyStopped = false
+        updateError = nil
+        isUpdatingStory = true
+        defer {
+            if let error {
+                updateError = error
+                self.error = nil
+                updateStates[.details] = .needsAttention
+            }
+            isUpdatingStory = false
+            // Stop retains the version captured at the tap, so records added
+            // during cancellation remain eligible for a new automatic run.
+            if !explicitlyStopped && Task.isCancelled {
+                automaticPolicy.interrupted(updateInputKey)
+                for region in SummaryUpdateRegion.allCases where updateStates[region] == .updating || updateStates[region] == .waiting {
+                    updateStates[region] = .interrupted
+                }
+            } else if !explicitlyStopped {
+                automaticPolicy.finished(updateInputKey)
+            }
+        }
+        var forceConditions = forceConditionRefresh
+        var visitedInputs: Set<String> = []
+        repeat {
+            await refresh()
+            guard visitedInputs.insert(updateInputKey).inserted else { return }
+            conditionInputChanged = false
+            conditionNotice = nil
+            let sources = sourceInputKey
+            updateStates = [.details: .waiting, .overview: .waiting]
+            if !onDevice && !facts.isEmpty { updateStates[.conditions] = .waiting }
+            await prepareSummaries(transport: transport, onDevice: onDevice, forceConditionRefresh: forceConditions)
+            forceConditions = false
+            guard !Task.isCancelled, !explicitlyStopped, error == nil else { return }
+            if !onDevice && conditionNotice != nil {
+                if conditionInputChanged { continue }
+                return
+            }
+            let overviewInputs = updateInputKey
+            if !facts.isEmpty && !overviewIsCurrent {
+                await createOverview(transport: transport, onDevice: onDevice)
+            } else { updateStates[.overview] = overviewIsCurrent ? .ready : nil }
+            guard !Task.isCancelled, !explicitlyStopped else { return }
+            await refresh()
+            if processingIssue != nil || (!onDevice && conditionNotice != nil) || error != nil { return }
+            if overviewNotice != nil && !overviewInputChanged { return }
+            if sources == sourceInputKey && overviewInputs == updateInputKey { return }
+        } while !Task.isCancelled && !explicitlyStopped
+    }
+
     private var retryRecordIDs: Set<UUID> = []
     private let store: SessionStore
     private let processor = RecordSummaryProcessor()
@@ -113,6 +290,7 @@ final class HealthSummaryModel: ObservableObject {
         guard let session = snapshot.sessions.first else { return }
         retryRecordIDs = [session.id]
         processingIssue = SummaryProcessingIssue(error: SummaryStageFailure(stage: "Checking against the original", underlying: SummaryResponseError.missingDecisions), session: session, completed: 1, remaining: 1)
+        updateStates[.details] = .needsAttention
     }
     #endif
 
@@ -142,18 +320,34 @@ final class HealthSummaryModel: ObservableObject {
             guard revision == refreshRevision else { return }
             // Saved care-team members are explicitly maintained by the patient. Generated contacts use the verified fact projection.
             let savedOverview = await store.storyOverview(for: projected)?.text
+            let previousOverview = await store.lastStoryOverviewForDisplay()?.text
             guard revision == refreshRevision else { return }
             let synthesized = await store.conditionSynthesis(for: projected)
             let displayed = await store.displayedConditionFacts(for: projected)
+            let presentation = await Task.detached(priority: .userInitiated) {
+                let keys = Self.updateKeys(snapshot: projectionSnapshot, facts: projected, conditionFacts: displayed)
+                let conditions = ConditionSummaryProjection.groups(facts: displayed, topics: projectionSnapshot.topics)
+                return (keys: keys, conditions: conditions, areas: HealthAreaProjection.groups(conditions))
+            }.value
             guard revision == refreshRevision else { return }
+            conditionGroups = presentation.conditions
+            healthAreas = presentation.areas
             snapshot = saved
             facts = projected
             conditionFacts = displayed
+            // The store reuses prior condition groups only for unchanged surviving
+            // source entries while a replacement is being prepared.
             needsConditionOrganization = !projected.isEmpty && synthesized == nil
-            if overview != nil && savedOverview == nil {
-                overviewNotice = "Your health details changed after this overview was created. Create an updated overview from the saved details."
-            }
+            overviewIsCurrent = savedOverview != nil
+            if let savedOverview { displayedOverview = savedOverview }
+            else if displayedOverview == nil { displayedOverview = previousOverview }
+            if projected.isEmpty { displayedOverview = nil }
             overview = savedOverview
+            sourceInputKey = presentation.keys.sources
+            if updateInputKey != presentation.keys.inputs { updateInputKey = presentation.keys.inputs }
+            if stoppedForCurrentSources && !isUpdatingStory && !isProcessing && updateStates.isEmpty {
+                updateStates = [.details: .interrupted, .conditions: .interrupted, .overview: .interrupted]
+            }
         } catch { self.error = "Your records could not be loaded. \(error.localizedDescription)" }
     }
 
@@ -289,18 +483,18 @@ final class HealthSummaryModel: ObservableObject {
         defer { isProcessing = false; progress = "" }
         await refresh()
         await synthesizeAcceptedConditions(transport: transport, onDevice: onDevice)
-        // Overview writing is intentionally separate. Conditions are useful on
-        // their own and must remain available if the narrative request stalls.
-        if !Task.isCancelled, !needsConditionOrganization, !facts.isEmpty, overview == nil {
-            overviewNotice = "Your conditions are organized. Create an overview when you're ready."
-        }
     }
 
-    private func synthesizeAcceptedConditions(transport: OpenAIChatTransport?, onDevice: Bool, reviewContacts: Bool = true) async {
+    private func synthesizeAcceptedConditions(transport: OpenAIChatTransport?, onDevice: Bool, reviewContacts: Bool = true, forceRefresh: Bool = false) async {
         guard !facts.isEmpty, !Task.isCancelled else { return }
         guard !onDevice else {
             conditionNotice = "Whole-history condition organization uses cloud processing. Your on-device details remain available."
             return
+        }
+        updateStates[.conditions] = .updating
+        conditionInputChanged = false
+        defer {
+            updateStates[.conditions] = Task.isCancelled ? .interrupted : (conditionNotice == nil ? .ready : .needsAttention)
         }
         progress = "Organizing your conditions…"
         do {
@@ -314,7 +508,7 @@ final class HealthSummaryModel: ObservableObject {
             progress = "Organizing your conditions…"
             let accepted = facts
             let cached = await store.conditionSynthesis(for: accepted)
-            if cached == nil {
+            if cached == nil || forceRefresh {
                 progressTitle = "Organizing conditions"
                 progressCurrent = 0
                 progressTotal = 100
@@ -323,7 +517,8 @@ final class HealthSummaryModel: ObservableObject {
                 let synthesis = try await processor.synthesizeConditions(
                     facts: accepted,
                     transport: transport,
-                    store: store
+                    store: store,
+                    forceRebuild: forceRefresh
                 ) { [self] update in
                     await MainActor.run {
                         self.progress = update.message
@@ -340,13 +535,17 @@ final class HealthSummaryModel: ObservableObject {
             conditionNotice = nil
         } catch {
             if error is CancellationError || Task.isCancelled { return }
+            if let commitError = error as? SummaryCommitError, case .patientChanged = commitError {
+                conditionInputChanged = true
+            }
             conditionNotice = "Condition organization could not finish. Your details are saved in All. " + error.localizedDescription
         }
     }
 
     func prepareSummaries(transport configuredTransport: OpenAIChatTransport?, onDevice: Bool, forceSessionID: UUID? = nil,
                           forceAll: Bool = false, retryUnfinished: Bool = false,
-                          organizeConditionsAfterRecords: Bool = true, overviewOnly: Bool = false) async {
+                          organizeConditionsAfterRecords: Bool = true, overviewOnly: Bool = false,
+                          forceConditionRefresh: Bool = false) async {
         if overviewOnly {
             await createOverview(transport: configuredTransport, onDevice: onDevice)
             return
@@ -357,12 +556,18 @@ final class HealthSummaryModel: ObservableObject {
             transport = FastDetailsConfiguration.enabled && !onDevice ? try configuredTransport?.fastDetailsTransport() : configuredTransport
         } catch { self.error = error.localizedDescription; return }
         isProcessing = true
+        updateStates[.details] = .updating
         error = nil
         if !overviewOnly { processingIssue = nil }
         overviewNotice = nil
         overviewCheckerExplanation = nil
         await refresh()
-        defer { isProcessing = false; progress = "" }
+        defer {
+            isProcessing = false; progress = ""
+            if updateStates[.details] == .updating {
+                updateStates[.details] = Task.isCancelled ? .interrupted : (processingIssue == nil && error == nil ? .ready : .needsAttention)
+            }
+        }
         let pending = overviewOnly ? [] : snapshot.sessions.filter { session in
             guard session.processingState != .failed, session.processingState != .transcribing,
                   !session.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
@@ -466,16 +671,9 @@ final class HealthSummaryModel: ObservableObject {
             } catch is CancellationError { }
             catch { if failures.isEmpty { processingIssue = SummaryProcessingIssue(error: error, session: nil, completed: completed, remaining: retryRecordIDs.count) } }
         }
+        updateStates[.details] = Task.isCancelled ? .interrupted : (failures.isEmpty && processingIssue == nil ? .ready : .needsAttention)
         if organizeConditionsAfterRecords && !onDevice {
-            await synthesizeAcceptedConditions(transport: transport, onDevice: onDevice, reviewContacts: !contactReviewAttempted)
-        }
-        if !Task.isCancelled, !facts.isEmpty, overview == nil, overviewNotice == nil {
-            // Finish and expose the durable structured result before starting an
-            // independent overview request. This also keeps a slow narrative from
-            // making record processing or condition organization appear unfinished.
-            overviewNotice = needsConditionOrganization
-                ? "Your saved details are ready. Organize conditions before creating an overview."
-                : "Your conditions are organized. Create an overview when you're ready."
+            await synthesizeAcceptedConditions(transport: transport, onDevice: onDevice, reviewContacts: !contactReviewAttempted, forceRefresh: forceConditionRefresh)
         }
         if let first = failures.first {
             processingIssue = SummaryProcessingIssue(error: first.1, session: first.0, completed: completed, remaining: retryRecordIDs.count)
@@ -487,6 +685,8 @@ final class HealthSummaryModel: ObservableObject {
     func createOverview(transport: OpenAIChatTransport?, onDevice: Bool) async {
         guard !isProcessing, !isTransferringData else { return }
         isProcessing = true
+        updateStates[.overview] = .updating
+        overviewInputChanged = false
         progressTitle = "Creating overview"
         progressCurrent = 0
         progressTotal = 100
@@ -496,7 +696,10 @@ final class HealthSummaryModel: ObservableObject {
         overviewNotice = nil
         overviewCheckerExplanation = nil
         error = nil
-        defer { isProcessing = false; progress = "" }
+        defer {
+            isProcessing = false; progress = ""
+            updateStates[.overview] = Task.isCancelled ? .interrupted : (overviewNotice == nil && overviewIsCurrent ? .ready : .needsAttention)
+        }
         await refresh()
         guard error == nil else {
             overviewNotice = error
@@ -525,19 +728,24 @@ final class HealthSummaryModel: ObservableObject {
             try await store.saveStoryOverview(narrative, expected: expected)
             // Read back the exact saved snapshot before declaring success.
             guard let saved = await store.storyOverview(for: expected) else {
-                overviewNotice = "The overview was written but could not be loaded from storage. Try Create overview again; your health details are saved."
+                overviewNotice = "The overview was written but could not be loaded from storage. Retry when you’re ready; your health details are saved."
                 return
             }
             overview = saved.text
+            displayedOverview = saved.text
             progress = "Finishing your overview…"
             progressValue = 100
             await refresh()
             if overview == nil && overviewNotice == nil {
-                overviewNotice = "Your health details changed while the overview was being saved. Create overview again to use the latest details."
+                overviewInputChanged = true
+                overviewNotice = "Your health details changed while the overview was being saved. We’ll update it using your latest details."
             }
         } catch {
+            if let commitError = error as? SummaryCommitError, case .patientChanged = commitError {
+                overviewInputChanged = true
+            }
             if error is CancellationError || Task.isCancelled {
-                overviewNotice = "Overview creation was stopped. Tap Create overview to start again."
+                overviewNotice = "Overview update paused. Resume whenever you’re ready."
             } else {
                 overviewNotice = error.localizedDescription
                 overviewCheckerExplanation = (error as? OverviewFailure)?.checkerExplanation
@@ -1275,9 +1483,10 @@ actor RecordSummaryProcessor {
     }
 
     func synthesizeConditions(facts: [HealthFact], transport: OpenAIChatTransport?, store: SessionStore? = nil,
+                              forceRebuild: Bool = false,
                               progress: @escaping @Sendable (ConditionProgressUpdate) async -> Void = { _ in }) async throws -> ConditionSynthesis {
         try Task.checkCancellation()
-        if let accepted = await store?.conditionSynthesis(for: facts) { return accepted }
+        if !forceRebuild, let accepted = await store?.conditionSynthesis(for: facts) { return accepted }
         let jobID = "conditions-" + ConditionSynthesis.fingerprint(facts)
         activeJobID = jobID
         await SummaryRequestCoordinator.shared.beginJob(jobID)
@@ -1293,7 +1502,7 @@ actor RecordSummaryProcessor {
                 "condition-request-v2", stage, model, route, schema, instructions, input
             ]), as: UTF8.self)
             lastRequestKey = key
-            if let saved = await store?.conditionResponse(for: facts, key: key) { return saved }
+            if !forceRebuild, let saved = await store?.conditionResponse(for: facts, key: key) { return saved }
             let response = try await self.request(stage: stage, system: instructions, user: input,
                                                   transport: transport, onDevice: false, model: model)
             try await store?.saveConditionResponse(response, for: facts, key: key)
@@ -1306,7 +1515,7 @@ actor RecordSummaryProcessor {
         if transport?.durableJobsURL != nil {
             let sourceSessions = try await store?.healthSnapshot().sessions ?? []
             let sourceWindows = ConditionSourceContext.windows(facts: facts, sessions: sourceSessions, includeRecordOpening: true)
-            let plan = await store?.incrementalConditionPlan(for: facts)
+            let plan = await store?.conditionUpdatePlan(for: facts, forceRebuild: forceRebuild)
                 ?? ConditionSynthesis.initialIncrementalPlan(facts: facts)
             if let transport, transport.durableConditionWorkflowsURL != nil {
                 var payload = try JSONSerialization.jsonObject(with: Data(
@@ -1343,14 +1552,14 @@ actor RecordSummaryProcessor {
             await SummaryRequestCoordinator.shared.finishJob(jobID)
             return result
         }
-        let cached = await store?.conditionProposal(for: facts, model: ConditionSynthesis.model,
+        let cached = forceRebuild ? nil : await store?.conditionProposal(for: facts, model: ConditionSynthesis.model,
                                                     promptVersion: ConditionSynthesis.promptVersion)
         let proposed: ConditionSynthesis
         if let cached {
             await progress(ConditionProgressUpdate(message: "Loading saved condition candidates…", fraction: 0.52))
             proposed = cached
         } else {
-            let checkpoint = await store?.conditionGroupingCheckpoint(for: facts)
+            let checkpoint = forceRebuild ? nil : await store?.conditionGroupingCheckpoint(for: facts)
             let initialProposal = try await ConditionSynthesis.organizeWithExternalRecovery(facts: facts, progress: { phase in
                 let update: ConditionProgressUpdate
                 switch phase {

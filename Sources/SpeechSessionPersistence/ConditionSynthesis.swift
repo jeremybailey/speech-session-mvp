@@ -837,6 +837,13 @@ extension SessionStore {
         }
         return saved.synthesis
     }
+    /// Explicit regeneration rebuilds all current entries without removing the
+    /// accepted result that remains visible until the replacement is validated.
+    public func conditionUpdatePlan(for facts: [HealthFact], forceRebuild: Bool = false) -> ConditionSynthesis.IncrementalPlan {
+        if !forceRebuild, let existing = incrementalConditionPlan(for: facts) { return existing }
+        return ConditionSynthesis.initialIncrementalPlan(facts: facts)
+    }
+
     public func incrementalConditionPlan(for facts: [HealthFact]) -> ConditionSynthesis.IncrementalPlan? {
         let url = storageDirectory.appendingPathComponent("condition-synthesis.json")
         guard let data = try? Data(contentsOf: url),

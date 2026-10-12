@@ -97,6 +97,15 @@ struct StoredStoryOverview: Codable {
 }
 
 extension SessionStore {
+    /// Display-only previous version. Never use this accessor for current summaries,
+    /// export, or saving; `storyOverview(for:)` remains the validated current result.
+    public func lastStoryOverviewForDisplay() -> StoryOverview? {
+        let url = storageDirectory.appendingPathComponent("story-overview.json")
+        guard let data = try? Data(contentsOf: url),
+              let saved = try? JSONDecoder().decode(StoredStoryOverview.self, from: data) else { return nil }
+        return saved.overview
+    }
+
     public func storyOverview(for facts: [HealthFact]) -> StoryOverview? {
         let url = storageDirectory.appendingPathComponent("story-overview.json")
         guard let data = try? Data(contentsOf: url), let saved = try? JSONDecoder().decode(StoredStoryOverview.self, from: data),

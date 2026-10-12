@@ -136,6 +136,33 @@ final class StoryOverviewTests: XCTestCase {
         catch { XCTAssertTrue(error is SummaryCommitError) }
     }
 
+    func testPreviousOverviewRemainsDisplayableWithoutBecomingCurrent() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try SessionStore(storageDirectory: directory)
+        let entry = SummaryEntry(category: .symptoms, title: "Recorded concern", origin: .userAdded)
+        try await store.upsert(Session(transcript: "Recorded concern", summaryEntries: [entry]))
+        let original = HealthMemoryProjection.facts(in: try await store.healthSnapshot())
+        var overview = StoryOverview(text: "You reported a concern.", facts: original)
+        overview.conditionContext = await store.currentOverviewConditionContext(original)
+        try await store.saveStoryOverview(overview, expected: original)
+
+        let additional = SummaryEntry(category: .findings, title: "New finding", origin: .userAdded)
+        try await store.upsert(Session(transcript: "New finding", summaryEntries: [additional]))
+        let reopened = try SessionStore(storageDirectory: directory)
+        let currentFacts = HealthMemoryProjection.facts(in: try await reopened.healthSnapshot())
+        let previous = await reopened.lastStoryOverviewForDisplay()
+        let current = await reopened.storyOverview(for: currentFacts)
+        XCTAssertEqual(previous?.text, overview.text)
+        XCTAssertNil(current, "Display-only text must never pass as a current summary")
+        do {
+            try await reopened.saveStoryOverview(overview, expected: original)
+            XCTFail("A stale result must not overwrite changes")
+        } catch { XCTAssertTrue(error is SummaryCommitError) }
+        let stillDisplayed = await reopened.lastStoryOverviewForDisplay()
+        XCTAssertEqual(stillDisplayed?.text, overview.text)
+    }
+
     func testLocalFallbackOrdersClinicalHistoryWithoutInventingDates() {
         func fact(_ title: String, category: SummaryEntryCategory, date: String?) -> HealthFact {
             var e = SummaryEntry(category: category, title: title)

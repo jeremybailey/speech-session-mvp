@@ -50,7 +50,11 @@
          </BuildableReference>
       </BuildableProductRunnable>
       <EnvironmentVariables>
-         <EnvironmentVariable key="COLLECTIVECARE_FAST_DETAILS" value="1" isEnabled="YES"/>
+         <EnvironmentVariable
+            key = "COLLECTIVECARE_FAST_DETAILS"
+            value = "1"
+            isEnabled = "YES">
+         </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction

@@ -8,6 +8,7 @@ struct AppShellView: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("speechSession.skippedSignInGate") private var skippedSignInGate = false
+    @AppStorage("collectivecare.introAgreementAccepted") private var introAgreementAccepted = false
 
     private var mayUseMainApp: Bool {
         kindeAuth.isSignedIn || skippedSignInGate
@@ -15,7 +16,11 @@ struct AppShellView: View {
 
     var body: some View {
         Group {
-            if mayUseMainApp {
+            if !introAgreementAccepted {
+                IntroAgreementView {
+                    introAgreementAccepted = true
+                }
+            } else if mayUseMainApp {
                 ContentView(appModel: appModel)
             } else {
                 SignInGateView()
@@ -74,6 +79,50 @@ struct AppShellView: View {
         }
         .onChange(of: appModel.recording.isCaptureInterrupted) { _, _ in
             Task { await appModel.syncRecordingLiveActivity() }
+        }
+    }
+}
+
+// MARK: - Intro agreement
+
+private struct IntroAgreementView: View {
+    let onAccept: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("By using this app, you acknowledge and agree:")
+                        .font(.headline)
+
+                    Text("1. **Pilot / experimental.** This is an MVP pilot. It may contain errors, lose data, or stop working. It is provided “as is,” without warranties of any kind.")
+
+                    Text("2. **Not medical care.** The app does not provide medical advice, diagnosis, or treatment and is not a substitute for a physician or other qualified provider. Do not rely on it for health decisions. Seek professional care for medical concerns, including emergencies.")
+
+                    Text("3. **Your data.** You enter and control the information, including personal health information such as lab results and medication notes. You are responsible for its accuracy and for what you choose to add, store, or share. Data is stored on your device. Deleting the app or data may permanently remove it; there is no guarantee of backup or recovery.")
+
+                    Text("4. **AI summaries.** Information you choose to process may be summarized by AI. Summaries can be incomplete, inaccurate, or misleading. They are not clinical interpretations. You should review the results against the source records yourself.")
+
+                    Text("5. **Sharing.** Any sharing is initiated by you. You are responsible for the recipient and for any further use or disclosure by them.")
+
+                    Text("6. **Assumption of risk and release.** To the maximum extent permitted by law, you assume all risk of use and release the maker and its personnel from claims arising from the app, including data loss, inaccurate summaries, reliance on outputs, or sharing, except where liability cannot legally be limited.")
+
+                    Text("7. **Age.** You confirm you are 18 or older, or using the app with authority to consent for the account holder.")
+
+                    Button(action: onAccept) {
+                        Text("I agree and continue")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+            }
+            .background(BrandPalette.canvas.ignoresSafeArea())
+            .navigationTitle("Before you begin")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }

@@ -2,6 +2,34 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class IncrementalConditionSynthesisTests: XCTestCase {
+    func testExplicitRegenerationRebuildsUnchangedFactsAndKeepsAcceptedConditionsVisible() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try SessionStore(storageDirectory: directory)
+        let entry = SummaryEntry(category: .symptoms, title: "Eye discomfort", origin: .userAdded)
+        try await store.upsert(Session(transcript: "Eye discomfort", summaryEntries: [entry]))
+        let facts = HealthMemoryProjection.facts(in: try await store.healthSnapshot(), verifiedOnly: true)
+        let accepted = ConditionSynthesis(groups: [
+            .init(name: "Eye discomfort", bodySystem: "eye", isPrimary: true,
+                  reason: "Reported in the source", entryIDs: [entry.id])
+        ], unassigned: [])
+        try await store.saveConditionSynthesis(accepted, expected: facts)
+
+        let automatic = await store.conditionUpdatePlan(for: facts)
+        XCTAssertTrue(automatic.candidates.isEmpty)
+        XCTAssertEqual(automatic.preserved.groups.count, 1)
+        let regenerated = await store.conditionUpdatePlan(for: facts, forceRebuild: true)
+        XCTAssertTrue(regenerated.isInitial)
+        XCTAssertEqual(regenerated.candidates.flatMap(\.occurrences).map(\.id), [entry.id])
+        XCTAssertTrue(regenerated.preserved.groups.isEmpty)
+        let visible = await store.conditionSynthesis(for: facts)
+        XCTAssertEqual(visible?.groups.first?.name, "Eye discomfort")
+
+        let workflow = try ConditionSynthesis.conditionWorkflowInput(plan: regenerated, facts: facts)
+        let payload = try JSONSerialization.jsonObject(with: Data(workflow.utf8)) as! [String: Any]
+        XCTAssertEqual((payload["batches"] as! [[[String: Any]]]).flatMap { $0 }.count, 1)
+    }
+
     func testIdenticalDisjointHeadingsStillRequireIndependentVerification() async throws {
         let facts = [fact("Pregnancy care"), fact("Unrelated observation")]
         var mappings = 0, checks = 0
