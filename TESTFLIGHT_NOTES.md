@@ -1,9 +1,13 @@
 # CollectiveCare TestFlight Notes
 
-## Version 1.0993 (11) — Release candidate: faster checked health details
+## Version 1.0993 (11) — Faster checked health details
 
-Candidate branch: `codex/release-candidate-11`. Build 11 has a successful signed
-local archive; it has not been uploaded or distributed through TestFlight.
+Release branch: `codex/release-candidate-11`, app commit `d0fde1e`. Signed archive,
+upload, Apple processing and export compliance completed October 12, 2026. Build 11
+is available to the five-tester internal CollectiveCare Founders group; What to Test
+is saved. The previously confirmed standard-encryption/no-France answers were reused.
+Jeremy reported a local run completing in under a minute; checkpoint reuse may have
+contributed, so this is not a measured cold-processing speedup.
 
 Health-detail reprocessing now uses the checked-facts pipeline in the normal app
 scheme: combined extraction/classification, compact independent source checking,
