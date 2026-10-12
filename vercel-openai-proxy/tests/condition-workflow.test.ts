@@ -347,6 +347,73 @@ test('PostgreSQL workflow continuation, interruption, concurrency, cancellation 
     await settle(repairChild!,'completed',{input_tokens:100,output_tokens:20},JSON.stringify({decisions:{g0:{ok:true,entries:['r1'],reason:null}}}));
     assert.equal((await finishConditionStep(recover.id,repairChild!))!.state,'completed');
     assert.equal((await resumeConditionWorkflow('recover-owner',recover.id)).state,'completed');
+
+    // Full-size workflow: fail early, midway and on the last verification batch.
+    // Run the real durable worker/store/ledger with a synthetic provider, no API.
+    const longPlan=plan('Long workflow');
+    longPlan.batches=Array.from({length:45},(_,i)=>[{id:uuid(1000+i),title:`Synthetic occurrence ${i}`}]);
+    const long=await submitConditionWorkflow('long-owner',longPlan);
+    const paidIDs=new Set<string>(),perStage={mapping:0,verification:0,repair:0};
+    const expectedUnassigned:string[]=[];let crashInjected=false,queueFailure=false;
+    const longExecute=async(child:string)=>{
+      const job=await claim(child);if(!job)return 0;
+      assert.ok(!paidIDs.has(child),'A paid child must never execute twice');paidIDs.add(child);
+      const {payload}=(await db.query('SELECT payload FROM ai_payloads WHERE job_id=$1',[child])).rows[0];
+      const checkpoint=(await db.query('SELECT checkpoint FROM ai_condition_workflow_payloads WHERE workflow_id=$1',[long.id])).rows[0].checkpoint;
+      const batch=checkpoint.batch;let output:string;
+      if(payload.stage==='condition-synthesis') {perStage.mapping++;output=mapped;}
+      else if(checkpoint.verificationRepair) {
+        perStage.repair++;
+        const reject=batch===22;if(reject)expectedUnassigned.push(uuid(1000+batch));
+        output=JSON.stringify({decisions:{g0:{ok:!reject,entries:reject?[]:['r1'],reason:reject?'Wrong-person attribution.':null}}});
+      } else {
+        perStage.verification++;
+        output=batch===0?verified().replace('["r1"]','["r1","r99"]'):
+          [22,44].includes(batch)?verified().replace('"name":"Pregnancy"','"name":"Renamed concern"'):verified();
+      }
+      await settle(child,'completed',{input_tokens:100,output_tokens:20},output);
+      if(checkpoint.batch===10 && !crashInjected) {crashInjected=true;throw new Error('test_process_exit');}
+      return 1;
+    };
+    for(let deliveries=0;deliveries<110;deliveries++) {
+      try {
+        await runConditionWorkflow(long.id,longExecute,async()=>{
+          const w=await conditionWorkflowStatus('long-owner',long.id);
+          if(w.revision===31 && !queueFailure) {queueFailure=true;throw new Error('test_queue_failure');}
+        });
+      } catch(error) {assert.ok(['test_process_exit','test_queue_failure'].includes((error as Error).message));}
+      const status=await conditionWorkflowStatus('long-owner',long.id);
+      if(status.state==='completed')break;
+      assert.ok(['running','queued'].includes(status.state),'No hidden terminal failure in a recoverable run');
+      // Retrying submission and polling cannot replay a completed provider request.
+      const snapshot=(await db.query('SELECT used_nusd,reserved_nusd FROM ai_budgets WHERE id=$1',['evaluation-v1'])).rows;
+      await Promise.all([submitConditionWorkflow('long-owner',longPlan),submitConditionWorkflow('long-owner',longPlan),conditionWorkflowStatus('long-owner',long.id)]);
+      assert.deepEqual((await db.query('SELECT used_nusd,reserved_nusd FROM ai_budgets WHERE id=$1',['evaluation-v1'])).rows,snapshot);
+    }
+    const longDone=await conditionWorkflowStatus('long-owner',long.id);
+    assert.equal(longDone.state,'completed');assert.ok(crashInjected && queueFailure);
+    assert.deepEqual(perStage,{mapping:45,verification:45,repair:3});assert.equal(paidIDs.size,93);
+    const final=JSON.parse(longDone.result.output);
+    assert.deepEqual(final.unassigned,expectedUnassigned);
+    assert.deepEqual(final.groups[0].entryIDs,[uuid(1),...longPlan.batches.flat().map(e=>e.id).filter(id=>!expectedUnassigned.includes(id))]);
+    assert.equal(new Set([...final.groups.flatMap((g:any)=>g.entryIDs),...final.unassigned]).size,46);
+
+    // A malformed repair stops; repeated button taps may not buy endless repairs.
+    const exhaustedPlan=plan('Exhausted repair'),exhausted=await submitConditionWorkflow('repair-exhausted-owner',exhaustedPlan);
+    let exhaustedCalls=0;
+    for(let i=0;i<3;i++) await runConditionWorkflow(exhausted.id,async child=>{
+      const job=await claim(child);if(!job)return 0;exhaustedCalls++;
+      await settle(child,'completed',{input_tokens:100,output_tokens:20},i===0?mapped:i===1?verified().replace('["r1"]','["r99"]'):'{"decisions":');return 1;
+    },async()=>{});
+    assert.equal((await conditionWorkflowStatus('repair-exhausted-owner',exhausted.id)).state,'invalid');
+    const retained=(await db.query('SELECT checkpoint FROM ai_condition_workflow_payloads WHERE workflow_id=$1',[exhausted.id])).rows[0].checkpoint;
+    assert.deepEqual(retained.result,exhaustedPlan.preserved);
+    const balance=(await db.query('SELECT used_nusd,reserved_nusd FROM ai_budgets')).rows;
+    for(let i=0;i<3;i++) {
+      assert.equal((await submitConditionWorkflow('repair-exhausted-owner',exhaustedPlan)).state,'invalid');
+      await runConditionWorkflow(exhausted.id,async()=>{throw new Error('Must not execute exhausted repair');},async()=>{});
+    }
+    assert.equal(exhaustedCalls,3);assert.deepEqual((await db.query('SELECT used_nusd,reserved_nusd FROM ai_budgets')).rows,balance);
   } finally {await db.end();}
 });
 

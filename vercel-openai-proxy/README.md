@@ -371,3 +371,45 @@ using fixed group keys rather than accepting a checker-supplied rename. Confirme
 against the actual saved checkpoint locally without inference; the temporary
 private copy was removed. All 30 condition tests passed with PostgreSQL; 52 offline
 backend tests passed (2 database-dependent tests skipped in that separate run).
+
+### Synthetic condition recovery gate
+
+`npm test` includes a response-mutation matrix for legacy and compact checkers:
+unknown/wrong-group/duplicate IDs, renamed headings, missing/extra/duplicate groups,
+invalid types, absent rationales, malformed/truncated/refused responses, mapping
+coverage omissions, and valid decision reordering. Failures must leave the input
+checkpoint untouched. Negative clinical judgments remain negative rather than
+being retried until approved. These are contract and state-machine tests, not
+proof of model clinical accuracy or omission recall.
+
+For required persistence coverage, create an empty **local** PostgreSQL database
+named `cc_test_*`, then run:
+
+```sh
+AI_WORKFLOW_TEST_DATABASE_URL=postgresql://127.0.0.1:5432/cc_test_workflows npm run test:condition-recovery
+```
+
+The command rejects missing/remote database configuration instead of silently
+skipping. The suite refuses to initialize a nonempty database. The GitHub workflow
+`.github/workflows/condition-recovery.yml` provisions a disposable PostgreSQL service
+and runs this command on backend pushes/PRs. No repository secrets, OpenAI calls,
+production database, or patient fixtures are used. Branch protection must separately
+require the CI job if merges should be blocked on its result.
+
+The 45-batch integration scenario uses the real durable worker/store/ledger with
+synthetic provider responses: identity faults at batches 1, 23 and 45; restart after
+a saved provider response; failed queue publication; repeated/concurrent explicit
+submissions; preservation of a negative repaired judgment; exact final occurrence
+coverage and deterministic order. It completes with exactly 45 mapping calls, 45
+ordinary verification calls and 3 repair calls, with no duplicated provider job.
+A separate exhausted-repair scenario proves repeated submissions do not spend
+again or falsely complete. Existing cases cover cancellation, expired payloads,
+owner isolation, uncertain charges and budget exhaustion.
+
+Local validation: 100 offline tests passed (2 DB suites skipped there); the dedicated
+recovery command passed all 78 tests with **zero skips** against fresh PostgreSQL.
+TypeScript and configuration guards passed. GitHub execution remains to be verified
+once these changes are pushed. No production code or deployment changed for this
+coverage expansion.
+
+Release confirmation (2026-10-12): Jeremy confirmed Asha’s condition organization completed successfully after the follow-up fix (`dpl_4Jwq9mNtey6f6bJwQcX6jfKbX3Mp`). Build 14 carries the same iOS source as build 13 with a new build number; recovery is server-side.
