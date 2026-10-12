@@ -2,7 +2,10 @@
 
 ## Version 1.0993 (13) — Continuous updates and explicit processing choice
 
-Release preparation in progress; not yet confirmed available in TestFlight.
+Signed archive, upload, Apple processing and export compliance completed October
+12, 2026. Build 13 is available to the five-person internal CollectiveCare Founders
+group. What to Test is saved. App and extension build numbers all match 13.
+App commit: `1ef48b61`. Standard-encryption/no-France answers are unchanged.
 
 Cloud health-detail reprocessing now proceeds directly into organizing conditions.
 Automatic story updates retain saved content while work continues, with smoother
@@ -18,8 +21,9 @@ Guided on-device source-check responses now use the validated response contract.
 The cloud fast-details pipeline, models, evidence checks and spending caps are
 unchanged. This release has no new paid benchmark or clinical accuracy claim.
 
-Validation: 374 Swift tests completed, two skipped, zero failures. Signed archive
-and upload checks are recorded below when complete.
+Validation: 374 Swift tests completed, two skipped, zero failures. Fast transport,
+clinical routing and updated contact/condition continuation harness checks passed.
+Signed Release archive and App Store Connect upload succeeded.
 
 What to test: select OpenAI in Medical Summary Engine; reprocess health details and
 confirm condition organization begins automatically after successful completion.
