@@ -2,6 +2,42 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class SummarySourceCheckTests: XCTestCase {
+    func testGuidedVerdictRoundTripsWithoutLosingEvidenceOrExclusion() throws {
+        let id = UUID()
+        var check = SummaryCheck(id: id, supported: false, reason: "Wrong person",
+            citations: [.init(field: "title", excerpt: "The brother reports pain")],
+            coreSupported: false, uncertainFields: ["details"])
+        check.exclusion = "wrong_patient"
+        let raw = try SummarySourceCheck.keyedResponse([check], expectedIDs: [id])
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
+        XCTAssertEqual(try SummaryResponseError.decodeKeyedChecks(object["decisions"], expectedIDs: [id]), [check])
+    }
+
+    func testGuidedVerdictCannotMaskMissingDuplicateOrWrongIdentity() throws {
+        let id = UUID()
+        let check = SummaryCheck(id: id, supported: true, reason: "Supported", citations: [])
+        XCTAssertThrowsError(try SummarySourceCheck.keyedResponse([], expectedIDs: [id])) {
+            XCTAssertEqual($0 as? SummaryResponseError, .missingDecisions)
+        }
+        XCTAssertThrowsError(try SummarySourceCheck.keyedResponse([check, check], expectedIDs: [id])) {
+            XCTAssertEqual($0 as? SummaryResponseError, .duplicateDecisions)
+        }
+        XCTAssertThrowsError(try SummarySourceCheck.keyedResponse([check], expectedIDs: [UUID()])) {
+            XCTAssertEqual($0 as? SummaryResponseError, .wrongDecisions)
+        }
+    }
+
+    func testStructuredOutputStillRequiresVerbatimEvidenceForAdmission() throws {
+        let entry = SummaryEntry(category: .symptoms, title: "Headache")
+        let check = SummaryCheck(id: entry.id, supported: true, reason: "Supported",
+            citations: [.init(field: "title", excerpt: "Invented quotation")])
+        let raw = try SummarySourceCheck.keyedResponse([check], expectedIDs: [entry.id])
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
+        let decoded = try SummaryResponseError.decodeKeyedChecks(object["decisions"], expectedIDs: [entry.id])
+        let assessed = SummaryVerification.assess(entry, check: decoded.first, source: "Patient reports headache.")
+        XCTAssertNotEqual(assessed.evidence?.assessment?.admission, .supported)
+    }
+
     func testKeyedClaimsAreOrderIndependentAndRejectDuplicateIdentity() throws {
         let first = SummaryEntry(category: .symptoms, title: "Itchy rash")
         let second = SummaryEntry(category: .symptoms, title: "Headache")

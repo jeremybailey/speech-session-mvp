@@ -3,6 +3,16 @@ import Foundation
 /// Only clinical values are presented as claims. UI placeholders, prior checks,
 /// generated excerpts and bookkeeping must never become evidence for themselves.
 public enum SummarySourceCheck {
+    /// Adapt guided model output to the same checked contract used by cloud responses.
+    /// Duplicate, missing and unexpected identities remain technical failures.
+    public static func keyedResponse(_ checks: [SummaryCheck], expectedIDs: [UUID]) throws -> String {
+        let encoded = try JSONEncoder().encode(checks)
+        let rows = try JSONSerialization.jsonObject(with: encoded)
+        let validated = try SummaryResponseError.decodeChecks(rows, expectedIDs: expectedIDs)
+        let keyed = Dictionary(uniqueKeysWithValues: validated.map { ($0.id.uuidString, $0) })
+        return String(decoding: try JSONEncoder().encode(["decisions": keyed]), as: UTF8.self)
+    }
+
     public static func citationRepairInput(_ entries: [SummaryEntry], checks: [SummaryCheck], source: String) throws -> String {
         var payload = try JSONSerialization.jsonObject(with: Data(input(entries, source: source).utf8)) as! [String: Any]
         payload["missingCitationFields"] = Dictionary(uniqueKeysWithValues: entries.map { entry in

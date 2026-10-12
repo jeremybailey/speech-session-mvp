@@ -187,7 +187,7 @@ final class HealthSummaryModel: ObservableObject {
     /// One owner for the full update. New saved inputs are coalesced after each pass;
     /// already-current stages use their validated cache instead of making requests.
     func updateHealthStory(transport: OpenAIChatTransport?, onDevice: Bool, explicitlyRequested: Bool = false,
-                           forceConditionRefresh: Bool = false) async {
+                           forceConditionRefresh: Bool = false, retryUnfinished: Bool = false) async {
         guard (explicitlyRequested ? hasLoaded && !isTransferringData : automaticProcessingAllowed),
               !isUpdatingStory, !isProcessing, !Task.isCancelled else { return }
         guard explicitlyRequested || !stoppedForCurrentSources else { return }
@@ -218,6 +218,7 @@ final class HealthSummaryModel: ObservableObject {
             }
         }
         var forceConditions = forceConditionRefresh
+        var retryRemainingRecords = retryUnfinished
         var visitedInputs: Set<String> = []
         repeat {
             await refresh()
@@ -227,9 +228,13 @@ final class HealthSummaryModel: ObservableObject {
             let sources = sourceInputKey
             updateStates = [.details: .waiting, .overview: .waiting]
             if !onDevice && !facts.isEmpty { updateStates[.conditions] = .waiting }
-            await prepareSummaries(transport: transport, onDevice: onDevice, forceConditionRefresh: forceConditions)
+            await prepareSummaries(transport: transport, onDevice: onDevice, retryUnfinished: retryRemainingRecords,
+                                   forceConditionRefresh: forceConditions)
+            // The first pass resumes the exact unfinished set. Subsequent passes
+            // include new input that arrived while those records were processing.
+            retryRemainingRecords = false
             forceConditions = false
-            guard !Task.isCancelled, !explicitlyStopped, error == nil else { return }
+            guard !Task.isCancelled, !explicitlyStopped, error == nil, processingIssue == nil else { return }
             if !onDevice && conditionNotice != nil {
                 if conditionInputChanged { continue }
                 return
@@ -641,6 +646,13 @@ final class HealthSummaryModel: ObservableObject {
             }
             return
         }
+        // A failed record keeps its prior saved content. Do not spend more model
+        // calls reconciling or summarizing that old content as part of this attempt.
+        if let first = failures.first {
+            processingIssue = SummaryProcessingIssue(error: first.1, session: first.0, completed: completed, remaining: retryRecordIDs.count)
+            updateStates[.details] = .needsAttention
+            return
+        }
         var contactReviewAttempted = false
         if !overviewOnly && !Task.isCancelled && (!pending.isEmpty || retryUnfinished) {
             progressTitle = "Finishing health details"
@@ -672,11 +684,8 @@ final class HealthSummaryModel: ObservableObject {
             catch { if failures.isEmpty { processingIssue = SummaryProcessingIssue(error: error, session: nil, completed: completed, remaining: retryRecordIDs.count) } }
         }
         updateStates[.details] = Task.isCancelled ? .interrupted : (failures.isEmpty && processingIssue == nil ? .ready : .needsAttention)
-        if organizeConditionsAfterRecords && !onDevice {
+        if organizeConditionsAfterRecords && !onDevice && processingIssue == nil && !Task.isCancelled {
             await synthesizeAcceptedConditions(transport: transport, onDevice: onDevice, reviewContacts: !contactReviewAttempted, forceRefresh: forceConditionRefresh)
-        }
-        if let first = failures.first {
-            processingIssue = SummaryProcessingIssue(error: first.1, session: first.0, completed: completed, remaining: retryRecordIDs.count)
         }
     }
 
@@ -1618,6 +1627,21 @@ actor RecordSummaryProcessor {
         if onDevice {
             guard #available(iOS 26.0, *), OnDeviceSummaryService.isAvailable else {
                 throw SummaryProcessingError.unavailable("On-device verification is unavailable. No data was sent to cloud processing.")
+            }
+            if stage == "checking" {
+                // Checking is deliberately limited to one draft on device. Guided
+                // generation guarantees the shape without relaxing source validation.
+                guard expectedCheckIDs.count == 1, let id = expectedCheckIDs.first else {
+                    throw SummaryResponseError.invalidFormat
+                }
+                let session = LanguageModelSession(instructions: system + """
+
+                Return the structured verdict for the single supplied draft. The app supplies
+                its UUID and response envelope; do not generate JSON or repeat the UUID.
+                """)
+                let response = try await session.respond(to: user, generating: OnDeviceSummaryService.SourceDecision.self)
+                try Task.checkCancellation()
+                return try SummarySourceCheck.keyedResponse([response.content.check(id: id)], expectedIDs: expectedCheckIDs)
             }
             let session = LanguageModelSession(instructions: system)
             if let contract {

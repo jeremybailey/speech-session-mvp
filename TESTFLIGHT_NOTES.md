@@ -1,5 +1,32 @@
 # CollectiveCare TestFlight Notes
 
+## Version 1.0993 (13) — Continuous updates and explicit processing choice
+
+Release preparation in progress; not yet confirmed available in TestFlight.
+
+Cloud health-detail reprocessing now proceeds directly into organizing conditions.
+Automatic story updates retain saved content while work continues, with smoother
+section progress and retry handling. Failed details stop downstream work rather
+than reporting a completed update. The global Undo combination button is removed.
+
+OpenAI remains the recommended default. Switching to Apple on-device summaries
+requires explicit confirmation explaining slower large-record processing and the
+lack of condition organization. Existing saved engine choices are preserved; testers
+using Apple on-device must select OpenAI in Settings to use the fast cloud pipeline.
+Guided on-device source-check responses now use the validated response contract.
+
+The cloud fast-details pipeline, models, evidence checks and spending caps are
+unchanged. This release has no new paid benchmark or clinical accuracy claim.
+
+Validation: 374 Swift tests completed, two skipped, zero failures. Signed archive
+and upload checks are recorded below when complete.
+
+What to test: select OpenAI in Medical Summary Engine; reprocess health details and
+confirm condition organization begins automatically after successful completion.
+Check section progress, interruption/retry behavior, retained details and source
+links. Confirm the global Undo combination button is absent and choosing Apple
+on-device requires confirmation.
+
 ## Version 1.0993 (11) — Faster checked health details
 
 Release branch: `codex/release-candidate-11`, app commit `d0fde1e`. Signed archive,

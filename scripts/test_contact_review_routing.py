@@ -36,6 +36,7 @@ struct SummaryProcessingIssue {
  func reconcileSymptoms(store: SessionStore, transport: OpenAIChatTransport?, onDevice: Bool, force: Bool) async throws { symptoms += 1 }
 }
 @MainActor final class Model {
+ var updateStates: [SummaryUpdateRegion: SummaryUpdateState] = [:]
  var isProcessing = false, isTransferringData = false
  var error: String?, processingIssue: SummaryProcessingIssue?, overviewNotice: String?, overviewCheckerExplanation: String?
  var snapshot = HealthMemorySnapshot(sessions: [Session(transcript: "Synthetic record")])
@@ -49,7 +50,7 @@ struct SummaryProcessingIssue {
  func refresh() async {}
  static func progressWithinRecord(for stage: String) -> Double { 0 }
  func createOverview(transport: OpenAIChatTransport?, onDevice: Bool) async { overviews += 1 }
- func synthesizeAcceptedConditions(transport: OpenAIChatTransport?, onDevice: Bool, reviewContacts: Bool = true) async {
+ func synthesizeAcceptedConditions(transport: OpenAIChatTransport?, onDevice: Bool, reviewContacts: Bool = true, forceRefresh: Bool = false) async {
   conditions += 1
   if reviewContacts { try? await processor.reconcileContacts(store: store, transport: transport, onDevice: onDevice) { _ in } }
  }
@@ -78,6 +79,12 @@ struct SummaryProcessingIssue {
   await fast.prepareSummaries(transport:OpenAIChatTransport(),onDevice:false,forceAll:true,organizeConditionsAfterRecords:false)
   assert(fast.processor.records == 0 && fast.processor.contacts == 1 && fast.processor.symptoms == 1)
   assert(fast.retryRecordIDs.isEmpty && fast.conditions == 0 && fast.processingIssue == nil)
+  let fastCombined = Model(store: store)
+  await fastCombined.prepareSummaries(transport: OpenAIChatTransport(), onDevice: false, forceAll: true, organizeConditionsAfterRecords: true)
+  assert(fastCombined.processor.contacts == 1 && fastCombined.conditions == 1)
+  let failedCombined = Model(store: store); failedCombined.processor.failContacts = true
+  await failedCombined.prepareSummaries(transport: OpenAIChatTransport(), onDevice: false, forceAll: true)
+  assert(failedCombined.processingIssue != nil && failedCombined.conditions == 0)
   let overview = Model(store: store)
   await overview.prepareSummaries(transport: nil, onDevice: false, overviewOnly: true)
   assert(overview.overviews == 1 && overview.processor.contacts == 0)

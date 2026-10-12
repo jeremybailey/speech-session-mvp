@@ -71,9 +71,6 @@ struct HealthSummaryView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            if model.undoCombination != nil || !model.contactReviewUndos.isEmpty {
-                Section { Button("Undo combination", systemImage: "arrow.uturn.backward") { Task { await model.undoCombine() } } }
-            }
             if model.undoRemoval != nil {
                 Section { Button("Undo removal", systemImage: "arrow.uturn.backward") { Task { await model.restoreRemovedDetail() } } }
             }
@@ -704,10 +701,11 @@ struct HealthSummaryView: View {
             } else {
                 if recordsOnly {
                     await model.prepareSummaries(transport: transport, onDevice: backend == "onDevice",
-                                                 forceAll: true, retryUnfinished: resume, organizeConditionsAfterRecords: false)
+                                                 forceAll: true, retryUnfinished: resume, organizeConditionsAfterRecords: true)
                 } else {
                     await model.updateHealthStory(transport: transport, onDevice: backend == "onDevice",
-                                                 explicitlyRequested: !automatic || automaticResume)
+                                                 explicitlyRequested: !automatic || automaticResume,
+                                                 retryUnfinished: resume)
                 }
                 await home.loadSessions()
                 // Read the checkpointed run state before deciding that a background
@@ -718,7 +716,9 @@ struct HealthSummaryView: View {
                     hasProcessingIssue: model.processingIssue != nil,
                     hasError: model.error != nil,
                     unfinishedRecordCount: pendingCount,
-                    conditionOrganizationFailed: !recordsOnly && (model.conditionNotice != nil || (!model.facts.isEmpty && !model.overviewIsCurrent))
+                    conditionOrganizationFailed: backend != "onDevice" && (model.conditionNotice != nil
+                        || (!model.facts.isEmpty && model.needsConditionOrganization))
+                        || (!recordsOnly && !model.facts.isEmpty && !model.overviewIsCurrent)
                 )
             }
         }
@@ -1147,8 +1147,6 @@ private struct SummaryRegionHeader: View {
         region == .details && progress.showsRecordCount && progress.total > 0
             ? progress.value / Double(progress.total) : nil
     }
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var showCompletion = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1170,25 +1168,13 @@ private struct SummaryRegionHeader: View {
                 .accessibilityLabel(region.workingLabel + " View progress")
                 SummaryActivityLine(fraction: fraction).accessibilityHidden(true)
             } else {
-                HStack(spacing: 6) {
-                    Text(title).font(.headline)
-                        .accessibilityAddTraits(.isHeader)
-                    if state == .ready && showCompletion {
-                        Image(systemName: "checkmark").font(.caption)
-                            .accessibilityLabel(region.completionLabel)
-                    }
-                }
-                .foregroundStyle(.primary)
+                Text(title).font(.headline)
+                    .accessibilityAddTraits(.isHeader)
+                    .foregroundStyle(.primary)
             }
         }
         .textCase(nil)
         .padding(.vertical, 4)
-        .task(id: state) {
-            showCompletion = state == .ready
-            guard showCompletion else { return }
-            do { try await Task.sleep(for: .seconds(2)) } catch { return }
-            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { showCompletion = false }
-        }
     }
 
 }

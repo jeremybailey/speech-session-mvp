@@ -32,6 +32,39 @@ struct OnDeviceSummaryService {
         }
     }
 
+    /// One draft per on-device request. The app supplies its identity; the model
+    /// supplies only the independent verdict and source evidence.
+    @Generable
+    struct SourceCitation {
+        @Guide(description: "Exact fieldsToCheck key this quotation supports.")
+        var field: String
+        @Guide(description: "Short verbatim passage copied only from originalSource.")
+        var excerpt: String
+    }
+
+    @Generable
+    struct SourceDecision {
+        @Guide(description: "True only when every supplied claim, category and attribution is supported by originalSource.")
+        var supported: Bool
+        @Guide(description: "Brief explanation of the source check.")
+        var reason: String
+        var citations: [SourceCitation]
+        @Guide(description: "wrong_patient, contradicted, not_patient_information, unreadable, or nil if no exclusion applies.")
+        var exclusion: String?
+        @Guide(description: "True only for a medication/contact whose standalone identity is supported after uncertain optional fields are removed. False for other categories.")
+        var coreSupported: Bool
+        @Guide(description: "Exact fieldsToCheck keys without sufficient source support.")
+        var uncertainFields: [String]
+
+        func check(id: UUID) -> SummaryCheck {
+            var check = SummaryCheck(id: id, supported: supported, reason: reason,
+                citations: citations.map { SummaryCitation(field: $0.field, excerpt: $0.excerpt) },
+                coreSupported: coreSupported, uncertainFields: uncertainFields)
+            check.exclusion = exclusion
+            return check
+        }
+    }
+
     @Generable
     struct OverviewSentence: Encodable {
         var text: String

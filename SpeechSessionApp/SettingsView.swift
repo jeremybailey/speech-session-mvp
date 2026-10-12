@@ -240,6 +240,7 @@ struct SettingsView: View {
     @AppStorage("speechSession.skippedSignInGate") private var skippedSignInGate = false
     @EnvironmentObject private var kindeAuth: KindeAuthManager
     @State private var accountActionError: String?
+    @State private var showOnDeviceSummaryOptIn = false
     @State private var aiUsage: AIUsageSnapshot?
     @State private var usageIsStale = false
     @State private var usageRequestID = UUID()
@@ -452,10 +453,19 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Picker("Summary Engine", selection: $summaryBackendRaw) {
-                        Text("OpenAI (cloud)").tag("openai")
+                    Picker("Summary Engine", selection: Binding(
+                        get: { summaryBackendRaw },
+                        set: { choice in
+                            if choice == "onDevice", summaryBackendRaw != "onDevice" {
+                                showOnDeviceSummaryOptIn = true
+                            } else {
+                                summaryBackendRaw = choice
+                            }
+                        }
+                    )) {
+                        Text("OpenAI (cloud, recommended)").tag("openai")
                         if #available(iOS 26.0, *) {
-                            Text("On-device (Apple Intelligence)").tag("onDevice")
+                            Text("Apple Intelligence (on-device, opt-in)").tag("onDevice")
                         }
                     }
                     .pickerStyle(.inline)
@@ -494,6 +504,12 @@ struct SettingsView: View {
                 Button("OK", role: .cancel) { accountActionError = nil }
             } message: {
                 Text(accountActionError ?? "")
+            }
+            .confirmationDialog("Use Apple Intelligence for summaries?", isPresented: $showOnDeviceSummaryOptIn, titleVisibility: .visible) {
+                Button("Use on-device summaries") { summaryBackendRaw = "onDevice" }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Summary processing stays on this device. Large records can take substantially longer, and condition organization is unavailable in this mode. OpenAI cloud processing is recommended for the faster health-story workflow.")
             }
         }
         .background(BrandPalette.canvas.ignoresSafeArea())
@@ -717,8 +733,7 @@ struct SettingsView: View {
             guard isOnDeviceSummaryAvailable else {
                 return "On-device summaries are not available on this iPhone. OpenAI summaries will be used instead."
             }
-            return "Summaries are generated on this device when Apple Intelligence is available. "
-                + "For stricter grouping of treatment plans and clinical details, testers often prefer OpenAI (cloud)."
+            return "You are using on-device summaries. Large records can take substantially longer, and condition organization is unavailable in this mode."
         }
         return "Cloud summaries send transcript text through your organization’s API to OpenAI. Entries remain stored on this device."
     }
