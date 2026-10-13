@@ -18,7 +18,10 @@ observed technical failure is fixed locally; device completion remains to verify
 
 What to test: tap Organize conditions to retrieve the completed server result,
 then verify conditions and source links. Do not reprocess the original records.
-Build/upload/distribution pending.
+Signed archive, upload, Apple processing and export compliance completed. Build 15
+is available to all five internal CollectiveCare Founders testers; What to Test
+is saved. App commit: `e02e6830`. Standard-encryption/no-France answers unchanged.
+App Store Connect build ID: `8dc70366-f775-497b-b72d-0c5ac463264b`.
 
 ## Version 1.0993 (14) — Condition recovery and regression coverage
 
