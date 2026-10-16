@@ -25,6 +25,10 @@ extension Session {
             }
             return label.count > 80 ? String(label.prefix(77)) + "…" : label
         }
+        if inputType == .audio,
+           ["", "health record", "audio record", "recording", "appointment", "journal"].contains(existing.lowercased()) {
+            return entryIntent == .personalJournal ? "Journal recording" : "Appointment recording"
+        }
         return existing.isEmpty ? "Health record" : existing
     }
 }

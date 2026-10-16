@@ -288,6 +288,13 @@ public enum DataTransferArchive {
 extension SessionStore {
     public var isImportedHistory: Bool { FileManager.default.fileExists(atPath: storageDirectory.appendingPathComponent(DataTransferArchive.importedMarker).path) }
 
+    /// Exact archive membership, so new captures are not held behind the import guard.
+    public func importedRecordIDs() throws -> Set<UUID> {
+        guard isImportedHistory else { return [] }
+        let data = try Data(contentsOf: storageDirectory.appendingPathComponent(DataTransferArchive.importedMarker))
+        return Set(try DataTransferArchive.decoder().decode(DataTransferManifest.self, from: data).records.map(\.id))
+    }
+
     public func missingOriginalCount() throws -> Int {
         return try transferEnvelope().sessions.reduce(0) { count, session in
             count + (session.sourceAssets ?? []).filter { DataTransferArchive.originalURL($0, sessionID: session.id, root: storageDirectory) == nil }.count

@@ -241,7 +241,7 @@ public enum AudioFileTranscriptionService {
         fileURL: URL,
         modelName: String
     ) async throws -> String {
-        let whisperKit = try await WhisperKit(model: modelName)
+        let whisperKit = try await SharedWhisperKitModel.shared.load(modelName)
         let results = try await whisperKit.transcribe(audioPath: fileURL.path)
         let text = results
             .map { $0.text }

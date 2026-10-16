@@ -240,11 +240,19 @@ struct HomeView: View {
     private var idleErrorBanners: some View {
         VStack(spacing: 6) {
             if showRecordingError, let error = recording.errorMessage {
-                Text(error)
-                    .font(.subheadline)
-                    .foregroundStyle(BrandPalette.systemRed)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
+                HStack(alignment: .top) {
+                    Image(systemName: "exclamationmark.circle")
+                    Text(error).lineLimit(5)
+                    Button { showRecordingError = false } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .accessibilityLabel("Dismiss transcription message")
+                }
+                .font(.subheadline)
+                .foregroundStyle(BrandPalette.systemRed)
+                .padding(12)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 24)
             }
             if let error = scanErrorMessage {
                 Text(error)

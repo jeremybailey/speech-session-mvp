@@ -24,7 +24,13 @@ struct AddEntryFlowSheet: View {
                         Text("Appointment").tag(SessionEntryIntent.clinicalVisit)
                         Text("Journal").tag(SessionEntryIntent.personalJournal)
                     }.pickerStyle(.segmented)
-                    choice("Record and transcribe", icon: "mic.fill") { recordingIntent = audioIntent }
+                    choice("Record and transcribe", icon: "mic.fill") {
+                        if audioIntent == .personalJournal {
+                            dismissThen { onAudioRecord(.personalJournal) }
+                        } else {
+                            recordingIntent = .clinicalVisit
+                        }
+                    }
                     choice("Choose an audio file", icon: "waveform.badge.plus") { importingAudio = true }
                 }
                 Section("Add a document or photo") {
@@ -47,8 +53,8 @@ struct AddEntryFlowSheet: View {
             .confirmationDialog("Before recording", isPresented: Binding(
                 get: { recordingIntent != nil }, set: { if !$0 { recordingIntent = nil } }
             ), titleVisibility: .visible) {
-                Button(recordingIntent == .clinicalVisit ? "Everyone present has agreed — record" : "Start my journal") {
-                    let intent = recordingIntent ?? .personalJournal
+                Button("Everyone present has agreed — record") {
+                    let intent = recordingIntent ?? .clinicalVisit
                     recordingIntent = nil
                     dismissThen { onAudioRecord(intent) }
                 }

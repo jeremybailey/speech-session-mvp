@@ -46,6 +46,10 @@ let package = Package(
             ]
         ),
         .testTarget(
+            name: "SpeechSessionTranscriptionTests",
+            dependencies: ["SpeechSessionTranscription"]
+        ),
+        .testTarget(
             name: "SpeechSessionPersistenceTests",
             dependencies: ["SpeechSessionPersistence"]
         ),

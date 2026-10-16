@@ -43,11 +43,11 @@ public final class WhisperKitTranscriptionService: @unchecked Sendable, Transcri
         // Load the model using WhisperKit's default init (handles cache + incremental downloads).
         Task {
             do {
-                let wk = try await WhisperKit(model: modelName)
+                let wk = try await SharedWhisperKitModel.shared.load(modelName)
                 lock.withLock { self.whisperKit = wk }
             } catch {
                 continuation.yield(.error(
-                    "WhisperKit failed to load: \(error.localizedDescription). " +
+                    "The on-device transcription model could not be prepared. " +
                     "Try downloading the model again in Settings."
                 ))
                 continuation.finish()
@@ -62,7 +62,7 @@ public final class WhisperKitTranscriptionService: @unchecked Sendable, Transcri
     public static func downloadModel(_ modelName: String) async throws {
         // prewarm: false avoids the extra GPU warm-up; load: true ensures all files are fetched
         // and compiled so beginStreaming can load instantly from the local cache.
-        _ = try await WhisperKit(model: modelName, prewarm: false, load: true, download: true)
+        _ = try await SharedWhisperKitModel.shared.load(modelName)
     }
 
     /// Returns `true` if the model folder exists in WhisperKit's local cache.
@@ -133,7 +133,7 @@ public final class WhisperKitTranscriptionService: @unchecked Sendable, Transcri
                     continuation.yield(.error("WhisperKit returned no speech. Check microphone level and try again."))
                 }
             } catch {
-                continuation.yield(.error("WhisperKit transcription failed: \(error.localizedDescription)"))
+                continuation.yield(.error("On-device transcription could not finish. Your original audio can be retried."))
             }
             continuation.finish()
         }

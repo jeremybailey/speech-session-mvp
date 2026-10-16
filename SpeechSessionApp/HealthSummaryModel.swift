@@ -49,7 +49,13 @@ final class HealthSummaryModel: ObservableObject {
     @Published private(set) var hasLoaded = false
     @Published var isTransferringData = false
     @Published private(set) var isImportedHistory = false
-    var automaticProcessingAllowed: Bool { hasLoaded && !isTransferringData && !isImportedHistory }
+    private var importedRecordIDs: Set<UUID> = []
+    var automaticProcessingAllowed: Bool {
+        hasLoaded && !isTransferringData && (!isImportedHistory || snapshot.sessions.contains {
+            !importedRecordIDs.contains($0.id) && $0.processingState != .transcribing
+                && $0.processingState != .failed && !$0.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        })
+    }
 
     func resetAfterDataImport() async {
         refreshRevision += 1
@@ -59,6 +65,7 @@ final class HealthSummaryModel: ObservableObject {
         overview = nil; displayedOverview = nil; overviewIsCurrent = false
         updateStates = [:]
         automaticPolicy = SummaryAutomaticUpdatePolicy()
+        importedRecordIDs = []
         UserDefaults.standard.removeObject(forKey: "collectivecare.stoppedSummaryInput")
         UserDefaults.standard.removeObject(forKey: "collectivecare.stoppedSummarySources")
         overviewNotice = nil; overviewCheckerExplanation = nil
@@ -155,7 +162,7 @@ final class HealthSummaryModel: ObservableObject {
     func shouldAutomaticallyUpdate(onDevice: Bool, consent: Bool) -> Bool {
         guard automaticProcessingAllowed, !isProcessing, !isUpdatingStory,
               onDevice || consent, !stoppedForCurrentSources, automaticPolicy.allows(updateInputKey) else { return false }
-        return snapshot.sessions.contains { $0.needsSummaryVerification && $0.processingState != .failed && $0.processingState != .transcribing && !$0.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        return snapshot.sessions.contains { !importedRecordIDs.contains($0.id) && $0.needsSummaryVerification && $0.processingState != .failed && $0.processingState != .transcribing && !$0.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             || (!facts.isEmpty && ((!onDevice && needsConditionOrganization) || !overviewIsCurrent))
     }
 
@@ -229,7 +236,8 @@ final class HealthSummaryModel: ObservableObject {
             updateStates = [.details: .waiting, .overview: .waiting]
             if !onDevice && !facts.isEmpty { updateStates[.conditions] = .waiting }
             await prepareSummaries(transport: transport, onDevice: onDevice, retryUnfinished: retryRemainingRecords,
-                                   forceConditionRefresh: forceConditions)
+                                   forceConditionRefresh: forceConditions,
+                                   excludedRecordIDs: explicitlyRequested ? [] : importedRecordIDs)
             // The first pass resumes the exact unfinished set. Subsequent passes
             // include new input that arrived while those records were processing.
             retryRemainingRecords = false
@@ -309,6 +317,7 @@ final class HealthSummaryModel: ObservableObject {
         defer { if revision == refreshRevision { hasLoaded = true } }
         do {
             isImportedHistory = await store.isImportedHistory
+            importedRecordIDs = try await store.importedRecordIDs()
             var saved = try await store.healthSnapshot()
             for session in saved.sessions where !isImportedHistory && session.summaryEntries?.isEmpty != false {
                 guard let markdown = session.summary, !markdown.isEmpty else { continue }
@@ -550,7 +559,7 @@ final class HealthSummaryModel: ObservableObject {
     func prepareSummaries(transport configuredTransport: OpenAIChatTransport?, onDevice: Bool, forceSessionID: UUID? = nil,
                           forceAll: Bool = false, retryUnfinished: Bool = false,
                           organizeConditionsAfterRecords: Bool = true, overviewOnly: Bool = false,
-                          forceConditionRefresh: Bool = false) async {
+                          forceConditionRefresh: Bool = false, excludedRecordIDs: Set<UUID> = []) async {
         if overviewOnly {
             await createOverview(transport: configuredTransport, onDevice: onDevice)
             return
@@ -574,6 +583,7 @@ final class HealthSummaryModel: ObservableObject {
             }
         }
         let pending = overviewOnly ? [] : snapshot.sessions.filter { session in
+            guard !excludedRecordIDs.contains(session.id) else { return false }
             guard session.processingState != .failed, session.processingState != .transcribing,
                   !session.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
             if retryUnfinished {

@@ -105,7 +105,7 @@ struct SessionDetailView: View {
         .confirmationDialog("Check your summary using cloud processing?", isPresented: $summaryConsent, titleVisibility: .visible) {
             Button("Use cloud processing") { cloudSummaryConsent = true; regenerate() }
             Button("Cancel", role: .cancel) {}
-        } message: { Text("Text from this record will be sent through CollectiveCare’s service to OpenAI for summarization and verification.") }
+        } message: { Text("Text from this record will be sent through CollectiveCare’s service to OpenAI for summarization and verification. Temporary processing content has a seven-day expiry and cleanup policy; usage metadata is retained separately.") }
         .task { directory = await store.storageDirectory; await health.refresh() }
         .sheet(item: $editingFact) { selection in
             NavigationStack {

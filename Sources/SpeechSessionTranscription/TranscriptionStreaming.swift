@@ -10,3 +10,20 @@ public protocol TranscriptionStreaming: AnyObject, Sendable {
 }
 
 extension TranscriptionService: TranscriptionStreaming {}
+
+/// Capture-only adapter: the durable recording is transcribed once after capture ends.
+/// In particular, do not download a model or retain a second PCM copy while recording.
+public final class SavedAudioTranscriptionCapture: TranscriptionStreaming, @unchecked Sendable {
+    public let events: AsyncStream<TranscriptionEvent>
+    private let continuation: AsyncStream<TranscriptionEvent>.Continuation
+
+    public init() {
+        var continuation: AsyncStream<TranscriptionEvent>.Continuation!
+        events = AsyncStream { continuation = $0 }
+        self.continuation = continuation
+    }
+
+    public func beginStreaming(locale: Locale) throws {}
+    public func appendBuffer(_ buffer: AVAudioPCMBuffer) {}
+    public func endStreaming() { continuation.finish() }
+}

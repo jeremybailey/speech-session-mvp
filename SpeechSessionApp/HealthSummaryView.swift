@@ -407,7 +407,7 @@ struct HealthSummaryView: View {
             Button("Use cloud processing") { cloudConsent = true; prepare() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Text from your records and accepted health-summary history will be sent through CollectiveCare’s service to OpenAI to prepare summaries and organize conditions. Original files stay on this iPhone. You can change processing options in Settings.")
+            Text("Text from your records and accepted health-summary history will be sent through CollectiveCare’s service to OpenAI to prepare summaries and organize conditions. Original files stay on this iPhone. Temporary processing content has a seven-day expiry and cleanup policy; usage metadata is retained separately. You can change processing options in Settings.")
         }
         }
     }
@@ -434,10 +434,17 @@ struct HealthSummaryView: View {
         if model.state(for: region) == .needsAttention {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Couldn’t finish updating").font(.subheadline).foregroundStyle(.secondary)
+                if region == .conditions, let notice = model.conditionNotice {
+                    Text(notice).font(.footnote).foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
                 Button("Retry") {
                     prepare(retryUnfinished: true)
                 }.frame(minHeight: 44)
-                Button("View progress") { taskSheet = .progress }.font(.caption)
+                    .buttonStyle(.borderless)
+                Button("View progress") { taskSheet = .progress }
+                    .font(.caption)
+                    .buttonStyle(.borderless)
             }
         } else if model.state(for: region) == .interrupted {
             Text(model.isExplicitlyPaused ? "Update paused. Resume whenever you’re ready." : "Update paused. We’ll continue when you return.")

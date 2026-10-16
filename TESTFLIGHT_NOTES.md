@@ -1,5 +1,13 @@
 # CollectiveCare TestFlight Notes
 
+## Version 1.0993 (16) — Recording and automatic updates
+
+Journal recordings start without the appointment consent prompt. Quick recordings under three seconds with no captured text save their audio without starting transcription or showing a failure banner. Audio records use Journal recording or Appointment recording as fallback titles. Saved-file transcription avoids duplicate model preparation, and errors use concise dismissible messages.
+
+New records added after a ZIP import can automatically update details, conditions and overview after text extraction, subject to existing cloud consent. Imported records stay excluded from automatic reprocessing. Condition results remain compatible with the current server when its cleanup acknowledgment endpoint is unavailable; the existing seven-day server retention policy remains. Retry and View progress are independent actions, and condition errors appear directly on the card.
+
+What to test: record a journal, stop an accidental short recording, add a photo after importing a history, and confirm details → conditions → overview complete. Verify saved originals and condition links. This release does not deploy the pending backend cleanup migration.
+
 ## Version 1.0993 (15) — Accept independently checked condition headings
 
 Fixes a client/server validation mismatch: the backend completed condition work,

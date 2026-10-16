@@ -55,6 +55,11 @@ final class DataTransferTests: XCTestCase {
         let reopened = try SessionStore(storageDirectory: root.appendingPathComponent("destination"))
         let restoredPolicy = await reopened.isImportedHistory
         XCTAssertTrue(restoredPolicy)
+        let photo = Session(transcript: "New photo text", inputType: .documentImage)
+        try await reopened.upsert(photo)
+        let importedIDs = try await reopened.importedRecordIDs()
+        XCTAssertEqual(importedIDs, [session.id])
+        XCTAssertFalse(importedIDs.contains(photo.id), "New photos must be eligible independently of imported history")
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("destination/sources").path))
     }
 

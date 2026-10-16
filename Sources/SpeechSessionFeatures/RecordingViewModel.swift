@@ -239,6 +239,11 @@ public final class RecordingViewModel: ObservableObject {
         let backend = pendingBackend
         let wasWhisper = activeSessionUsesWhisper
         let recordingURL = pendingRecordingFileURL
+        // A quick start/stop is usually an accidental tap. Retain the original,
+        // but don't load a model or upload audio just to discover it was too short.
+        let pausedNow = pauseBeganAt.map { Date().timeIntervalSince($0) } ?? 0
+        let duration = recordingStartedAt.map { Date().timeIntervalSince($0) - totalPausedDuration - pausedNow } ?? elapsed
+        let skipShortRecording = duration < 3 && fullTranscriptForSave().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         timerTask?.cancel()
         timerTask = nil
@@ -251,16 +256,24 @@ public final class RecordingViewModel: ObservableObject {
         pipeline?.stop()
         isRecording = false
         isFinishingWhisper = true
-        if let id = pendingRecordingSessionID {
+        if !skipShortRecording, let id = pendingRecordingSessionID {
             do { try await store.updateTranscript(sessionID: id, transcript: fullTranscriptForSave(), error: "The audio is saved. Transcription is being prepared; retry if it does not finish.") }
             catch { errorMessage = "Recording saved, but its processing status could not be updated." }
         }
 
-        let transcript = await resolveFinalTranscript(
-            recordingFileURL: recordingURL,
-            backend: backend,
-            wasWhisper: wasWhisper
-        )
+        let transcript: String
+        if skipShortRecording {
+            eventTask?.cancel()
+            errorMessage = nil
+            finalTranscriptIncomplete = false
+            transcript = ""
+        } else {
+            transcript = await resolveFinalTranscript(
+                recordingFileURL: recordingURL,
+                backend: backend,
+                wasWhisper: wasWhisper
+            )
+        }
 
         eventTask?.cancel()
         eventTask = nil
@@ -272,7 +285,7 @@ public final class RecordingViewModel: ObservableObject {
         activeSessionUsesWhisper = false
         isFinishingWhisper = false
 
-        if transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, errorMessage == nil {
+        if !skipShortRecording, transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, errorMessage == nil {
             errorMessage = "Transcription did not return a result."
         }
 
@@ -301,6 +314,10 @@ public final class RecordingViewModel: ObservableObject {
         )
         session.processingState = finalTranscriptIncomplete || transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .failed : .ready
         session.processingError = session.processingState == .failed ? (errorMessage ?? "The audio is saved. The text may be incomplete; try reading the original again.") : nil
+        if skipShortRecording {
+            session.processingState = .saved
+            session.processingError = nil
+        }
         recordingStartedAt = nil
 
         do {
@@ -433,13 +450,13 @@ public final class RecordingViewModel: ObservableObject {
         case .onDeviceApple:
             return LiveRecordingSession(transcription: TranscriptionService())
         case .openAIWhisper:
-            if let creds = pendingOpenAIWhisperCredentials {
-                return LiveRecordingSession(transcription: WhisperTranscriptionService(credentials: creds))
+            if pendingOpenAIWhisperCredentials != nil {
+                return LiveRecordingSession(transcription: SavedAudioTranscriptionCapture())
             }
             guard !pendingOpenAIKey.isEmpty else {
                 throw RecordingStartError.missingOpenAIWhisperAccess
             }
-            return LiveRecordingSession(transcription: WhisperTranscriptionService(apiKey: pendingOpenAIKey))
+            return LiveRecordingSession(transcription: SavedAudioTranscriptionCapture())
         case .onDeviceWhisperKit:
             let capability = DeviceCapabilityProfile.current
             guard capability.permitsWhisperKit(experimentalUnlocked: experimentalWhisperKitUnlocked),
@@ -450,7 +467,7 @@ public final class RecordingViewModel: ObservableObject {
                         ?? "This WhisperKit model is not available on this iPhone."
                 )
             }
-            return LiveRecordingSession(transcription: WhisperKitTranscriptionService(modelName: pendingWhisperKitModel))
+            return LiveRecordingSession(transcription: SavedAudioTranscriptionCapture())
         }
     }
 
@@ -536,8 +553,8 @@ public final class RecordingViewModel: ObservableObject {
             }
         }
         finalTranscriptIncomplete = true
-        if let fileFailure {
-            errorMessage = "The full recording could not be transcribed: \(fileFailure.localizedDescription) Your audio and partial text are saved. Open the original record and try reading it again."
+        if fileFailure != nil {
+            errorMessage = "Transcription could not finish. Your audio and any partial text are saved. Open the original record to retry. If you use on-device WhisperKit, prepare the model in Settings first."
         }
         return partialFileText.isEmpty ? fullTranscriptForSave() : partialFileText
     }

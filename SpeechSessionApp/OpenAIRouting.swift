@@ -49,6 +49,75 @@ enum DurableRequestIdentity {
     }
 }
 
+/// A durable local copy must exist before the server is allowed to purge a result.
+/// Kept with local history, excluded from device backup, and pruned after seven days.
+struct DurableResultReceipt: Codable {
+    let jobID: String
+    let output: String
+    let expiresAt: Date
+
+    /// Older deployments have no receipt endpoint. Keep the durable local copy
+    /// for a later acknowledgment, but do not misreport successful inference as
+    /// a clinical processing failure. Other errors remain explicit failures.
+    static func validateAcknowledgment(data: Data, status: Int, jobID: String) throws -> Bool {
+        if status == 405 { return false }
+        try OpenAIChatTransport.validateDurableResponse(data: data, status: status)
+        guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              result["received"] as? Bool == true, result["id"] as? String == jobID else {
+            throw URLError(.cannotDecodeContentData)
+        }
+        return true
+    }
+
+    static func directory() throws -> URL {
+        guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            throw URLError(.cannotCreateFile)
+        }
+        return support.appendingPathComponent("SpeechSessions/cloud-result-receipts", isDirectory: true)
+    }
+
+    static func key(body: Data, url: URL, authorization: String, experimental: Bool) throws -> String {
+        // Scope local results to the account, never to a token that changes on refresh.
+        // The server independently verifies the JWT; these claims only isolate local files.
+        let parts = authorization.replacingOccurrences(of: "Bearer ", with: "").split(separator: ".")
+        guard parts.count == 3 else { throw URLError(.userAuthenticationRequired) }
+        var encoded = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
+        guard let data = Data(base64Encoded: encoded),
+              let claims = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let subject = claims["sub"] as? String, !subject.isEmpty,
+              let issuer = claims["iss"] as? String, !issuer.isEmpty else { throw URLError(.userAuthenticationRequired) }
+        var identity = try JSONSerialization.data(withJSONObject: [issuer, subject, url.absoluteString, experimental ? "experiment" : "release"])
+        identity.append(body)
+        return SHA256.hash(data: identity).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func load(key: String, directory: URL? = nil) throws -> Self? {
+        let root = try directory ?? Self.directory()
+        for file in (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] {
+            if let data = try? Data(contentsOf: file), let receipt = try? JSONDecoder().decode(Self.self, from: data), receipt.expiresAt <= Date() {
+                try FileManager.default.removeItem(at: file)
+            }
+        }
+        let file = root.appendingPathComponent(key + ".json")
+        guard FileManager.default.fileExists(atPath: file.path) else { return nil }
+        return try JSONDecoder().decode(Self.self, from: Data(contentsOf: file))
+    }
+
+    func save(key: String, directory: URL? = nil) throws {
+        let root = try directory ?? Self.directory()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        var excluded = URLResourceValues(); excluded.isExcludedFromBackup = true
+        var directory = root; try directory.setResourceValues(excluded)
+        let data = try JSONEncoder().encode(self)
+        #if os(iOS)
+        try data.write(to: root.appendingPathComponent(key + ".json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        #else
+        try data.write(to: root.appendingPathComponent(key + ".json"), options: [.atomic])
+        #endif
+    }
+}
+
 /// The checked-facts pipeline is the release default; explicit experiments retain their sub-budget.
 enum FastDetailsConfiguration {
     static var enabled: Bool { ProcessInfo.processInfo.environment["COLLECTIVECARE_FAST_DETAILS"] != "0" }
@@ -187,6 +256,38 @@ struct OpenAIChatTransport: Sendable {
         }
         // Server hashes canonical content, ignoring transient request IDs. Re-submission is safe.
         let body = try DurableRequestIdentity.body(payload, conditionWorkflow: conditionWorkflow)
+        let receiptKey = try DurableResultReceipt.key(body: body, url: url,
+            authorization: try await makeAuthorizationHeader(), experimental: fastExperiment)
+        func acknowledge(_ receipt: DurableResultReceipt) async throws -> String {
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+            components.queryItems = [URLQueryItem(name: "id", value: receipt.jobID)]
+            var request = URLRequest(url: components.url!)
+            request.httpMethod = "PATCH"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            applyExperimentHeader(to: &request)
+            request.setValue(try await makeAuthorizationHeader(), forHTTPHeaderField: "Authorization")
+            let digest = SHA256.hash(data: Data(receipt.output.utf8)).map { String(format: "%02x", $0) }.joined()
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["digest": digest])
+            do {
+                let (data, response) = try await DurableNetworkRecovery.run { try await session.data(for: request) }
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                // A false result means legacy endpoint: keep the receipt for a
+                // later attempt; existing server expiry remains in effect.
+                _ = try DurableResultReceipt.validateAcknowledgment(data: data, status: status, jobID: receipt.jobID)
+            } catch {
+                throw NSError(domain: "AIProcessingReceipt", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                    "The result is saved on this iPhone, but cloud cleanup has not been confirmed. Retry to confirm cleanup without another AI charge."])
+            }
+            return receipt.output
+        }
+        func receive(_ output: String, jobID: String) async throws -> String {
+            let receipt = DurableResultReceipt(jobID: jobID, output: output, expiresAt: Date().addingTimeInterval(7 * 24 * 60 * 60))
+            try receipt.save(key: receiptKey)
+            return try await acknowledge(receipt)
+        }
+        if let receipt = try DurableResultReceipt.load(key: receiptKey) {
+            return try await acknowledge(receipt)
+        }
         let chunked = conditionWorkflow && body.count > 350_000
         let chunkSize = 240_000
         let chunkCount = (body.count + chunkSize - 1) / chunkSize
@@ -261,7 +362,7 @@ struct OpenAIChatTransport: Sendable {
                     throw NSError(domain: "AIProcessing", code: 410, userInfo: [NSLocalizedDescriptionKey: "This processing result has expired. It will not be automatically charged again."])
                 }
                 NotificationCenter.default.post(name: Notification.Name("AIProcessingCompleted"), object: nil)
-                if let output = result.output { return output }
+                if let output = result.output { return try await receive(output, jobID: job.id) }
                 if conditionWorkflow, let count = result.chunkCount, (1...1000).contains(count), let digest = result.digest {
                     var assembled = Data()
                     for index in 0..<count {
@@ -274,7 +375,7 @@ struct OpenAIChatTransport: Sendable {
                     }
                     guard SHA256.hash(data: assembled).map({ String(format: "%02x", $0) }).joined() == digest,
                           let output = String(data: assembled, encoding: .utf8) else { throw URLError(.cannotDecodeContentData) }
-                    return output
+                    return try await receive(output, jobID: job.id)
                 }
                 throw URLError(.cannotDecodeContentData)
             case "queued", "running":

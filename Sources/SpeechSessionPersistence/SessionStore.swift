@@ -147,6 +147,10 @@ public actor SessionStore {
         try saveEnvelope(env)
         let sourceStore = SessionSourceStore(fileManager: fileManager, storageDirectory: directoryURL)
         try sourceStore.deleteSources(for: id)
+        // Receipts can contain facts from multiple records. Purge the entire local
+        // recovery cache when any original is deleted rather than keep a stale copy.
+        let receipts = directoryURL.appendingPathComponent("cloud-result-receipts", isDirectory: true)
+        if fileManager.fileExists(atPath: receipts.path) { try fileManager.removeItem(at: receipts) }
     }
 
     /// Merges `session` by `id` (insert or replace), sorts by `date` descending, then saves.

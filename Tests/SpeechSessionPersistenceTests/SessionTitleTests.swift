@@ -20,7 +20,7 @@ final class SessionTitleTests: XCTestCase {
         XCTAssertEqual(session.displayTitle, "My appointment with Jamie")
         session.title = nil
         session.summaryEntries?[0].isDeleted = true
-        XCTAssertEqual(session.displayTitle, "Health record")
+        XCTAssertEqual(session.displayTitle, "Appointment recording")
     }
     func testLabRecordUsesLabContextAndChiefComplaintTakesPriority() {
         var session = Session(transcript: "")
