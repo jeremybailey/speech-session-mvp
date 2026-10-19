@@ -2,7 +2,7 @@
   "name": "collectivecare-openai-proxy",
   "private": true,
   "scripts": {
-    "vercel-build": "npm run typecheck && node --import tsx scripts/preview-check.ts && node --import tsx scripts/production-check.ts",
+    "vercel-build": "npm run typecheck && node --import tsx scripts/apply-pilot-agreement.ts && node --import tsx scripts/preview-check.ts && node --import tsx scripts/production-check.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:condition-recovery": "node scripts/test-condition-recovery.mjs"

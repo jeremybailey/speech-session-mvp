@@ -38,6 +38,10 @@ final class KindeAuthManager: ObservableObject {
         url.scheme?.caseInsensitiveCompare("comcollectivecarepilotkinde") == .orderedSame
     }
 
+    var accountID: String? {
+        KindeSDKAPI.auth.getUserDetails()?.id
+    }
+
     var userPreview: String? {
         KindeSDKAPI.auth.getUserDetails()?.email
     }

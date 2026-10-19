@@ -1,29 +1,22 @@
 import SwiftUI
+import SpeechSessionPersistence
 
-/// Root container: mandatory sign-in (Kinde) before main UI, with optional Skip for testing / incidents.
-/// Settings continues to offer Sign in / Sign out; signing out clears Skip so this gate can appear again.
+/// Root container: account sign-in and a server-recorded pilot agreement before the main UI.
 struct AppShellView: View {
     @ObservedObject var appModel: AppModel
     @ObservedObject var kindeAuth: KindeAuthManager
 
     @Environment(\.scenePhase) private var scenePhase
-    @AppStorage("speechSession.skippedSignInGate") private var skippedSignInGate = false
-    @AppStorage("collectivecare.introAgreementAccepted") private var introAgreementAccepted = false
-
-    private var mayUseMainApp: Bool {
-        kindeAuth.isSignedIn || skippedSignInGate
-    }
+    @StateObject private var agreement = PilotAgreementState()
 
     var body: some View {
         Group {
-            if !introAgreementAccepted {
-                IntroAgreementView {
-                    introAgreementAccepted = true
-                }
-            } else if mayUseMainApp {
+            if !kindeAuth.isSignedIn {
+                SignInGateView()
+            } else if agreement.acceptedOwner == kindeAuth.accountID, agreement.acceptedOwner != nil {
                 ContentView(appModel: appModel)
             } else {
-                SignInGateView()
+                IntroAgreementView(state: agreement, auth: kindeAuth)
             }
         }
         .environmentObject(kindeAuth)
@@ -51,6 +44,9 @@ struct AppShellView: View {
             Button("Later", role: .cancel) { kindeAuth.sessionNotice = nil }
         } message: {
             Text(kindeAuth.sessionNotice ?? "")
+        }
+        .task(id: kindeAuth.isSignedIn ? kindeAuth.accountID : nil) {
+            await agreement.load(auth: kindeAuth)
         }
         .task { await kindeAuth.refreshSessionIfNeeded() }
         .task {
@@ -86,44 +82,114 @@ struct AppShellView: View {
 // MARK: - Intro agreement
 
 private struct IntroAgreementView: View {
-    let onAccept: () -> Void
+    @ObservedObject var state: PilotAgreementState
+    let auth: KindeAuthManager
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    Text("By using this app, you acknowledge and agree:")
-                        .font(.headline)
-
-                    Text("1. **Pilot / experimental.** This is an MVP pilot. It may contain errors, lose data, or stop working. It is provided “as is,” without warranties of any kind.")
-
-                    Text("2. **Not medical care.** The app does not provide medical advice, diagnosis, or treatment and is not a substitute for a physician or other qualified provider. Do not rely on it for health decisions. Seek professional care for medical concerns, including emergencies.")
-
-                    Text("3. **Your data.** You enter and control the information, including personal health information such as lab results and medication notes. You are responsible for its accuracy and for what you choose to add, store, or share. Data is stored on your device. Deleting the app or data may permanently remove it; there is no guarantee of backup or recovery.")
-
-                    Text("4. **AI summaries.** Information you choose to process may be summarized by AI. Summaries can be incomplete, inaccurate, or misleading. They are not clinical interpretations. You should review the results against the source records yourself.")
-
-                    Text("5. **Sharing.** Any sharing is initiated by you. You are responsible for the recipient and for any further use or disclosure by them.")
-
-                    Text("6. **Assumption of risk and release.** To the maximum extent permitted by law, you assume all risk of use and release the maker and its personnel from claims arising from the app, including data loss, inaccurate summaries, reliance on outputs, or sharing, except where liability cannot legally be limited.")
-
-                    Text("7. **Age.** You confirm you are 18 or older, or using the app with authority to consent for the account holder.")
-
-                    Button(action: onAccept) {
-                        Text("I agree and continue")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
+                    if let document = state.document {
+                        Text(document.introduction).font(.headline)
+                        ForEach(Array(document.paragraphs.enumerated()), id: \.offset) { _, paragraph in
+                            Text(.init(paragraph))
+                        }
+                        Text("Acceptance is recorded with your account, date, and agreement version.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        Button(document.action) { Task { await state.accept(auth: auth) } }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(state.busy)
+                    } else if state.busy {
+                        ProgressView("Loading agreement…")
                     }
-                    .buttonStyle(.borderedProminent)
+                    if let error = state.error {
+                        Text(error).foregroundStyle(.secondary)
+                        Button("Retry") { Task { await state.load(auth: auth) } }.disabled(state.busy)
+                    }
+                    Button("Sign out") { Task { await auth.logout() } }.disabled(state.busy)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(20)
             }
             .background(BrandPalette.canvas.ignoresSafeArea())
             .navigationTitle("Before you begin")
             .navigationBarTitleDisplayMode(.inline)
         }
+    }
+}
+
+@MainActor
+private final class PilotAgreementState: ObservableObject {
+    typealias Document = PilotAgreementDocument
+    typealias Envelope = PilotAgreementEnvelope
+    @Published var document: Document?
+    @Published var acceptedOwner: String?
+    @Published var busy = false
+    @Published var error: String?
+    private var operation = UUID()
+
+    func load(auth: KindeAuthManager) async {
+        let operationID = UUID(); operation = operationID
+        acceptedOwner = nil; document = nil; error = nil; busy = false
+        guard auth.isSignedIn, let owner = auth.accountID else { busy = false; return }
+        // Only cache a server-issued receipt, scoped to the authenticated account.
+        if let cached = UserDefaults.standard.data(forKey: "pilotAgreement.receipt.\(owner)"),
+           let envelope = try? JSONDecoder().decode(Envelope.self, from: cached), envelope.accepted(by: owner) {
+            acceptedOwner = owner
+            return
+        }
+        busy = true
+        defer { if operation == operationID { busy = false } }
+        do {
+            let envelope = try await request(auth: auth, body: nil)
+            guard operation == operationID, auth.accountID == owner, auth.isSignedIn else { return }
+            guard envelope.agreement.valid else { throw URLError(.cannotParseResponse) }
+            document = envelope.agreement
+            if envelope.accepted(by: owner) { try save(envelope, owner: owner) }
+        } catch {
+            guard operation == operationID else { return }
+            self.error = "The agreement could not be loaded. Connect to the internet and retry."
+        }
+    }
+
+    func accept(auth: KindeAuthManager) async {
+        guard !busy, let document, let owner = auth.accountID else { return }
+        let operationID = operation
+        busy = true; error = nil
+        defer { if operation == operationID { busy = false } }
+        do {
+            let body = ["version": document.version, "sha256": document.sha256, "action": document.action,
+                        "appVersion": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
+                        "appBuild": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"]
+            let envelope = try await request(auth: auth, body: body)
+            guard operation == operationID, auth.accountID == owner, auth.isSignedIn else { return }
+            guard envelope.accepted(by: owner), envelope.agreement.sha256 == document.sha256 else {
+                throw URLError(.cannotParseResponse)
+            }
+            try save(envelope, owner: owner)
+        } catch {
+            guard operation == operationID else { return }
+            self.error = "Your acceptance could not be confirmed. Retry to check its status; you will not create a duplicate receipt."
+        }
+    }
+
+    private func save(_ envelope: Envelope, owner: String) throws {
+        UserDefaults.standard.set(try JSONEncoder().encode(envelope), forKey: "pilotAgreement.receipt.\(owner)")
+        acceptedOwner = owner
+    }
+
+    private func request(auth: KindeAuthManager, body: [String: String]?) async throws -> Envelope {
+        guard let base = CloudOpenAIConfiguration.proxyBaseURL else { throw URLError(.badURL) }
+        var request = URLRequest(url: base.appendingPathComponent("v1/agreements/pilot"))
+        request.timeoutInterval = 20
+        request.setValue("Bearer \(try await auth.freshAccessToken())", forHTTPHeaderField: "Authorization")
+        if let body {
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(body)
+        }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+        return try JSONDecoder().decode(Envelope.self, from: data)
     }
 }
 
@@ -133,7 +199,6 @@ struct SignInGateView: View {
     @EnvironmentObject private var kindeAuth: KindeAuthManager
     @Environment(\.scenePhase) private var scenePhase
 
-    @AppStorage("speechSession.skippedSignInGate") private var skippedSignInGate = false
 
     @State private var isSigningIn = false
     @State private var signInError: String?
@@ -169,12 +234,7 @@ struct SignInGateView: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(isSigningIn)
 
-                    Button("Skip for now (testing)") {
-                        skippedSignInGate = true
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .disabled(isSigningIn)
+
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity)
