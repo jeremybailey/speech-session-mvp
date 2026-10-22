@@ -1,5 +1,11 @@
 # CollectiveCare TestFlight Notes
 
+## Version 1.0993 (17) — Pilot agreement and acceptance records
+
+Updated pilot agreement, including temporary processing retention and no use for AI model training. Sign-in precedes acceptance so the server can record the account, timestamp, exact text/version/hash and app build. Existing users accept once; confirmed acceptance remains available offline for the same account.
+
+What to test: sign in, review and accept the agreement, then relaunch. Confirm the agreement does not repeat for the same account and saved health records remain available. Failed acceptance saves can be retried safely. No changes to health processing or the pending deletion-after-delivery backend work are included.
+
 ## Version 1.0993 (16) — Recording and automatic updates
 
 Journal recordings start without the appointment consent prompt. Quick recordings under three seconds with no captured text save their audio without starting transcription or showing a failure banner. Audio records use Journal recording or Appointment recording as fallback titles. Saved-file transcription avoids duplicate model preparation, and errors use concise dismissible messages.
