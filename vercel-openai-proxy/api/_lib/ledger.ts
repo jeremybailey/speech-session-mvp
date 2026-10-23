@@ -56,13 +56,22 @@ export async function submit(owner: string, payload: Payload) {
   return transaction(db => submitWithinTransaction(db,owner,payload,process.env.AI_BUDGET_ID,model,effort));
 }
 // Allows a workflow checkpoint and its budgeted step to be committed together.
-export async function submitWithinTransaction(db: PoolClient, owner: string, payload: Payload, budgetID = process.env.AI_BUDGET_ID, model: ProcessingModel = 'gpt-4o-mini', effort = 'low') {
-  const hash = requestHash(owner, payload, model, effort);
+export async function submitWithinTransaction(db: PoolClient, owner: string, payload: Payload, budgetID = process.env.AI_BUDGET_ID, model: ProcessingModel = 'gpt-4o-mini', effort = 'low', reuseScope?: string) {
+  let hash = requestHash(owner, payload, model, effort);
   if (!budgetID) throw new Error("budget_unavailable");
     // Lock global budget before checking dedupe: submissions across all users serialize safely.
     const budget = (await db.query("SELECT * FROM ai_budgets WHERE id=$1 FOR UPDATE", [budgetID])).rows[0];
     if (!budget) throw new Error("budget_unavailable");
-    const prior = (await db.query("SELECT id,state FROM ai_jobs WHERE owner=$1 AND request_hash=$2", [owner, hash])).rows[0];
+    let prior = (await db.query("SELECT id,state FROM ai_jobs WHERE owner=$1 AND request_hash=$2", [owner, hash])).rows[0];
+    // Completed job metadata outlives its clinical result. A parent may replace
+    // an unavailable result, but never repeat an uncertain/running provider call.
+    // Chain from the expired job identity: concurrent retries select one replacement,
+    // including when an earlier replacement has itself expired.
+    while (prior?.state === 'completed' && reuseScope &&
+      !(await db.query("SELECT 1 FROM ai_payloads WHERE job_id=$1 AND expires_at>now() AND jsonb_typeof(result->'output')='string'", [prior.id])).rows.length) {
+      hash += ':' + reuseScope + ':' + prior.id;
+      prior = (await db.query('SELECT id,state FROM ai_jobs WHERE owner=$1 AND request_hash=$2', [owner, hash])).rows[0];
+    }
     if (prior) return {...prior,reused:true};
     const reserve = reservation(model, outputTokenLimit(model, payload.stage));
     if (BigInt(budget.used_nusd) + BigInt(budget.reserved_nusd) + BigInt(reserve) > BigInt(budget.limit_nusd)) throw new Error("budget_exhausted");

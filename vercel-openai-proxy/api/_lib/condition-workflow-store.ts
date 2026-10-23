@@ -67,7 +67,7 @@ export async function prepareConditionStep(id:string):Promise<string|null> {
     if(w.current_step) return w.current_step;
     const next=nextConditionRequest(p.plan,p.checkpoint);
     if(!next) {await db.query("UPDATE ai_condition_workflows SET state='completed',finished_at=now() WHERE id=$1",[id]);return null;}
-    const child=await submitWithinTransaction(db,w.owner,{...next.payload,workload_type:w.workload_type},w.budget_id,w.model,w.reasoning_effort);
+    const child=await submitWithinTransaction(db,w.owner,{...next.payload,workload_type:w.workload_type},w.budget_id,w.model,w.reasoning_effort,id);
     await db.query('INSERT INTO ai_condition_workflow_steps(workflow_id,revision,job_id,incurs_cost) VALUES($1,$2,$3,$4)',[id,w.revision,child.id,!child.reused]);
     await db.query("UPDATE ai_condition_workflows SET state='running',current_step=$2 WHERE id=$1",[id,child.id]);
     return child.id;
@@ -140,9 +140,10 @@ export async function resumeConditionWorkflow(owner:string,id:string,client?:Poo
     if(w.state==='invalid') {
       const last=(await db.query(`SELECT j.state,p.result FROM ai_condition_workflow_steps s
         JOIN ai_jobs j ON j.id=s.job_id AND j.owner=$2
-        JOIN ai_payloads p ON p.job_id=j.id AND p.expires_at>now()
+        LEFT JOIN ai_payloads p ON p.job_id=j.id AND p.expires_at>now()
         WHERE s.workflow_id=$1 AND s.revision=$3`,[id,owner,w.revision-1])).rows[0];
-      const checkpoint=last?.state==='completed' && typeof last.result?.output==='string'
+      const missingCompletedResult=last?.state==='completed' && typeof last.result?.output!=='string';
+      const checkpoint=missingCompletedResult ? p.checkpoint : last?.state==='completed' && typeof last.result?.output==='string'
         ? repairVerificationContract(p.plan,p.checkpoint,last.result.output)??recoverSavedMapping(p.plan,p.checkpoint,last.result.output):null;
       if(!checkpoint) return {id:w.id,state:w.state,revision:w.revision};
       await db.query('UPDATE ai_condition_workflow_payloads SET checkpoint=$2 WHERE workflow_id=$1',[id,checkpoint]);

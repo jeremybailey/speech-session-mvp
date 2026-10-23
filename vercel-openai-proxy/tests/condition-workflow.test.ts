@@ -367,6 +367,41 @@ test('PostgreSQL workflow continuation, interruption, concurrency, cancellation 
     const headingResult=(await db.query('SELECT checkpoint FROM ai_condition_workflow_payloads WHERE workflow_id=$1',[headingRun.id])).rows[0].checkpoint.result;
     assert.deepEqual(headingResult.groups,headingPlan.preserved.groups);assert.deepEqual(headingResult.unassigned,[uuid(2)]);
 
+    // Regression: October 23 reused an October 12 completed mapper whose result
+    // had been purged. Replay with synthetic data and the real database ledger.
+    for (const removed of [false,true]) {
+      const owner=`expired-result-${removed}`, p=plan('Expired cached mapping');
+      const old=await submitConditionWorkflow(owner,p);
+      const oldChild=(await prepareConditionStep(old.id))!;
+      assert.ok(await claim(oldChild));
+      await settle(oldChild,'completed',{input_tokens:100,output_tokens:20},mapped);
+      if (removed) await db.query('DELETE FROM ai_payloads WHERE job_id=$1',[oldChild]);
+      else await db.query("UPDATE ai_payloads SET expires_at=now()-interval '1 second' WHERE job_id=$1",[oldChild]);
+      await db.query("UPDATE ai_condition_workflows SET state='invalid',revision=1,current_step=NULL,finished_at=now() WHERE id=$1",[old.id]);
+      const budgetBefore=(await db.query('SELECT used_nusd,reserved_nusd FROM ai_budgets')).rows;
+      assert.equal((await conditionWorkflowStatus(owner,old.id)).state,'invalid');
+      const resumed=await Promise.all([resumeConditionWorkflow(owner,old.id),resumeConditionWorkflow(owner,old.id)]);
+      assert.ok(resumed.every(r=>r.state==='queued' && r.revision===2));
+      assert.deepEqual((await db.query('SELECT used_nusd,reserved_nusd FROM ai_budgets')).rows,budgetBefore);
+      const children=await Promise.all([prepareConditionStep(old.id),prepareConditionStep(old.id)]);
+      assert.equal(children[0],children[1]);assert.notEqual(children[0],oldChild);
+      assert.ok(await claim(children[0]!));assert.equal(await claim(children[0]!),null);
+      await settle(children[0]!,'completed',{input_tokens:100,output_tokens:20},mapped);
+      assert.equal((await finishConditionStep(old.id,children[0]!))!.state,'running');
+      const check=(await prepareConditionStep(old.id))!;assert.ok(await claim(check));
+      await settle(check,'completed',{input_tokens:100,output_tokens:20},verified());
+      assert.equal((await finishConditionStep(old.id,check))!.state,'completed');
+      const result=JSON.parse((await conditionWorkflowStatus(owner,old.id)).result.output);
+      assert.deepEqual(result.groups[0].entryIDs,[uuid(1),uuid(2)]);
+      // A fresh parent must also avoid the original expired shared result.
+      const fresh=await submitConditionWorkflow(owner,{...p,clientRevision:'expiry-regression-v1'});
+      const freshChild=(await prepareConditionStep(fresh.id))!;assert.notEqual(freshChild,oldChild);
+      assert.ok(await claim(freshChild));
+      await settle(freshChild,'uncertain');
+      await finishConditionStep(fresh.id,freshChild);
+      assert.equal((await resumeConditionWorkflow(owner,fresh.id)).state,'uncertain');
+    }
+
     // Full-size workflow: fail early, midway and on the last verification batch.
     // Run the real durable worker/store/ledger with a synthetic provider, no API.
     const longPlan=plan('Long workflow');
