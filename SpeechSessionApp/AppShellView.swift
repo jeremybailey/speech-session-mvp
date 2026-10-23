@@ -88,32 +88,146 @@ private struct IntroAgreementView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 28) {
+                    welcome
                     if let document = state.document {
-                        Text(document.introduction).font(.headline)
-                        ForEach(Array(document.paragraphs.enumerated()), id: \.offset) { _, paragraph in
-                            Text(.init(paragraph))
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Before you begin")
+                                .font(.title2.bold()).accessibilityAddTraits(.isHeader)
+                            Text(document.introduction)
+                                .foregroundStyle(.secondary)
                         }
-                        Text("Acceptance is recorded with your account, date, and agreement version.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                        Button(document.action) { Task { await state.accept(auth: auth) } }
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(document.paragraphs.enumerated()), id: \.offset) { index, paragraph in
+                                Text(.init(paragraph))
+                                    .font(.body).lineSpacing(5)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(20)
+                                if index < document.paragraphs.count - 1 {
+                                    Divider().padding(.horizontal, 20)
+                                }
+                            }
+                        }
+                        .background(BrandPalette.surface, in: RoundedRectangle(cornerRadius: 24))
+                        VStack(spacing: 14) {
+                            Label("Your acceptance is recorded with your account, date, and agreement version.", systemImage: "checkmark.shield")
+                                .font(.footnote).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button { Task { await state.accept(auth: auth) } } label: {
+                                HStack(spacing: 10) {
+                                    if state.busy { ProgressView().tint(.white) }
+                                    Text(state.busy ? "Confirming…" : document.action)
+                                        .font(.headline)
+                                }
+                                .frame(maxWidth: .infinity).padding(.vertical, 12)
+                            }
                             .buttonStyle(.borderedProminent)
+                            .buttonBorderShape(.roundedRectangle(radius: 16))
                             .disabled(state.busy)
+                            Text("Agreement \(document.version)")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     } else if state.busy {
                         ProgressView("Loading agreement…")
+                            .frame(maxWidth: .infinity).padding(24)
                     }
                     if let error = state.error {
-                        Text(error).foregroundStyle(.secondary)
-                        Button("Retry") { Task { await state.load(auth: auth) } }.disabled(state.busy)
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label(error, systemImage: "exclamationmark.circle")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            Button("Retry") { Task { await state.load(auth: auth) } }.disabled(state.busy)
+                        }
+                        .padding(20)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(BrandPalette.surface, in: RoundedRectangle(cornerRadius: 20))
                     }
-                    Button("Sign out") { Task { await auth.logout() } }.disabled(state.busy)
+                    Button("Sign out") { Task { await auth.logout() } }
+                        .font(.subheadline).frame(maxWidth: .infinity).disabled(state.busy)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading).padding(20)
+                .frame(maxWidth: 640).padding(.horizontal, 20).padding(.vertical, 24)
+                .frame(maxWidth: .infinity)
             }
             .background(BrandPalette.canvas.ignoresSafeArea())
-            .navigationTitle("Before you begin")
+            .navigationTitle("CollectiveCare")
             .navigationBarTitleDisplayMode(.inline)
         }
+    }
+
+    private var welcome: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("PILOT UPDATE")
+                    .font(.caption.weight(.semibold)).tracking(2)
+                    .foregroundStyle(BrandPalette.icon)
+                Text("Your health story,\nbrought together.")
+                    .font(.largeTitle.bold()).fixedSize(horizontal: false, vertical: true)
+                Text("Collect your records, organize your conditions, and see the bigger picture.")
+                    .font(.body).foregroundStyle(.secondary)
+            }
+            releasePreview
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("In this update").font(.title3.bold())
+                    Spacer()
+                    Text(releaseLabel).font(.caption).foregroundStyle(.secondary)
+                }
+                releaseFeature("arrow.triangle.2.circlepath", "A connected update", "Details, conditions, and overview update in sequence.")
+                releaseFeature("waveform", "Clearer recordings", "Journal and appointment titles make recordings easier to find.")
+                releaseFeature("arrow.clockwise", "Better recovery", "Retry expired processing results without starting your whole story again.")
+            }
+        }
+    }
+
+    private var releaseLabel: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Pilot"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "–"
+        return "\(version) (\(build))"
+    }
+
+    private func releaseFeature(_ symbol: String, _ title: String, _ detail: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: symbol).font(.title3).foregroundStyle(BrandPalette.icon)
+                .frame(width: 38, height: 38)
+                .background(BrandPalette.conditionIconBackground, in: RoundedRectangle(cornerRadius: 12))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.subheadline.bold())
+                Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    // Decorative preview uses no patient information and scales with text size.
+    private var releasePreview: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack {
+                    Image(systemName: "heart.text.clipboard").foregroundStyle(BrandPalette.icon)
+                    Spacer()
+                    Image(systemName: "person.crop.circle").foregroundStyle(.secondary)
+                }.font(.title2)
+                Text("My health story").font(.title2.bold())
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Updating your health story").font(.subheadline.bold())
+                    ForEach(["Read records", "Organize conditions", "Update overview"], id: \.self) { title in
+                        HStack(spacing: 10) {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(BrandPalette.icon)
+                            Text(title).font(.subheadline)
+                            Spacer()
+                        }
+                    }
+                }
+                .padding(18).frame(maxWidth: .infinity, alignment: .leading)
+                .background(BrandPalette.canvas, in: RoundedRectangle(cornerRadius: 18))
+            }
+            .padding(22)
+            .background(BrandPalette.surface, in: UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28))
+            .padding(.horizontal, 26).padding(.top, 26)
+        }
+        .background(BrandPalette.conditionIconBackground, in: RoundedRectangle(cornerRadius: 24))
+        .clipped()
+        .accessibilityHidden(true)
     }
 }
 

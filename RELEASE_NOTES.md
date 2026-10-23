@@ -1,5 +1,11 @@
 # CollectiveCare Release Notes
 
+## Version 1.0993 (18)
+
+- Refreshed pilot agreement presentation with release highlights, an app preview graphic, and clearer typography. Agreement wording and acceptance auditing are unchanged.
+- Recover condition organization when an older cached result has expired.
+- Allow an explicit retry of an expired overview result, while preventing automatic duplicate paid requests.
+
 ## Version 1.095
 
 ### Lock screen Live Activity while recording
