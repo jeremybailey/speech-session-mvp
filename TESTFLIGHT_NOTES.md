@@ -2,6 +2,8 @@
 
 ## Version 1.0993 (18) — Welcome presentation and expired-result recovery
 
+Signed archive, upload, Apple processing and export compliance completed October 23, 2026. Available to all five internal CollectiveCare Founders testers. Testing notes saved. App commit `2f7131a6`; App Store Connect build ID `47a8c318-da44-4ba3-bcea-966199175de3`.
+
 Refreshed agreement layout with release highlights and an app preview graphic. Approved agreement wording and authenticated acceptance auditing are unchanged. Condition organization can recover when an older cached result has expired; overview processing supports an explicit retry without automatic duplicate paid requests.
 
 What to test: review the welcome screen when agreement acceptance is required, then complete details, conditions and overview. If an overview result has expired, use Retry to regenerate it using the AI allowance. Confirm existing records remain available. The user verified overview recovery locally before this release. Pending deletion-after-delivery backend changes are excluded.
