@@ -1,5 +1,11 @@
 # CollectiveCare TestFlight Notes
 
+## Version 1.0993 (18) — Welcome presentation and expired-result recovery
+
+Refreshed agreement layout with release highlights and an app preview graphic. Approved agreement wording and authenticated acceptance auditing are unchanged. Condition organization can recover when an older cached result has expired; overview processing supports an explicit retry without automatic duplicate paid requests.
+
+What to test: review the welcome screen when agreement acceptance is required, then complete details, conditions and overview. If an overview result has expired, use Retry to regenerate it using the AI allowance. Confirm existing records remain available. The user verified overview recovery locally before this release. Pending deletion-after-delivery backend changes are excluded.
+
 ## Version 1.0993 (17) — Pilot agreement and acceptance records
 
 Updated pilot agreement, including temporary processing retention and no use for AI model training. Sign-in precedes acceptance so the server can record the account, timestamp, exact text/version/hash and app build. Existing users accept once; confirmed acceptance remains available offline for the same account.
