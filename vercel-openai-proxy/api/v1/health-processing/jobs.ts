@@ -5,7 +5,7 @@ import { outputTokenLimit } from '../../_lib/output-policy';
 import { processingOwner, isFastRequest } from '../../_lib/fast-details-experiment';
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { verifyKindeBearer } from "../../_lib/verifyKinde";
-import { cancel, cancelPayload, database, submit, transaction, validatePayload } from "../../_lib/ledger";
+import { cancel, cancelPayload, database, submit, retryExpiredResult, transaction, validatePayload } from "../../_lib/ledger";
 import { enqueueJob } from "../../_lib/queue";
 import { durableEnabledForOwner } from '../../_lib/pilot';
 
@@ -23,7 +23,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json(result);
     }
     if (req.method === "POST") {
-      const job = await submit(owner, validatePayload(req.body, isFastRequest(req.headers)));
+      const payload=validatePayload(req.body, isFastRequest(req.headers));
+      const job = req.body?.retry_expired_job_id === undefined ? await submit(owner,payload)
+        : await retryExpiredResult(owner,payload,req.body.retry_expired_job_id);
       // A failed publish leaves a durable queued row. Resubmitting reuses that
       // row and retries publishing, never reserves or dispatches inference twice.
       if (job.state === "queued") await enqueueJob(job.id);

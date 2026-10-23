@@ -148,6 +148,7 @@ struct OpenAIChatTransport: Sendable {
     private let authorizationHeader: @Sendable () async throws -> String
     var fastExperiment = false
     var explicitStop: DurableProcessingStop?
+    var allowsExpiredResultRetry = false
 
     init(chatCompletionsURL: URL, healthProcessingURL: URL? = nil,
          authorizationHeader: @escaping @Sendable () async throws -> String) {
@@ -217,10 +218,11 @@ struct OpenAIChatTransport: Sendable {
     }
 
     func durableRequest(payload: [String: Any], conditionWorkflow: Bool = false,
-                        transferProgress: (@Sendable (String) async -> Void)? = nil) async throws -> String {
+                        transferProgress: (@Sendable (String) async -> Void)? = nil,
+                        sessionConfiguration: URLSessionConfiguration? = nil) async throws -> String {
         guard let url = conditionWorkflow ? durableConditionWorkflowsURL : durableJobsURL else { throw URLError(.unsupportedURL) }
         let waiting = DurableProcessingWait(conditionWorkflow: conditionWorkflow)
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = sessionConfiguration ?? URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 30
         configuration.timeoutIntervalForResource = 45
         let session = URLSession(configuration: configuration)
@@ -311,7 +313,7 @@ struct OpenAIChatTransport: Sendable {
             return try JSONSerialization.jsonObject(with: data) as! [String: Any]
         }
         let authorize = authorizationHeader
-        let stopID = try await explicitStop?.register {
+        var stopID = try await explicitStop?.register {
             var request = URLRequest(url: url)
             request.httpMethod = chunked ? "PUT" : "DELETE"
             if chunked {
@@ -353,13 +355,37 @@ struct OpenAIChatTransport: Sendable {
         // Submission may deduplicate to an already completed job, but only GET
         // includes its result. Never mistake that small POST response for expiry.
         var job = try await exchange(statusURL.url!, method: "GET")
+        var retriedExpiredResult = false
         while true {
             try Task.checkCancellation()
             switch job.state {
             case "completed":
                 if let stopID { await explicitStop?.completed(stopID) }
                 guard let result = job.result else {
-                    throw NSError(domain: "AIProcessing", code: 410, userInfo: [NSLocalizedDescriptionKey: "This processing result has expired. It will not be automatically charged again."])
+                    guard allowsExpiredResultRetry && !conditionWorkflow && !retriedExpiredResult else {
+                        throw NSError(domain: "AIProcessing", code: 410, userInfo: [NSLocalizedDescriptionKey:
+                            "This saved processing result has expired. Tap Retry to generate a new result using your AI allowance. Your saved health details are unchanged."])
+                    }
+                    retriedExpiredResult = true
+                    var retryPayload = payload
+                    retryPayload["retry_expired_job_id"] = job.id
+                    let replacement = try await exchange(url, method: "POST", body: JSONSerialization.data(withJSONObject: retryPayload, options: [.sortedKeys]))
+                    statusURL.queryItems = [URLQueryItem(name: "id", value: replacement.id)]
+                    let replacementURL = statusURL.url!
+                    let cancelReplacement: @Sendable () async throws -> Void = {
+                        var request = URLRequest(url: replacementURL)
+                        request.httpMethod = "DELETE"
+                        applyExperimentHeader(to: &request)
+                        request.setValue(try await authorize(), forHTTPHeaderField: "Authorization")
+                        let (_, response) = try await URLSession.shared.data(for: request)
+                        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                            throw URLError(.badServerResponse)
+                        }
+                    }
+                    do { stopID = try await explicitStop?.register(cancelReplacement) }
+                    catch { try await cancelReplacement(); throw error }
+                    job = try await exchange(replacementURL, method: "GET")
+                    continue
                 }
                 NotificationCenter.default.post(name: Notification.Name("AIProcessingCompleted"), object: nil)
                 if let output = result.output { return try await receive(output, jobID: job.id) }

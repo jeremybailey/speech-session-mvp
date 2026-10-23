@@ -697,6 +697,7 @@ struct HealthSummaryView: View {
             }
             var transport = backend == "onDevice" ? nil : await auth.openAIChatTransport(byokFallback: apiKey)
             transport?.explicitStop = stop
+            transport?.allowsExpiredResultRetry = !automatic && !automaticResume
             if conditionsOnly {
                 await model.updateHealthStory(transport: transport, onDevice: backend == "onDevice",
                                              explicitlyRequested: true, forceConditionRefresh: forceConditions)

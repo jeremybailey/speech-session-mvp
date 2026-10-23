@@ -55,6 +55,19 @@ export async function submit(owner: string, payload: Payload) {
   const {model,effort}=summaryModelPolicy(payload.stage);
   return transaction(db => submitWithinTransaction(db,owner,payload,process.env.AI_BUDGET_ID,model,effort));
 }
+// Only an explicit client retry may regenerate an expired direct result.
+// Owner, payload identity, completion and expiry are checked before reserving.
+export async function retryExpiredResult(owner:string,payload:Payload,expiredID:unknown) {
+  if(typeof expiredID!=='string' || !/^[0-9a-f-]{36}$/i.test(expiredID)) throw new Error('invalid_request');
+  const {model,effort}=summaryModelPolicy(payload.stage),base=requestHash(owner,payload,model,effort);
+  return transaction(async db=>{
+    const old=(await db.query("SELECT j.state,j.request_hash,EXISTS(SELECT 1 FROM ai_payloads p WHERE p.job_id=j.id AND p.expires_at>now() AND jsonb_typeof(p.result->'output')='string') AS available FROM ai_jobs j WHERE j.id=$1 AND j.owner=$2",[expiredID,owner])).rows[0];
+    if(!old || old.state!=='completed' || old.available ||
+      !(old.request_hash===base || old.request_hash.startsWith(base+':explicit-expired:'))) throw new Error('invalid_request');
+    return submitWithinTransaction(db,owner,payload,process.env.AI_BUDGET_ID,model,effort,'explicit-expired');
+  });
+}
+
 // Allows a workflow checkpoint and its budgeted step to be committed together.
 export async function submitWithinTransaction(db: PoolClient, owner: string, payload: Payload, budgetID = process.env.AI_BUDGET_ID, model: ProcessingModel = 'gpt-4o-mini', effort = 'low', reuseScope?: string) {
   let hash = requestHash(owner, payload, model, effort);
