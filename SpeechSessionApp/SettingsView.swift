@@ -354,6 +354,12 @@ struct SettingsView: View {
                     Text(transcriptionPrivacyNote)
                 }
 
+                #if DEBUG
+                Section("Experiments") {
+                    NavigationLink("Whole-history B trial") { WholeHistoryBTrialView(store: store) }
+                }
+                #endif
+
                 Section {
                     LabeledContent("Today", value: usageAmount(aiUsage?.tracking_start == nil ? nil : aiUsage?.today_nusd))
                     LabeledContent("Last 48 hours", value: usageAmount(aiUsage?.tracking_start == nil ? nil : aiUsage?.last48_nusd))

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		BPHONE01 /* WholeHistoryBTrial.swift in Sources */ = {isa = PBXBuildFile; fileRef = BPHONE02; };
 		0ADAB0232F81BFD100E95396 /* SpeechSessionFeatures in Frameworks */ = {isa = PBXBuildFile; productRef = SPD01 /* SpeechSessionFeatures */; };
 		0ADAB0242F81BFD100E95396 /* SpeechSessionTranscription in Frameworks */ = {isa = PBXBuildFile; productRef = SPD02 /* SpeechSessionTranscription */; };
 		0ADAB0252F81BFD100E95396 /* KindeSDK in Frameworks */ = {isa = PBXBuildFile; productRef = SPD03 /* KindeSDK */; };
@@ -94,6 +95,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		BPHONE02 /* WholeHistoryBTrial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WholeHistoryBTrial.swift; sourceTree = "<group>"; };
 		FR01 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		FR02 /* SpeechSessionAppApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechSessionAppApp.swift; sourceTree = "<group>"; };
 		FR03 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -209,6 +211,7 @@
 				FR06 /* SessionDetailView.swift */,
 				FR07 /* Assets.xcassets */,
 				FR08 /* SettingsView.swift */,
+				BPHONE02 /* WholeHistoryBTrial.swift */,
 				FR09 /* OnDeviceSummaryService.swift */,
 				FR10 /* GlobalHealthSummaryView.swift */,
 				FR33 /* GlobalSummaryMapReduceSupport.swift */,
@@ -289,6 +292,7 @@
 				FW01 /* Frameworks */,
 				RES01 /* Resources */,
 				CPY01 /* Embed Foundation Extensions */,
+							BPHONE03 /* Private B trial configuration (Debug only) */,
 			);
 			buildRules = (
 			);
@@ -417,6 +421,10 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		BPHONE03 /* Private B trial configuration (Debug only) */ = {isa = PBXShellScriptBuildPhase; buildActionMask = 2147483647; files = (); inputPaths = ("$(SRCROOT)/SpeechSessionApp/WholeHistoryB.local.json",); name = "Private B trial configuration (Debug only)"; outputPaths = ("$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/WholeHistoryB.local.json",); runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = "if [ \"$CONFIGURATION\" = \"Debug\" ] && [ -f \"$SRCROOT/SpeechSessionApp/WholeHistoryB.local.json\" ]; then\n  mkdir -p \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\n  cp \"$SRCROOT/SpeechSessionApp/WholeHistoryB.local.json\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/WholeHistoryB.local.json\"\nfi"; };
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		SRC01 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -438,6 +446,7 @@
 				BF05 /* RecordingView.swift in Sources */,
 				BF06 /* SessionDetailView.swift in Sources */,
 				BF08 /* SettingsView.swift in Sources */,
+				BPHONE01 /* WholeHistoryBTrial.swift in Sources */,
 				BF09 /* OnDeviceSummaryService.swift in Sources */,
 				BF10 /* GlobalHealthSummaryView.swift in Sources */,
 				BF30 /* GlobalSummaryMapReduceSupport.swift in Sources */,

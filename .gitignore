@@ -46,3 +46,6 @@ node_modules
 # Python test/build caches
 __pycache__/
 *.py[cod]
+
+# Private expiring phone B diagnostic access; never commit or ship in Release.
+SpeechSessionApp/WholeHistoryB.local.json
