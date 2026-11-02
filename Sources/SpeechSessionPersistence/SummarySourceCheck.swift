@@ -88,6 +88,12 @@ public enum SummarySourceCheck {
         Missing optional fields are not claims: do not demand a practitioner, date, dose or other absent value.
         Body-system/topic/status codes need source support for their meaning, not a literal mention of the code word.
         Check every component of a structured careInstruction, not just its instruction title.
+        Its bucket is semantic: carePlan means a definite treatment/self-care recommendation,
+        followUp a discrete review/booking/investigation/reporting next step, considerations a
+        conditional, declined, exploratory, background, anticipatory or already-received item.
+        Owner must be explicitly supported. The instruction must preserve conditions, negation,
+        doses, duration and any recalled/declined status; never imply adherence or acceptance.
+        A bucket code need not occur literally in the source, but its meaning must be supported.
 
         Check category, speaker/patient attribution, certainty, negation, dates, dose and timing. A patient report is
         valid as a report without clinician confirmation. Do not promote it to a diagnosis. A future offer, option,

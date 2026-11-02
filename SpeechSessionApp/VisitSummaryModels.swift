@@ -1081,6 +1081,10 @@ enum VisitSummaryJSONParser {
                 goal: string(for: ["goal"]), schedule: string(for: ["schedule"]), reviewTiming: string(for: ["reviewTiming"]),
                 isRecurring: dict["isRecurring"] as? Bool)
         }
+        evidence.careInstruction?.bucket = string(for: ["careBucket"]).flatMap(CarePlanBucket.init(rawValue:))
+        evidence.careInstruction?.owner = string(for: ["careOwner"])
+        evidence.careInstruction?.consideration = string(for: ["careConsideration"])
+        if evidence.careInstruction?.bucket != nil { evidence.careOrganizationVersion = CarePlanOrganization.revision }
         evidence.reasonStarted = string(for: ["reasonStarted"])
         evidence.reasonStopped = string(for: ["reasonStopped"])
         evidence.actionKind = string(for: ["actionKind"])

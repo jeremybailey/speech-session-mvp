@@ -8,7 +8,7 @@
     "test:condition-recovery": "node scripts/test-condition-recovery.mjs"
   },
   "engines": {
-    "node": ">=22.12"
+    "node": "24.x"
   },
   "dependencies": {
     "@vercel/queue": "^0.7.0",

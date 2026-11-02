@@ -328,7 +328,7 @@ final class FastDetailsTests: XCTestCase {
             catch { XCTAssertEqual((error as NSError).code, code) }
         }
     }
-    func testCompactEvidenceRejectsMissingInventedAndDuplicateQuotes() throws {
+    func testCompactEvidenceRejectsInventedAndDuplicateQuotes() throws {
         let entry = SummaryEntry(category: .symptoms, title: "No pain")
         let id = entry.id.uuidString
         func response(_ evidence: [[String: String]]) throws -> String {
@@ -336,9 +336,10 @@ final class FastDetailsTests: XCTestCase {
                 "id": id, "supported": true, "reason": "", "citations": ["title": ["Q"]]
             ]]]), as: UTF8.self)
         }
-        for evidence in [[], [["id":"Q","excerpt":"No pain"],["id":"Q","excerpt":"No pain"]]] {
-            XCTAssertThrowsError(try FastDetailsCheck.decode(response(evidence), entries: [entry], source: "No pain"))
-        }
+        let missing = try FastDetailsCheck.decode(response([]), entries: [entry], source: "No pain")
+        XCTAssertTrue(missing[0].citations.isEmpty)
+        XCTAssertFalse(SummaryVerification.isVisible(SummaryVerification.assess(entry, check: missing[0], source: "No pain"), source: "No pain"))
+        XCTAssertThrowsError(try FastDetailsCheck.decode(response([["id":"Q","excerpt":"No pain"],["id":"Q","excerpt":"No pain"]]), entries: [entry], source: "No pain"))
         let invented = try FastDetailsCheck.decode(response([["id":"Q","excerpt":"Has pain"]]), entries: [entry], source: "No pain")
         XCTAssertTrue(invented[0].citations.isEmpty)
         let rejected = SummaryVerification.assess(entry, check: invented[0], source: "No pain")

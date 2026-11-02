@@ -46,6 +46,8 @@ private struct HealthFactEditor: View {
     @State private var careReview: String
     @State private var recurring: Bool?
     @State private var saving = false
+    @State private var practitionerID: UUID?
+    @State private var choosingPractitioner = false
     @State private var source: Session?
     @State private var remove = false
 
@@ -66,6 +68,7 @@ private struct HealthFactEditor: View {
         _careSchedule = State(initialValue: sourceEntry.evidence?.careInstruction?.schedule ?? "")
         _careReview = State(initialValue: sourceEntry.evidence?.careInstruction?.reviewTiming ?? "")
         _recurring = State(initialValue: sourceEntry.evidence?.careInstruction?.isRecurring)
+        _practitionerID = State(initialValue: fact.preference.practitionerContactID)
         _entry = State(initialValue: displayEntry)
         _dateText = State(initialValue: sourceEntry.evidence?.eventDate ?? "")
         _reviewed = State(initialValue: fact.isReviewed)
@@ -94,7 +97,7 @@ private struct HealthFactEditor: View {
                 }
                 LabeledContent("When") { TextField("Date or unknown", text: $dateText).multilineTextAlignment(.trailing) }
                 ForEach($entry.fields) { $field in
-                    if !HealthStoryText.isInternalField(field.label) && !(field.label.lowercased() == "details" && originalEntry.fields.first(where: { $0.id == field.id })?.value == originalEntry.details) {
+                    if !HealthDetailPresentation.isPractitionerField(field.label) && !HealthStoryText.isInternalField(field.label) && !(field.label.lowercased() == "details" && originalEntry.fields.first(where: { $0.id == field.id })?.value == originalEntry.details) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(field.label).font(.subheadline).foregroundStyle(.secondary)
                         TextField("Not recorded", text: $field.value, axis: .vertical)
@@ -103,6 +106,17 @@ private struct HealthFactEditor: View {
                 }
             }
             if fact.category != .practitionerContact {
+                Section("Practitioner") {
+                    Button { choosingPractitioner = true } label: {
+                        LabeledContent("Contact", value: model.snapshot.careTeam.first(where: { $0.id == practitionerID })?.name ?? "Choose or add")
+                    }
+                    let sourceNames = ([originalEntry.evidence?.practitioner].compactMap { $0 }
+                        + originalEntry.fields.filter { HealthDetailPresentation.isPractitionerField($0.label) }.map(\.value))
+                        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                    ForEach(Array(Set(sourceNames)).sorted(), id: \.self) { name in
+                        Text("From source: \(name)").font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
                 Section("Status") {
                     if fact.isAction {
                         Picker("Status", selection: $actionStatus) {
@@ -169,6 +183,9 @@ private struct HealthFactEditor: View {
             }
         }
         .interactiveDismissDisabled(saving)
+        .sheet(isPresented: $choosingPractitioner) {
+            PractitionerPicker(model: model) { practitionerID = $0 }
+        }
         .sheet(item: $source) { record in
             NavigationStack {
                 SessionDetailView(session: record, store: store, home: home, initialTab: .source)
@@ -201,8 +218,13 @@ private struct HealthFactEditor: View {
         }
         if CareInstructionPresentation.applies(updated) {
             if updated.evidence == nil { updated.evidence = ClinicalEvidence() }
+            let previousOrganization = updated.evidence?.careInstruction
             updated.evidence?.careInstruction = CareInstruction(instruction: updated.title, directions: updated.details.nilIfEmpty,
                 goal: careGoal.nilIfEmpty, schedule: careSchedule.nilIfEmpty, reviewTiming: careReview.nilIfEmpty, isRecurring: recurring)
+            updated.evidence?.careInstruction?.bucket = previousOrganization?.bucket
+            updated.evidence?.careInstruction?.owner = previousOrganization?.owner
+            updated.evidence?.careInstruction?.consideration = previousOrganization?.consideration
+
         }
         if dateText != (originalEntry.evidence?.eventDate ?? "") {
             var evidence = updated.evidence ?? ClinicalEvidence()
@@ -230,6 +252,7 @@ private struct HealthFactEditor: View {
         guard let current = model.facts.first(where: { $0.id == fact.id }) else { return }
         var preference = current.preference
         if addingFromSource { preference.hidden = false }
+        preference.practitionerContactID = practitionerID
         preference.clinicalStatus = status
         preference.actionStatus = actionStatus
         preference.reviewedRevision = reviewed ? current.revision : nil
@@ -260,6 +283,8 @@ struct HealthManualEntryView: View {
     @State private var title = ""
     @State private var details = ""
     @State private var category: SummaryEntryCategory = .otherNotes
+    @State private var practitionerID: UUID?
+    @State private var choosingPractitioner = false
     @State private var saving = false
     var body: some View {
         NavigationStack {
@@ -269,7 +294,15 @@ struct HealthManualEntryView: View {
                 }
                 TextField("Title", text: $title)
                 TextField("What would you like to record?", text: $details, axis: .vertical)
+                if category != .practitionerContact {
+                    Button { choosingPractitioner = true } label: {
+                        LabeledContent("Practitioner", value: model.snapshot.careTeam.first(where: { $0.id == practitionerID })?.name ?? "Choose or add")
+                    }
+                }
                 Text("This will be saved as information added by you. You can add a date and other details afterwards.").foregroundStyle(.secondary)
+            }
+            .sheet(isPresented: $choosingPractitioner) {
+                PractitionerPicker(model: model) { practitionerID = $0 }
             }
             .navigationTitle("Add health detail")
             .onAppear { category = initialCategory }
@@ -295,6 +328,7 @@ struct HealthManualEntryView: View {
                                 await model.refresh()
                                 if let fact = model.facts.first(where: { $0.latest.id == entry.id }) {
                                     var preference = fact.preference
+                                    preference.practitionerContactID = practitionerID
                                     preference.topicIDs = topicID.map { [$0] } ?? []
                                     preference.reviewedRevision = fact.revision
                                     _ = await model.save(preference)

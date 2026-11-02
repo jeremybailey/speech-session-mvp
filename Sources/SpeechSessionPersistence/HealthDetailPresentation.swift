@@ -2,6 +2,13 @@ import Foundation
 
 /// Display projection only: structured values take precedence over repeated prose.
 public enum HealthDetailPresentation {
+    /// Attribution fields use the contact picker, never the generic text editor.
+    public static func isPractitionerField(_ label: String) -> Bool {
+        let key = label.lowercased().filter { $0.isLetter }
+        return ["practitioner", "practitionername", "provider", "providername", "doctor", "doctorname",
+                "clinician", "clinicianname", "healthcareprovider", "careprovider"].contains(key)
+    }
+
     public static func fields(_ entry: SummaryEntry) -> [SummaryEntryField] {
         var seen = Set<String>()
         return entry.fields.filter {

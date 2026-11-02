@@ -6,7 +6,7 @@ export type Group = { name: string; bodySystem: string; isPrimary: boolean; reas
   entryIDs: string[]; stableID?: string; entryReasons?: string[] };
 export type Synthesis = { groups: Group[]; unassigned: string[] };
 type Contract = { instructions: string; response_format: Record<string, unknown> };
-export type ConditionPlan = { version: 1; evidenceEncoding?: 'table-v1'; workload_type?:WorkloadType; clientRevision?:string; preserved: Synthesis; batches: Entry[][];
+export type ConditionPlan = { version: 1; evidenceEncoding?: 'table-v1'; workload_type?:WorkloadType; clientRevision?:string; retryAttempt?:string; preserved: Synthesis; batches: Entry[][];
   contextEntries: Entry[]; packRecovery?: boolean; repairRejectedLinks?: boolean; repairRejectedHeadings?: boolean; headingRecoveryInstructions?: string; mapping: Contract; verification: Contract };
 type Recovery = {batch:number;entryIDs:string[];rejectedNames:string[];rejectedByEntry?:Record<string,string[]>};
 export type ConditionState = { batch: number; phase: 'mapping'|'verification'|'completed';
@@ -94,6 +94,7 @@ function checkedConditionPlan(value: unknown): ConditionPlan {
     Array.isArray(p.contextEntries));
   requireValue(p.evidenceEncoding===undefined || p.evidenceEncoding==='table-v1');
   requireValue(p.clientRevision===undefined || (typeof p.clientRevision==='string' && /^[A-Za-z0-9-]{1,80}$/.test(p.clientRevision)));
+  requireValue(p.retryAttempt===undefined || (typeof p.retryAttempt==='string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.retryAttempt)));
   requireValue(p.packRecovery===undefined || (typeof p.packRecovery==='boolean' && (!p.packRecovery || p.repairRejectedHeadings===true)));
   requireValue(p.repairRejectedLinks===undefined || (typeof p.repairRejectedLinks==='boolean' && (!p.repairRejectedLinks || p.repairRejectedHeadings===true)));
   requireValue(p.repairRejectedHeadings===undefined || typeof p.repairRejectedHeadings==='boolean');

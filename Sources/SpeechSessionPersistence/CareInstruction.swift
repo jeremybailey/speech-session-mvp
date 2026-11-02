@@ -2,6 +2,9 @@ import Foundation
 
 /// Optional source-derived fields. Absence is not an invitation to invent a schedule or goal.
 public struct CareInstruction: Codable, Equatable, Hashable, Sendable {
+    public var bucket: CarePlanBucket?
+    public var owner: String?
+    public var consideration: String?
     public var instruction: String?
     public var directions: String?
     public var goal: String?
@@ -15,8 +18,41 @@ public struct CareInstruction: Codable, Equatable, Hashable, Sendable {
     }
 }
 
+public enum CarePlanBucket: String, Codable, CaseIterable, Sendable {
+    case carePlan, followUp, considerations
+    public var title: String {
+        switch self { case .carePlan: return "Care plan"; case .followUp: return "Follow-up"; case .considerations: return "Other considerations" }
+    }
+}
+
 public enum CareInstructionPresentation {
     public static func applies(_ entry: SummaryEntry) -> Bool { entry.category == .carePlan || entry.category == .followUp }
+    public static func bucket(_ fact: HealthFact) -> CarePlanBucket {
+        fact.latest.evidence?.careInstruction?.bucket ?? (fact.category == .followUp ? .followUp : .carePlan)
+    }
+    public static func sourceOrderDate(_ entry: SummaryEntry, sessions: [Session]) -> Date? {
+        let session = sessions.first { $0.id == entry.sourceSessionID }
+        if session?.inputType == .audio { return entry.sourceDate }
+        // An uploaded document's timestamp is not the recommendation's date.
+        if entry.evidence?.eventDate?.isEmpty == false { return entry.relevantDate }
+        return nil
+    }
+    public static func dateLabel(_ entry: SummaryEntry, sessions: [Session]) -> String {
+        let session = sessions.first { $0.id == entry.sourceSessionID }
+        if session?.inputType == .audio, let date = entry.sourceDate {
+            return "Source: " + date.formatted(date: .abbreviated, time: .omitted)
+        }
+        if let date = entry.evidence?.eventDate, !date.isEmpty { return "Recorded: " + date }
+        if let date = entry.sourceDate { return "Source date unknown · Added " + date.formatted(date: .abbreviated, time: .omitted) }
+        return "Source date unknown"
+    }
+    public static func sorted(_ facts: [HealthFact], sessions: [Session]) -> [HealthFact] {
+        facts.sorted {
+            let a = $0.occurrences.compactMap { sourceOrderDate($0, sessions: sessions) }.max() ?? .distantPast
+            let b = $1.occurrences.compactMap { sourceOrderDate($0, sessions: sessions) }.max() ?? .distantPast
+            return a == b ? $0.id < $1.id : a > b
+        }
+    }
     public static func canonical(_ text: String) -> String {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
             .replacingOccurrences(of: "knapsack", with: "backpack")
@@ -81,6 +117,9 @@ public enum CareInstructionPresentation {
               ae.practitioner == be.practitioner, ae.eventDate == be.eventDate,
               ae.bodySystem == be.bodySystem, ae.dose == be.dose, ae.actionKind == be.actionKind,
               a.clinicalStatus == b.clinicalStatus, ae.frequency == be.frequency,
+              ae.careInstruction?.bucket == be.careInstruction?.bucket,
+              ae.careInstruction?.owner == be.careInstruction?.owner,
+              ae.careInstruction?.consideration == be.careInstruction?.consideration,
               ae.careInstruction?.isRecurring == be.careInstruction?.isRecurring else { return false }
         if !allowDifferentEvidence {
             guard a.sourceSessionID == b.sourceSessionID,

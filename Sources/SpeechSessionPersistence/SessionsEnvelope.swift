@@ -2,6 +2,7 @@ import Foundation
 
 struct SessionsEnvelope: Codable, Equatable {
     var verifiedPairDecisions: [String: Bool] = [:]
+    var carePlanCards: [CarePlanCard] = []
     var version: Int
     var sessions: [Session]
     var folders: [SessionFolder]
@@ -14,7 +15,7 @@ struct SessionsEnvelope: Codable, Equatable {
     static let currentVersion = 4
 
     enum CodingKeys: String, CodingKey {
-        case version, sessions, folders, topics, careTeam, preferences, profile, verifiedPairDecisions
+        case version, sessions, folders, topics, careTeam, preferences, profile, verifiedPairDecisions, carePlanCards
     }
 
     init(version: Int = Self.currentVersion, sessions: [Session], folders: [SessionFolder] = []) {
@@ -26,6 +27,7 @@ struct SessionsEnvelope: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         verifiedPairDecisions = try c.decodeIfPresent([String: Bool].self, forKey: .verifiedPairDecisions) ?? [:]
+        carePlanCards = try c.decodeIfPresent([CarePlanCard].self, forKey: .carePlanCards) ?? []
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
         sessions = try c.decode([Session].self, forKey: .sessions)
         folders = try c.decodeIfPresent([SessionFolder].self, forKey: .folders) ?? []

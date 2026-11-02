@@ -43,6 +43,8 @@ public enum SummaryResponseError: Error, LocalizedError, Equatable {
                 recovery = "Check AI usage in Settings. Spending and pending requests both count toward the cap. Do not repeatedly retry; contact support if processing remains blocked."
             case 401, 403:
                 recovery = "Open Settings and sign in again before continuing."
+            case 429, 500...599:
+                recovery = "Wait a few minutes, then tap Retry unfinished update. You can return to your saved details now. If this happens again, contact support with this message."
             default:
                 recovery = "Check AI usage in Settings and contact support with this message before retrying."
             }

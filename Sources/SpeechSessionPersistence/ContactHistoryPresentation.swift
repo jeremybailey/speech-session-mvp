@@ -153,3 +153,51 @@ public struct ContactPresentationGroup: Identifiable, Sendable {
         }
     }
 }
+
+/// Condition contact navigation, without creating new clinical relationships or modifying sources.
+public enum ConditionContacts {
+    public static func groups(for condition: ConditionSummary, allFacts: [HealthFact], snapshot: HealthMemorySnapshot) -> [ContactPresentationGroup] {
+        let members = snapshot.careTeam.filter { $0.duplicateOf == nil }
+        let represented = Set(members.flatMap(\.sourceEntryIDs))
+        let contactFacts = allFacts.filter {
+            $0.category == .practitionerContact && !$0.preference.hidden &&
+            !$0.occurrences.contains { represented.contains($0.id) }
+        }
+        var memberIDs = Set<UUID>()
+        var factIDs = Set(condition.facts.filter { $0.category == .practitionerContact }.map(\.id))
+        func nameKey(_ name: String) -> String {
+            name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        }
+        for fact in condition.facts where !fact.preference.hidden {
+            if let id = fact.preference.practitionerContactID {
+                memberIDs.insert(id)
+                continue
+            }
+            // A contact fact already assigned to this condition may have become a saved contact.
+            if fact.category == .practitionerContact {
+                let ids = Set(fact.occurrences.map(\.id))
+                members.filter { !$0.sourceEntryIDs.allSatisfy { !ids.contains($0) } }.forEach { memberIDs.insert($0.id) }
+                continue
+            }
+            for entry in fact.occurrences {
+                guard let name = entry.evidence?.practitioner, !nameKey(name).isEmpty,
+                      let assessment = entry.evidence?.assessment, assessment.admission == .supported,
+                      assessment.contentHash == SummaryVerification.contentHash(entry),
+                      let source = snapshot.sessions.first(where: { $0.id == entry.sourceSessionID }),
+                      assessment.sourceHash == SummaryVerification.hash(source.transcript),
+                      assessment.citations.contains(where: {
+                          $0.field == "practitioner" && !$0.excerpt.isEmpty && source.transcript.contains($0.excerpt)
+                      }) else { continue }
+                let matchingMembers = members.filter { nameKey($0.name) == nameKey(name) }
+                let matchingFacts = contactFacts.filter { nameKey($0.title) == nameKey(name) }
+                // Same-name people remain separate; ambiguous identity needs user selection.
+                guard matchingMembers.count + matchingFacts.count == 1 else { continue }
+                matchingMembers.forEach { memberIDs.insert($0.id) }
+                matchingFacts.forEach { factIDs.insert($0.id) }
+            }
+        }
+        return ContactPresentationGroup.groups(facts: contactFacts.filter { factIDs.contains($0.id) },
+                                               members: members.filter { memberIDs.contains($0.id) })
+    }
+}

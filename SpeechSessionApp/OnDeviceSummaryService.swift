@@ -121,6 +121,11 @@ struct OnDeviceSummaryService {
         var actionKind: String?
         @Guide(description: "Care plans only: one complete action sentence from the source. Do not repeat it in details or another row.")
         var instruction: String?
+        @Guide(description: "carePlan for definite treatment/self-care recommendations; followUp for review, booking, investigating or reporting; considerations for conditional, declined, exploratory, background, anticipatory or already-received items. Classify by meaning.")
+        var careBucket: String?
+        @Guide(description: "Explicit next-step owner (person/role), followUp only. Never infer.")
+        var careOwner: String?
+        var careConsideration: String?
         var additionalDirections: String?
         var goal: String?
         var schedule: String?
@@ -411,6 +416,10 @@ struct OnDeviceSummaryService {
                 evidence.careInstruction = CareInstruction(instruction: row.instruction, directions: row.additionalDirections,
                     goal: row.goal, schedule: row.schedule, reviewTiming: row.reviewTiming, isRecurring: row.isRecurring)
             }
+            evidence.careInstruction?.bucket = row.careBucket.flatMap(CarePlanBucket.init(rawValue:))
+            evidence.careInstruction?.owner = row.careOwner
+            evidence.careInstruction?.consideration = row.careConsideration
+            if evidence.careInstruction?.bucket != nil { evidence.careOrganizationVersion = CarePlanOrganization.revision }
             evidence.actionKind = row.actionKind; evidence.statusExplicit = row.statusExplicit
             evidence.reviewReason = row.reviewReason
             return VisitSummaryFact(

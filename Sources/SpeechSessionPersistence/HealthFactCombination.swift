@@ -26,6 +26,7 @@ public enum HealthFactConsolidation {
         // An untouched occurrence can adopt the patient's existing choice, including a removal.
         guard savedIDs.contains(a.id), savedIDs.contains(b.id) else { return true }
         return a.clinicalStatus == b.clinicalStatus && a.actionStatus == b.actionStatus
+            && a.preference.practitionerContactID == b.preference.practitionerContactID
             && a.preference.hidden == b.preference.hidden
             && a.preference.dueDate == b.preference.dueDate
             && !b.preference.reminderEnabled

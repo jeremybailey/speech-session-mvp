@@ -413,3 +413,50 @@ once these changes are pushed. No production code or deployment changed for this
 coverage expansion.
 
 Release confirmation (2026-10-12): Jeremy confirmed Asha’s condition organization completed successfully after the follow-up fix (`dpl_4Jwq9mNtey6f6bJwQcX6jfKbX3Mp`). Build 14 carries the same iOS source as build 13 with a new build number; recovery is server-side.
+
+### Delete clinical content after confirmed delivery — local change 2026-10-13
+
+**Not deployed or installed yet.** Migration `008_result_receipts.sql` and the
+matching app build must ship together. Production readiness now requires the
+receipt columns. Existing clients do not acknowledge delivery and continue to
+use the seven-day expiry fallback; do not describe immediate deletion as live.
+
+A successful socket write is not proof that the phone received the result. The
+new app assembles the full output (including every chunk), checks any transfer
+digest, and atomically saves an account-scoped local recovery receipt before
+sending an authenticated `PATCH ?id=…` with the output's SHA-256 digest. The
+server compares that digest and transactionally deletes the clinical payload.
+Only after cleanup is confirmed does the transport return success to its caller.
+A lost acknowledgment response can be retried idempotently from the local copy
+without a new inference call. Cleanup receipts remain available when inference
+flags are disabled. An unconfirmed receipt produces an actionable app error.
+
+For condition workflows, deletion includes the parent plan/checkpoint/final
+result, linked upload parts and upload identity, and internal child inputs and
+outputs. A shared child stays available while another retained parent needs it;
+the last parent receipt removes that shared content. Parent receipt and child
+attachment transactions coordinate to avoid a race with deletion. A distinct
+new parent that needs already-purged output creates a parent-scoped replacement
+job under the normal budget; retrying the original standalone request does not
+silently dispatch new inference. Cost/accounting records and dedupe tombstones
+remain and contain account-linked metadata, not the clinical text/results.
+
+Local receipts are excluded from backup, use explicit iOS file protection,
+contain only the result and job identifier, and expire after seven days (pruned
+on access). They live with local history, are not included in transfer exports,
+and are cleared on record deletion or history replacement. They ensure the app
+can recover if it terminates between cloud deletion and final local publication.
+
+Incomplete/undelivered work still has seven-day clinical expiry and scheduled
+cleanup; expiry is not a physical erasure SLA. This mechanism deletes live
+application database rows, not database backups, Vercel logs, OpenAI's records,
+or copies previously shared by the user. Those require separate verified
+retention controls before broader assurances can be made.
+
+Validation uses synthetic data only: receipt digest mismatch and partial-result
+rejection, account isolation, repeated/concurrent acknowledgments, parent/child
+purging, shared dependency protection, upload deletion, preserved costs/dedupe,
+and parent-scoped replacement without duplicate inference. Swift checks cover
+local receipt persistence, account/experiment isolation, expiry and original
+record deletion. No production migrations, data changes or AI calls are part of
+these checks.

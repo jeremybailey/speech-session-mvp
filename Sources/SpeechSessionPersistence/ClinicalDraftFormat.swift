@@ -8,12 +8,22 @@ public enum ClinicalDraftFormat {
         "clinicalStatus", "statusExplicit", "factKey", "bodySystem", "sourcePage", "eventDate",
         "practitioner", "assessmentMethod", "topicNames", "dose", "strength", "frequency",
         "route", "duration", "instructions", "reasonStarted", "reasonStopped", "actionKind",
-        "instruction", "additionalDirections", "goal", "schedule", "reviewTiming", "isRecurring",
+        "careBucket", "careOwner", "careConsideration", "instruction", "additionalDirections", "goal", "schedule", "reviewTiming", "isRecurring",
         "role", "org", "phone", "email", "address"
     ]
     public static func instructions(for system: String, stage: String) -> String {
         guard stage == "extraction" else { return system }
         return system + """
+
+        CARE ORGANIZATION: for every carePlan/followUp fact include instruction and careBucket.
+        careBucket=carePlan for definite treatment/self-care recommendations (not proof of adherence);
+        followUp for discrete next steps such as review, booking, investigating or reporting;
+        considerations for conditional advice, declined options, exploratory suggestions, clinical
+        reasoning, anticipatory information and treatment already received. Classify by meaning,
+        never keywords. Keep conditions, negation, dose, duration and recalled/declined status in
+        the concise instruction. For followUp include careOwner only when explicitly supported
+        (person or role); never infer ownership. careConsideration may name the supported type.
+        Do not drop context from details. Do not infer acceptance or current status.
 
         CLOUD RESPONSE FORMAT: use the supplied facts schema instead of top-level section arrays.
         Each facts element has category, title, details, sourceExcerpt, reportedBy, statementType,

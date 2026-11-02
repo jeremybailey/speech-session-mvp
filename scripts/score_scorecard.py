@@ -85,6 +85,50 @@ def score(key, output, judgments, include_draft=False):
             'rows': results}
 
 
+def score_graph(key, output, judgments, include_draft=False):
+    """Extend semantic item review to Conditions and Relationships.
+
+    Callers bind key/output hashes before entry, as the item scorer CLI does.
+    No keyword matching establishes clinical correctness; Draft is provisional.
+    """
+    import re
+    entities = output['entities']
+    ids = {e['id'] for e in entities}
+    assert len(ids) == len(entities), 'Duplicate graph output IDs'
+    result = {}
+    for sheet, pattern, status_column, expected_column, dimensions in [
+        ('Conditions', r'C[0-9]+', 8, 3, {'presence', 'meaning', 'bodySystem', 'appSection', 'sourceSupport'}),
+        ('Relationships', r'[LR][0-9]+', 5, None, {'presence', 'meaning', 'direction', 'ownership', 'sourceSupport'}),
+    ]:
+        rows = [r for r in key['sheets'][sheet]['values'] if r and re.fullmatch(pattern, str(r[0]))]
+        from collections import Counter
+        ambiguous = {rid for rid, count in Counter(r[0] for r in rows).items() if count > 1}
+        assessed = judgments[sheet]
+        assert set(assessed) == {r[0] for r in rows}, 'Graph judgments must cover every frozen expectation'
+        scored = []
+        for row in rows:
+            j = assessed[row[0]]
+            assert set(j['entityIDs']) <= ids, 'Invented graph output ID'
+            assert j['reason'].strip(), 'Individual explanation required'
+            if row[0] in ambiguous:
+                scored.append({'itemID':row[0], 'reviewStatus':'Ambiguous duplicate ID', 'entityIDs':j['entityIDs'], 'checks':{}, 'result':'Excluded', 'reason':'Frozen key has conflicting rows with this ID; key review required.'})
+                continue
+            negative = (row[expected_column] == 'Must not appear') if expected_column is not None else row[2].startswith('Must not')
+            required = (dimensions - {'presence'}) | ({'absence'} if negative else {'presence'})
+            checks = j['checks']
+            assert required <= checks.keys(), 'Missing graph review dimensions'
+            assert all(v in ('Pass', 'Fail', 'Not scored') for v in checks.values())
+            assert all(checks[d] != 'Not scored' for d in required), 'Required graph dimensions cannot be skipped'
+            if not negative and checks['presence'] == 'Pass': assert j['entityIDs'], 'Presence requires matched output'
+            status = row[status_column] if len(row) > status_column else ''
+            expectation = row[expected_column] if expected_column is not None else 'Must appear'
+            eligible = expectation in ('Must appear', 'Must not appear') and (status == 'Reviewed' or (include_draft and status == 'Draft'))
+            scored.append({'itemID':row[0], 'reviewStatus':status, 'entityIDs':j['entityIDs'], 'checks':checks,
+                           'result':('Fail' if 'Fail' in checks.values() else 'Pass') if eligible else 'Excluded', 'reason':j['reason']})
+        result[sheet] = {'rows':scored, 'score':tally(scored), 'reviewedScore':tally([r for r in scored if r['reviewStatus']=='Reviewed']), 'ambiguousIDs':sorted(ambiguous)}
+    return {'mode':'provisional-draft' if include_draft else 'reviewed-only', **result}
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--key', required=True); p.add_argument('--output', required=True)

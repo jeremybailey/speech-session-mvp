@@ -13,7 +13,7 @@ public enum SummaryCategoryClassification {
         case .vaccinations: return "Vaccine-specific history or events. Preserve prescribed, dispensed, planned and administered distinctions; a prescription does not prove administration."
         case .allergies: return "Explicit allergies, intolerances or adverse reactions, including explicit negative allergy history. Not an unrelated symptom or medication side-effect speculation."
         case .testsAndLabs: return "Reported laboratory, imaging and diagnostic-test results, including normal results, values, units and reference ranges. A future test order as an action belongs in carePlan."
-        case .followUp: return "Return timing, appointments, booking and callback logistics. Therapeutic instructions belong in carePlan."
+        case .followUp: return "Discrete next steps to review, book, investigate, report or contact someone, including return timing. Preserve an explicitly stated owner; never infer one. Therapeutic/self-care instructions belong in carePlan."
         case .biopsychosocialContext: return "Explicit life circumstances affecting the patient's context: work, housing, relationships, social support, caregiving, significant life events, diet, sleep habits, substance use, coping and psychological context. Symptoms belong in symptoms; diagnoses in findings; clinician-directed changes in carePlan. Never infer causation or social circumstances from a diagnosis."
         case .otherNotes: return "Relevant personal reflections or health information that genuinely fits none of the other categories. Not a destination for metadata, disclaimers or uncertain classification."
         }

@@ -36,8 +36,12 @@ struct HealthSummaryView: View {
     }
     @State private var recordsExpanded = false
     @State private var pendingDeletion: Session?
+    @State private var practitionerFactIDs: [String]?
     @State private var taskSheet: HealthSheet?
     @State private var showProcessingConsent = false
+    @State private var showConditionRetryConsent = false
+    @AppStorage("collectivecare.conditionRetryAttempt") private var conditionRetryAttempt = ""
+    @AppStorage("collectivecare.conditionRetryInput") private var conditionRetryInput = ""
     @State private var reprocessAllRecordsRequest = false
     @State private var resumeAfterConsent = false
     @State private var preparationTask: Task<Void, Never>?
@@ -198,8 +202,7 @@ struct HealthSummaryView: View {
                         prepare()
                     }.disabled(model.isProcessing || model.facts.isEmpty)
                     Button("Regenerate conditions", systemImage: "square.grid.2x2") {
-                        conditionsOnlyRequest = true
-                        prepare()
+                        showConditionRetryConsent = true
                     }.disabled(model.isProcessing || model.facts.isEmpty || backend == "onDevice")
                     Button("Reprocess health details", systemImage: "doc.text.magnifyingglass") {
                         reprocessAllRecordsRequest = true
@@ -376,6 +379,10 @@ struct HealthSummaryView: View {
         }
         .sheet(item: $taskSheet) { sheet in
             switch sheet {
+            case .carePlan(let conditionID, let inputID):
+                NavigationStack {
+                    carePlanEditor(conditionID: conditionID, inputID: inputID)
+                }
             case .fact(let id):
                 NavigationStack { HealthFactDetailView(factID: id, model: model, home: home, store: store) }
             case .record(let session):
@@ -386,7 +393,7 @@ struct HealthSummaryView: View {
             case .add(let category):
                 HealthManualEntryView(model: model, home: home, store: store, topicID: nil, initialCategory: category)
             case .contact(let member): CareTeamEditor(member: member, model: model)
-            case .progress: SummaryUpdateProgressSheet(model: model, progress: model.processingProgress, supportsConditions: backend != "onDevice", onStop: stopPreparation)
+            case .progress: SummaryUpdateProgressSheet(model: model, progress: model.processingProgress, supportsConditions: backend != "onDevice", onRetry: { prepare(retryUnfinished: true) }, onNewConditionAttempt: startNewConditionAttempt, onStop: stopPreparation)
             case .share: HealthShareView(model: model)
             case .condition(let id): ConditionAssignmentSheet(factID: id, model: model)
             case .combine(let id): FactDuplicateSheet(factID: id, model: model)
@@ -409,6 +416,12 @@ struct HealthSummaryView: View {
         } message: {
             Text("Text from your records and accepted health-summary history will be sent through CollectiveCare’s service to OpenAI to prepare summaries and organize conditions. Original files stay on this iPhone. Temporary processing content has a seven-day expiry and cleanup policy; usage metadata is retained separately. You can change processing options in Settings.")
         }
+        .confirmationDialog("Try condition organization again?", isPresented: $showConditionRetryConsent, titleVisibility: .visible) {
+            Button("Start a new condition attempt", action: startNewConditionAttempt)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("A stopped request may already have incurred a charge. This starts a new attempt using your remaining AI allowance. Completed processing results will be reused where available. Your saved health details stay available.")
+        }
         }
     }
 
@@ -423,6 +436,13 @@ struct HealthSummaryView: View {
         }
     }
 
+    private func startNewConditionAttempt() {
+        conditionRetryAttempt = UUID().uuidString
+        conditionRetryInput = model.updateInputKey
+        conditionsOnlyRequest = true
+        prepare()
+    }
+
     private func regionHeader(_ title: String, region: SummaryUpdateRegion) -> some View {
         SummaryRegionHeader(title: title, region: region, state: model.state(for: region),
                             progress: model.processingProgress) {
@@ -435,7 +455,29 @@ struct HealthSummaryView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Couldn’t finish updating").font(.subheadline).foregroundStyle(.secondary)
                 if region == .conditions, let notice = model.conditionNotice {
-                    Text(notice).font(.footnote).foregroundStyle(.secondary)
+                    HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Conditions updated")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Some care plans still show their original details.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        DisclosureGroup("More information") {
+                            Text(notice).font(.footnote).foregroundStyle(.secondary)
+                        }
+                        .font(.subheadline)
+                    }
+                    Button {
+                        model.careOrganizationNotice = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss care plan notice")
+                }
                         .textSelection(.enabled)
                 }
                 Button("Retry") {
@@ -465,6 +507,31 @@ struct HealthSummaryView: View {
                     .foregroundStyle(.secondary)
             }
             regionRecovery(.conditions)
+            if let notice = model.careOrganizationNotice {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Conditions updated")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Some care plans still show their original details.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        DisclosureGroup("More information") {
+                            Text(notice).font(.footnote).foregroundStyle(.secondary)
+                        }
+                        .font(.subheadline)
+                    }
+                    Button {
+                        model.careOrganizationNotice = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss care plan notice")
+                }
+            }
             ForEach(model.healthAreas) { area in
                 NavigationLink(value: area.id) {
                     HStack(alignment: .top, spacing: 12) {
@@ -488,9 +555,175 @@ struct HealthSummaryView: View {
         } header: { regionHeader("Conditions", region: .conditions) }
     }
 
+    private func carePlanBullet(_ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("•").foregroundStyle(.secondary).accessibilityHidden(true)
+            Text(text)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.leading, 22)
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder private func carePlanCards(_ condition: ConditionSummary) -> some View {
+        ForEach(model.careCardInputs(for: condition), id: \.id) { input in
+            let card = model.careCard(for: input)
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 12) {
+                    SummaryCategoryIcon(title: SummaryEntryCategory.carePlan.displayTitle)
+                        .accessibilityHidden(true)
+                    Text("Care plan").font(.headline)
+                    Spacer()
+                    Menu {
+                        Button("Edit", systemImage: "pencil") {
+                            taskSheet = .carePlan(condition.id, input.id)
+                        }
+                    } label: { RecordActionsIcon() }
+                    .accessibilityLabel("Care plan actions")
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(Set(input.entries.map { CareInstructionPresentation.dateLabel($0, sessions: model.snapshot.sessions) }).count == 1
+                         ? CareInstructionPresentation.dateLabel(input.entries[0], sessions: model.snapshot.sessions) : "Multiple source dates")
+                    Text("·")
+                    Text("Not reviewed")
+                }.font(.subheadline).foregroundStyle(.secondary)
+                let linkedNames = Array(Set(condition.facts.filter { fact in
+                    fact.occurrences.contains { occurrence in input.entries.contains { $0.id == occurrence.id } }
+                }.compactMap { model.practitionerName(for: $0) })).sorted()
+                Text(linkedNames.isEmpty ? (card?.practitioner ?? "Practitioner not identified for this plan") : linkedNames.joined(separator: ", "))
+                    .font(.subheadline).foregroundStyle(.secondary)
+                ForEach(CarePlanBucket.allCases, id: \.self) { bucket in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 6) {
+                            Image(systemName: bucket == .carePlan ? "checkmark.circle" : bucket == .followUp ? "calendar" : "text.bubble")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 16)
+                                .accessibilityHidden(true)
+                            Text(bucket == .carePlan ? "Action" : bucket == .followUp ? "Follow-up" : "Considerations")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        if let card {
+                            let lines = card.lines.filter { $0.bucket == bucket }
+                            let patientEntries = input.patientWrittenEntries.filter {
+                                ($0.evidence?.careInstruction?.bucket ?? ($0.category == .followUp ? .followUp : .carePlan)) == bucket
+                            }
+                            if lines.isEmpty && patientEntries.isEmpty { Text("None recorded").foregroundStyle(.secondary).padding(.leading, 22) }
+                            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                                carePlanBullet(bucket == .followUp ? "\(line.owner ?? "Owner not specified"): \(line.text)" : line.text)
+                            }
+                            ForEach(patientEntries, id: \.id) { entry in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    carePlanBullet(entry.origin == .userEdited || entry.origin == .userAdded
+                                        ? CarePlanCardInput.patientWording(entry) : CareInstructionPresentation.instruction(entry))
+                                    Text("Your wording").font(.caption).foregroundStyle(.secondary).padding(.leading, 22)
+                                }
+                            }
+                        } else {
+                            let entries = input.entries.filter {
+                                ($0.evidence?.careInstruction?.bucket ?? ($0.category == .followUp ? .followUp : .carePlan)) == bucket
+                            }
+                            if entries.isEmpty { Text("None recorded").foregroundStyle(.secondary).padding(.leading, 22) }
+                            ForEach(entries, id: \.id) { entry in
+                                carePlanBullet(entry.origin == .userEdited || entry.origin == .userAdded
+                                        ? CarePlanCardInput.patientWording(entry) : CareInstructionPresentation.instruction(entry))
+                            }
+                        }
+                    }
+                }
+                if card == nil && !input.generatedEntries.isEmpty {
+                    Text("Original wording shown until a combined plan is checked.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+
+            }
+            .font(.subheadline)
+            .foregroundStyle(.primary)
+            .tint(.primary)
+            .padding(.vertical, 12)
+        }
+    }
+
+    @ViewBuilder private func carePlanEditor(conditionID: String, inputID: String) -> some View {
+        Group {
+            if let condition = model.conditionGroups.first(where: { $0.id == conditionID }),
+               let input = model.careCardInputs(for: condition).first(where: { $0.id == inputID }) {
+                Form {
+                    Section("Practitioner") {
+                        let facts = condition.facts.filter { fact in
+                            fact.occurrences.contains { occurrence in input.entries.contains { $0.id == occurrence.id } }
+                        }
+                        let names = Array(Set(facts.compactMap { model.practitionerName(for: $0) })).sorted()
+                        Button { practitionerFactIDs = facts.map(\.id) } label: {
+                            LabeledContent("Contact", value: names.isEmpty ? "Choose or add" : names.joined(separator: ", "))
+                        }
+                        Text("Applies to the details in this plan. Original source attribution is kept.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    Section("Original details") {
+                        ForEach(input.entries, id: \.id) { entry in
+                            if let fact = condition.facts.first(where: { $0.occurrences.contains(where: { $0.id == entry.id }) }) {
+                                NavigationLink {
+                                    HealthFactDetailView(factID: fact.id, preferredEntryID: entry.id,
+                                                         model: model, home: home, store: store)
+                                } label: {
+                                    carePlanOriginalDetail(entry)
+                                }
+                            } else {
+                                carePlanOriginalDetail(entry)
+                            }
+                        }
+                    }
+                    Section("Sources") {
+                        NavigationLink {
+                            SessionDetailView(session: input.session, store: store, home: home, initialTab: .source)
+                        } label: {
+                            Label(input.session.displayTitle, systemImage: "doc.text")
+                        }
+                    }
+                }
+            } else {
+                ContentUnavailableView("Care plan unavailable", systemImage: "doc.text")
+            }
+        }
+        .sheet(isPresented: Binding(get: { practitionerFactIDs != nil }, set: { if !$0 { practitionerFactIDs = nil } })) {
+            let ids = practitionerFactIDs ?? []
+            PractitionerPicker(model: model) { contactID in
+                Task { _ = await model.assignPractitioner(contactID, factIDs: ids) }
+            }
+        }
+        .alert("Could not save", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
+            Button("OK") { model.error = nil }
+        } message: { Text(model.error ?? "") }
+        .navigationTitle("Edit care plan")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { taskSheet = nil } } }
+    }
+
+    private func carePlanOriginalDetail(_ entry: SummaryEntry) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(entry.title).font(.body)
+            if !entry.details.isEmpty { Text(entry.details).font(.subheadline).foregroundStyle(.secondary) }
+            Text(CareInstructionPresentation.dateLabel(entry, sessions: model.snapshot.sessions))
+                .font(.subheadline).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
     @ViewBuilder private func conditionCategories(_ condition: ConditionSummary) -> some View {
-        let order: [SummaryEntryCategory] = [.carePlan, .followUp, .symptoms, .findings, .medications,
-            .testsAndLabs, .vaccinations, .allergies, .biopsychosocialContext, .practitionerContact, .otherNotes]
+        carePlanCards(condition)
+        let contacts = ConditionContacts.groups(for: condition, allFacts: model.facts, snapshot: model.snapshot)
+        if !contacts.isEmpty {
+            DisclosureGroup {
+                ForEach(contacts) { group in contactGroupRow(group) }
+            } label: {
+                categoryLabel(SummaryEntryCategory.practitionerContact.displayTitle,
+                              count: contacts.reduce(0) { $0 + $1.count })
+            }
+        }
+        let order: [SummaryEntryCategory] = [.symptoms, .findings, .medications,
+            .testsAndLabs, .vaccinations, .allergies, .biopsychosocialContext, .otherNotes]
         ForEach(order, id: \.self) { category in
             let rows = condition.facts.filter { $0.category == category || (category == .symptoms && $0.category == .chiefComplaint) }
             if !rows.isEmpty {
@@ -543,9 +776,9 @@ struct HealthSummaryView: View {
         let statusTitle = status == .unknown ? "Status unknown" : (status == .current ? "Current" : "Not current")
         return VStack(alignment: .leading, spacing: 6) {
             HealthFactRow(fact: fact, actions: AnyView(factActions(fact)), open: { open(fact) },
-                          statusOverride: statusTitle, showBodySystem: false)
+                          statusOverride: statusTitle, showBodySystem: false, practitionerName: model.practitionerName(for: fact))
             if fact.isAction {
-                if fact.latest.evidence?.practitioner?.isEmpty != false {
+                if model.practitionerName(for: fact) == nil && fact.latest.evidence?.practitioner?.isEmpty != false {
                     Text("Provider not recorded").font(.caption).foregroundStyle(.secondary)
                 }
                 if fact.latest.evidence?.eventDate?.isEmpty != false && fact.latest.relevantDate == nil {
@@ -557,7 +790,7 @@ struct HealthSummaryView: View {
     }
 
     private func factRow(_ fact: HealthFact) -> some View {
-        HealthFactRow(fact: fact, actions: AnyView(factActions(fact)), open: { open(fact) })
+        HealthFactRow(fact: fact, actions: AnyView(factActions(fact)), open: { open(fact) }, sourceSessions: model.snapshot.sessions, practitionerName: model.practitionerName(for: fact))
             .padding(.vertical, 8)
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 Button("Delete", systemImage: "trash", role: .destructive) { Task { await model.removeFromSummary(fact) } }
@@ -675,6 +908,7 @@ struct HealthSummaryView: View {
         preparationWasBackgrounded = scenePhase == .background
         isLaunchingPreparation = true
         model.beginLaunchingUpdate(conditionsOnly ? .conditions : (overviewOnly ? .overview : .details))
+        if !automatic && !automaticResume { taskSheet = .progress }
         let stop = DurableProcessingStop()
         durableStop = stop
         preparationTask = Task {
@@ -698,6 +932,9 @@ struct HealthSummaryView: View {
             var transport = backend == "onDevice" ? nil : await auth.openAIChatTransport(byokFallback: apiKey)
             transport?.explicitStop = stop
             transport?.allowsExpiredResultRetry = !automatic && !automaticResume
+            if conditionRetryInput == model.updateInputKey, !conditionRetryAttempt.isEmpty {
+                transport?.conditionRetryAttempt = conditionRetryAttempt
+            }
             if conditionsOnly {
                 await model.updateHealthStory(transport: transport, onDevice: backend == "onDevice",
                                              explicitlyRequested: true, forceConditionRefresh: forceConditions)
@@ -793,9 +1030,11 @@ private struct HealthAreaDetailView<Content: View>: View {
 }
 
 private enum HealthSheet: Identifiable {
+    case carePlan(String, String)
     case progress, condition(String), fact(String), record(Session), add(SummaryEntryCategory), contact(CareTeamMember), combine(String), combineContact(UUID), share
     var id: String {
         switch self {
+        case .carePlan(let conditionID, let inputID): "care-plan-\(conditionID)-\(inputID)"
         case .progress: "progress"
         case .condition(let id): "condition-\(id)"
         case .fact(let id): "fact-\(id)"
@@ -816,6 +1055,9 @@ struct HealthFactRow: View {
     var open: (() -> Void)? = nil
     var statusOverride: String? = nil
     var showBodySystem = true
+    var sourceSessions: [Session] = []
+    var practitionerName: String? = nil
+    @State private var careExpanded = false
     private var isCare: Bool { CareInstructionPresentation.applies(fact.latest) }
     private var title: String {
         if fact.category == .practitionerContact { return PractitionerContactsFormatting.namesOnly(fact.title) ?? HealthStoryText.clean(fact.title) }
@@ -834,25 +1076,36 @@ struct HealthFactRow: View {
                 if let actions { actions }
             }
             if isCare {
-                if !fact.isAction { RecordFieldLine(label: "Type", value: "Treatment received") }
-                ForEach(CareInstructionPresentation.supportingText(fact.latest), id: \.self) { line in
-                    RecordFieldLine(text: line)
+                Text(careDate).font(.caption).foregroundStyle(.secondary)
+                if CareInstructionPresentation.bucket(fact) == .followUp {
+                    Text(fact.latest.evidence?.careInstruction?.owner.map { "Next step: " + $0 } ?? "Owner not specified")
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
-                if fact.latest.evidence?.actionKind == "self_directed" {
-                    Text("Personal activity · discuss with your care team").font(.subheadline).foregroundStyle(.secondary)
+                if let practitioner = practitionerName ?? fact.latest.evidence?.practitioner, !practitioner.isEmpty {
+                    Text(practitioner).font(.caption).foregroundStyle(.secondary)
+                }
+                DisclosureGroup("Details and sources", isExpanded: $careExpanded) {
+                    ForEach(CareInstructionPresentation.supportingText(fact.latest), id: \.self) { RecordFieldLine(text: $0) }
+                    if let kind = fact.latest.evidence?.careInstruction?.consideration { RecordFieldLine(label: "Context", value: kind) }
+                    ForEach(fact.occurrences) { occurrence in
+                        Text(occurrence.sourceTitle ?? "Original record").font(.subheadline)
+                        Text(dateLabel(occurrence)).font(.caption).foregroundStyle(.secondary)
+                        if let excerpt = occurrence.supportingExcerpt { Text(excerpt).font(.subheadline).foregroundStyle(.secondary) }
+                    }
+                    if let open { Button("Open detail and original records", action: open) }
                 }
             } else {
                 ForEach(HealthDetailPresentation.remainingDetails(fact.displayEntry), id: \.self) { RecordFieldLine(text: $0) }
                 ForEach(fields) { field in RecordFieldLine(label: field.label, value: field.value) }
             }
-            if showBodySystem, let body = fact.latest.evidence?.bodySystem ?? fact.latest.fields.first(where: { $0.label.lowercased().contains("body system") })?.value,
+            if !isCare, showBodySystem, let body = fact.latest.evidence?.bodySystem ?? fact.latest.fields.first(where: { $0.label.lowercased().contains("body system") })?.value,
                !body.isEmpty, !fields.contains(where: { $0.value == body }) { RecordFieldLine(label: "Body area", value: body, secondary: true) }
-            if let practitioner = fact.latest.evidence?.practitioner, !practitioner.isEmpty,
+            if !isCare, let practitioner = practitionerName ?? fact.latest.evidence?.practitioner, !practitioner.isEmpty,
                !fields.contains(where: { $0.value == practitioner }) {
                 RecordFieldLine(label: "Practitioner", value: practitioner, secondary: true)
             }
-            if let date = fact.latest.evidence?.eventDate, !fields.contains(where: { $0.value == date }) { RecordFieldLine(label: "Date", value: date, secondary: true) }
-            if fact.occurrences.count > 1 {
+            if !isCare, let date = fact.latest.evidence?.eventDate, !fields.contains(where: { $0.value == date }) { RecordFieldLine(label: "Date", value: date, secondary: true) }
+            if !isCare && fact.occurrences.count > 1 {
                 RecordFieldLine(label: "Sources", value: "\(fact.occurrences.count) entries", secondary: true)
             }
             if let due = fact.preference.dueDate, fact.isAction, fact.actionStatus == .current {
@@ -864,7 +1117,7 @@ struct HealthFactRow: View {
             }.padding(.top, 4)
         }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .background {
-                if let open {
+                if let open, !isCare {
                     Button(action: open) { Color.clear.contentShape(Rectangle()) }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Edit \(title)")
@@ -872,8 +1125,18 @@ struct HealthFactRow: View {
                 }
             }
     }
+    private var careDate: String {
+        let latest = fact.occurrences.max {
+            (CareInstructionPresentation.sourceOrderDate($0, sessions: sourceSessions) ?? .distantPast) <
+            (CareInstructionPresentation.sourceOrderDate($1, sessions: sourceSessions) ?? .distantPast)
+        } ?? fact.latest
+        return dateLabel(latest) + (fact.occurrences.count > 1 ? " · \(fact.occurrences.count) sources" : "")
+    }
+    private func dateLabel(_ entry: SummaryEntry) -> String {
+        CareInstructionPresentation.dateLabel(entry, sessions: sourceSessions)
+    }
     @ViewBuilder private var statusTags: some View {
-        if fact.category != .practitionerContact {
+        if fact.category != .practitionerContact && (!isCare || fact.hasKnownStatus || fact.preference.actionStatus != nil) {
             RecordStatusTag(text: statusOverride ?? CareInstructionPresentation.status(fact))
         }
         if fact.isReviewed { RecordStatusTag(text: "Verified") }
@@ -1222,12 +1485,45 @@ private struct SummaryUpdateProgressSheet: View {
     @ObservedObject var model: HealthSummaryModel
     @ObservedObject var progress: HealthSummaryProgress
     let supportsConditions: Bool
+    let onRetry: () -> Void
+    let onNewConditionAttempt: () -> Void
     let onStop: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var showNewAttemptConsent = false
+
+    private var isActive: Bool { model.isUpdatingStory || model.isProcessing }
+    private var needsAttention: Bool {
+        model.processingIssue != nil || model.updateError != nil || model.error != nil
+            || model.conditionNotice != nil || model.overviewNotice != nil
+    }
+    private var isPaused: Bool {
+        SummaryUpdateRegion.allCases.contains { model.state(for: $0) == .interrupted }
+    }
+    private var title: String {
+        if isActive { return "Updating your health story" }
+        if needsAttention { return "Update needs attention" }
+        if isPaused { return "Update paused" }
+        return "Health story update"
+    }
 
     var body: some View {
         NavigationStack {
             List {
+                if !isActive {
+                    Section {
+                        if needsAttention || isPaused {
+                            Text("Your saved details are available. You can leave this screen and continue using the app.")
+                            Button(isPaused && !needsAttention ? "Resume update" : "Retry unfinished update", action: onRetry)
+                                .frame(minHeight: 44)
+                            if supportsConditions && model.conditionNotice != nil {
+                                Button("Start a new condition attempt…") { showNewAttemptConsent = true }
+                                    .frame(minHeight: 44)
+                            }
+                        }
+                        Button("Return to saved details") { dismiss() }
+                            .frame(minHeight: 44)
+                    }
+                }
                 Section {
                     ForEach(SummaryUpdateRegion.allCases.filter { supportsConditions || $0 != .conditions }) { region in
                         HStack(alignment: .top, spacing: 12) {
@@ -1266,16 +1562,23 @@ private struct SummaryUpdateProgressSheet: View {
                     }
                 }
                 if let error = model.updateError ?? model.error { Section("Update") { Text(error).textSelection(.enabled) } }
-                Section {
-                    Button("Stop updating", role: .destructive) { onStop(); dismiss() }
-                        .disabled(!model.isUpdatingStory && !model.isProcessing)
-                } footer: {
-                    Text("Your saved details remain available. If the app is interrupted, unfinished work can resume when you return.")
+                if isActive {
+                    Section {
+                        Button("Stop updating", role: .destructive) { onStop(); dismiss() }
+                    } footer: {
+                        Text("Your saved details remain available. If the app is interrupted, unfinished work can resume when you return.")
+                    }
                 }
             }
-            .navigationTitle("Updating your health story")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .confirmationDialog("Try condition organization again?", isPresented: $showNewAttemptConsent, titleVisibility: .visible) {
+                Button("Start a new condition attempt", action: onNewConditionAttempt)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("A stopped request may already have incurred a charge. This starts a new attempt using your remaining AI allowance. Completed processing results will be reused where available. Your saved health details stay available.")
+            }
         }
     }
 

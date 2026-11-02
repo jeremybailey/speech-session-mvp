@@ -144,6 +144,7 @@ public actor SessionStore {
             invalidateFolderSummary(&env, folderID: removed.folderID)
         }
         env.sessions.removeAll { $0.id == id }
+        env.carePlanCards.removeAll { $0.sessionID == id }
         try saveEnvelope(env)
         let sourceStore = SessionSourceStore(fileManager: fileManager, storageDirectory: directoryURL)
         try sourceStore.deleteSources(for: id)
@@ -212,8 +213,16 @@ public actor SessionStore {
             env.sessions[i].summaryEntries = entries
         }
         if changed { try saveEnvelope(env) }
+        var preferences = env.preferences
+        for index in preferences.indices {
+            var visited = Set<UUID>()
+            while let id = preferences[index].practitionerContactID, visited.insert(id).inserted,
+                  let parent = env.careTeam.first(where: { $0.id == id })?.duplicateOf {
+                preferences[index].practitionerContactID = parent
+            }
+        }
         return HealthMemorySnapshot(sessions: env.sessions, folders: env.folders, topics: env.topics,
-                                  careTeam: HealthFactMatching.displayContacts(env.careTeam), preferences: env.preferences, profile: env.profile)
+                                  careTeam: HealthFactMatching.displayContacts(env.careTeam), preferences: preferences, profile: env.profile)
     }
 
     /// Upgrade old implicit groups and link equivalent facts without deleting their occurrences.
@@ -319,7 +328,7 @@ public actor SessionStore {
         guard HealthFactConsolidation.preferencesAgree(root, other, savedIDs: savedIDs),
               !other.preference.reminderEnabled,
               !savedIDs.contains(other.id) || savedIDs.contains(root.id) ||
-                (other.preference.clinicalStatus == nil && other.preference.actionStatus == nil && other.preference.dueDate == nil && other.preference.topicIDs == nil) else {
+                (other.preference.clinicalStatus == nil && other.preference.actionStatus == nil && other.preference.dueDate == nil && other.preference.topicIDs == nil && other.preference.practitionerContactID == nil) else {
             throw SessionStoreError.ioFailed("These details have different saved settings. Keep them separate, or make their settings agree before combining.")
         }
         var previous: [UUID: FactCombinationUndo.Identity] = [:]
@@ -428,6 +437,7 @@ public actor SessionStore {
                   return preference.reminderEnabled || preference.clinicalStatus != kept.clinicalStatus
                       || preference.actionStatus != kept.actionStatus || preference.dueDate != kept.dueDate
                       || preference.hidden != kept.hidden || preference.topicIDs != kept.topicIDs
+                      || preference.practitionerContactID != kept.practitionerContactID
                       || preference.reviewedRevision != kept.reviewedRevision
               }) else {
             throw SessionStoreError.ioFailed("This duplicate has saved edits or settings. Keep the instructions separate to preserve them.")
@@ -469,6 +479,22 @@ public actor SessionStore {
         try saveEnvelope(env)
     }
 
+    /// Links selected facts atomically without changing their source evidence.
+    public func assignPractitioner(_ contactID: UUID?, factIDs: [String]) throws {
+        var env = try loadEnvelope()
+        if let contactID, !env.careTeam.contains(where: { $0.id == contactID }) {
+            throw SessionStoreError.ioFailed("The selected contact is no longer available.")
+        }
+        for id in Set(factIDs) {
+            var preference = env.preferences.first(where: { $0.id == id }) ?? HealthFactPreference(id: id)
+            preference.practitionerContactID = contactID
+            preference.updatedAt = Date()
+            if let index = env.preferences.firstIndex(where: { $0.id == id }) { env.preferences[index] = preference }
+            else { env.preferences.append(preference) }
+        }
+        try saveEnvelope(env)
+    }
+
     public func saveCareTeamMember(_ member: CareTeamMember) throws {
         var env = try loadEnvelope()
         if let index = env.careTeam.firstIndex(where: { $0.id == member.id }) { env.careTeam[index] = member }
@@ -478,7 +504,11 @@ public actor SessionStore {
 
     public func deleteCareTeamMember(id: UUID) throws {
         var env = try loadEnvelope()
-        env.careTeam.removeAll { $0.id == id || $0.duplicateOf == id }
+        let removed = Set(env.careTeam.filter { $0.id == id || $0.duplicateOf == id }.map(\.id))
+        for index in env.preferences.indices where env.preferences[index].practitionerContactID.map(removed.contains) == true {
+            env.preferences[index].practitionerContactID = nil
+        }
+        env.careTeam.removeAll { removed.contains($0.id) }
         try saveEnvelope(env)
     }
 
@@ -527,6 +557,53 @@ public actor SessionStore {
         guard !entries.isEmpty, let index = env.sessions.firstIndex(where: { $0.id == sessionID }),
               env.sessions[index].summary == expectedSummary,
               env.sessions[index].summaryEntries?.isEmpty != false else { return }
+        env.sessions[index].summaryEntries = entries
+        try saveEnvelope(env)
+    }
+
+    public func carePlanCards() -> [CarePlanCard] { (try? loadEnvelope().carePlanCards) ?? [] }
+
+    public func saveCarePlanCard(_ card: CarePlanCard, input: CarePlanCardInput) throws {
+        var env = try loadEnvelope()
+        guard card.id == input.id, card.fingerprint == input.fingerprint,
+              let current = env.sessions.first(where: { $0.id == input.session.id }),
+              current.transcript == input.session.transcript,
+              current.summaryEntries == input.session.summaryEntries,
+              Set(input.entries.map(\.id)).isSubset(of: Set((current.summaryEntries ?? []).map(\.id))) else {
+            throw SessionStoreError.ioFailed("Care details changed while the plan was being prepared.")
+        }
+        env.carePlanCards.removeAll { $0.id == card.id }
+        env.carePlanCards.append(card)
+        try saveEnvelope(env)
+    }
+
+    public func publishCareOrganization(sessionID: UUID, source: String, originals: [SummaryEntry], replacements: [SummaryEntry]) throws {
+        var env = try loadEnvelope()
+        guard let index = env.sessions.firstIndex(where: { $0.id == sessionID }),
+              env.sessions[index].transcript == source,
+              originals.count == replacements.count,
+              Set(originals.map(\.id)) == Set(replacements.map(\.id)) else {
+            throw SessionStoreError.ioFailed("Care details changed during organization. Retry with the latest records.")
+        }
+        var entries = env.sessions[index].summaryEntries ?? []
+        for original in originals {
+            guard let i = entries.firstIndex(where: { $0.id == original.id }), entries[i] == original,
+                  let replacement = replacements.first(where: { $0.id == original.id }),
+                  replacement.evidence?.assessment?.admission == .supported,
+                  replacement.evidence?.assessment?.sourceHash == SummaryVerification.hash(source),
+                  replacement.evidence?.assessment?.contentHash == SummaryVerification.contentHash(replacement) else {
+                throw SessionStoreError.ioFailed("Care details changed or could not be checked. Previous details are unchanged.")
+            }
+            var restored = replacement
+            restored.updatedAt = original.updatedAt
+            restored.evidence?.careInstruction = original.evidence?.careInstruction
+            restored.evidence?.careOrganizationVersion = original.evidence?.careOrganizationVersion
+            restored.evidence?.assessment = original.evidence?.assessment
+            guard restored == original else {
+                throw SessionStoreError.ioFailed("Care organization attempted to change original facts.")
+            }
+            entries[i] = replacement
+        }
         env.sessions[index].summaryEntries = entries
         try saveEnvelope(env)
     }

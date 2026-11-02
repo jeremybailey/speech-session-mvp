@@ -57,6 +57,7 @@ public struct ClinicalEvidence: Codable, Equatable, Hashable, Sendable {
     /// homecare, follow_up, treatment_received, self_directed, or uncertain.
     public var actionKind: String?
     public var careInstruction: CareInstruction?
+    public var careOrganizationVersion: Int?
     public var instructionIdentity: String?
     public var factIdentity: String?
     public var combinationExcluded: Bool?
@@ -69,6 +70,7 @@ public struct ClinicalEvidence: Codable, Equatable, Hashable, Sendable {
 /// A patient's decisions about a fact, independent of any one source occurrence.
 public struct HealthFactPreference: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var id: String
+    public var practitionerContactID: UUID?
     public var topicIDs: [UUID]?
     public var clinicalStatus: SummaryEntryClinicalStatus?
     public var actionStatus: CareActionStatus?
@@ -129,7 +131,7 @@ public struct HealthFact: Identifiable, Sendable {
     }
     public var isAction: Bool {
         guard category == .carePlan || category == .followUp else { return false }
-        return latest.evidence?.actionKind != "treatment_received"
+        return latest.evidence?.actionKind != "treatment_received" && latest.evidence?.careInstruction?.bucket != .considerations
     }
     public var reviewReasons: [String] {
         guard !isReviewed else { return [] }

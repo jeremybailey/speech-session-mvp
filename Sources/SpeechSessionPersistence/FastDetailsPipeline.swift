@@ -168,11 +168,16 @@ public enum FastDetailsCheck {
             guard var row = value as? [String: Any], let citations = row["citations"] as? [String: [String]],
                   let required = allowed[id], Set(citations.keys) == required else { throw SummaryResponseError.invalidFormat }
             row["id"] = id
-            row["citations"] = try citations.keys.sorted().flatMap { field in
-                try citations[field]!.compactMap { ref -> [String: String]? in
-                    guard declared.contains(ref) else { throw SummaryResponseError.invalidFormat }
-                    guard let excerpt = table[ref] else { return nil }
-                    return ["field": field, "excerpt": excerpt]
+            row["citations"] = citations.keys.sorted().flatMap { field -> [[String: String]] in
+                let references = citations[field]!
+                // An undefined locator or non-source quotation invalidates this field's
+                // evidence, not every decision in the batch. Do not infer its meaning
+                // or retain partial coverage from another locator for the same field.
+                // The existing assessment gate keeps the claim hidden and selects it
+                // for the one bounded citation-repair pass; valid peers survive.
+                guard references.allSatisfy({ table[$0] != nil }) else { return [] }
+                return references.compactMap { ref in
+                    table[ref].map { ["field": field, "excerpt": $0] }
                 }
             }
             decisions[id] = row

@@ -4,6 +4,7 @@ import SpeechSessionPersistence
 struct CareTeamEditor: View {
     @State var member: CareTeamMember
     @ObservedObject var model: HealthSummaryModel
+    var onSaved: ((CareTeamMember) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var saving = false
     @State private var requestRecords = false
@@ -42,7 +43,7 @@ struct CareTeamEditor: View {
                             Button("Link to \(existing.name)") {
                                 var linked = existing
                                 linked.sourceEntryIDs = Array(Set(existing.sourceEntryIDs + member.sourceEntryIDs))
-                                Task { if await model.save(linked) { dismiss() } }
+                                Task { if await model.save(linked) { onSaved?(linked); dismiss() } }
                             }
                         }
                     }
@@ -64,7 +65,7 @@ struct CareTeamEditor: View {
                     Button("Save") {
                         saving = true
                         member.name = member.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        Task { if await model.save(member) { dismiss() }; saving = false }
+                        Task { if await model.save(member) { onSaved?(member); dismiss() }; saving = false }
                     }.disabled(saving || member.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -109,6 +110,73 @@ struct RequestRecordsView: View {
             }
             .navigationTitle("Request records")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+        }
+    }
+}
+
+/// Reuses contact identities; source-only contacts become saved contacts when selected.
+struct PractitionerPicker: View {
+    @ObservedObject var model: HealthSummaryModel
+    let onSelect: (UUID?) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var search = ""
+    @State private var editor: CareTeamMember?
+    @State private var saving = false
+
+    private var contacts: [CareTeamMember] {
+        let linked = Set(model.snapshot.careTeam.flatMap(\.sourceEntryIDs))
+        let extracted = model.facts.filter { $0.category == .practitionerContact && !$0.occurrences.contains(where: { linked.contains($0.id) }) }.map { fact in
+            func field(_ labels: [String]) -> String {
+                fact.latest.fields.first { field in labels.contains { field.label.localizedCaseInsensitiveContains($0) } }?.value ?? ""
+            }
+            return CareTeamMember(id: fact.latest.id, name: field(["name"]).isEmpty ? fact.title : field(["name"]),
+                role: field(["role", "specialty"]), organization: field(["organization", "clinic"]),
+                email: field(["email"]), phone: field(["phone"]), address: field(["address"]),
+                sourceEntryIDs: fact.occurrences.map(\.id))
+        }
+        return (model.snapshot.careTeam + extracted).filter {
+            search.isEmpty || "\($0.name) \($0.role) \($0.organization)".localizedCaseInsensitiveContains(search)
+        }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Button("Add practitioner", systemImage: "plus") { editor = CareTeamMember() }
+                    Button("No linked practitioner") { onSelect(nil); dismiss() }
+                }
+                Section("Contacts") {
+                    ForEach(contacts) { member in
+                        Button {
+                            saving = true
+                            Task {
+                                let saved = model.snapshot.careTeam.contains(where: { $0.id == member.id }) ? true : await model.save(member)
+                                if saved {
+                                    onSelect(member.id); dismiss()
+                                }
+                                saving = false
+                            }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(member.name).foregroundStyle(.primary)
+                                Text([member.role, member.organization].filter { !$0.isEmpty }.joined(separator: " · "))
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .disabled(saving)
+            .searchable(text: $search, prompt: "Name, specialty or clinic")
+            .navigationTitle("Choose practitioner")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .sheet(item: $editor) { member in
+                CareTeamEditor(member: member, model: model) { saved in onSelect(saved.id); dismiss() }
+            }
+            .alert("Could not save", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
+                Button("OK") { model.error = nil }
+            } message: { Text(model.error ?? "") }
         }
     }
 }
