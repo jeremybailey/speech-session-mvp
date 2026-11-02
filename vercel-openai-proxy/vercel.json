@@ -17,7 +17,7 @@
       ]
     },
     "api/v1/health-processing/queue.ts": {
-      "maxDuration": 120,
+      "maxDuration": 300,
       "experimentalTriggers": [
         {
           "type": "queue/v2beta",

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { jobQueue, queueJobID } from "../../_lib/queue";
+import {runWholeHistory} from '../../_lib/whole-history-background';
 import { runJob } from "../../_lib/worker";
 
 // Security boundary: the queue/v2beta trigger makes this a private Vercel
@@ -7,11 +8,12 @@ import { runJob } from "../../_lib/worker";
 const consume = jobQueue.handleNodeCallback(async (message: unknown) => {
   try {
     const id=queueJobID(message);
+    if(await runWholeHistory(id))return;
     const processed=await runJob(id);
     console.info("ai_queue_step",JSON.stringify({id,processed}));
   }
   catch { throw new Error("job_delivery_deferred"); } // SDK logs must not expose database/provider error details.
-}, { visibilityTimeoutSeconds: 300, retry: () => ({ afterSeconds: 60 }) });
+}, { visibilityTimeoutSeconds: 360, retry: () => ({ afterSeconds: 60 }) });
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Cache-Control", "no-store");

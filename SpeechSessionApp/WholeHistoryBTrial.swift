@@ -173,7 +173,7 @@ struct BTrialArea: Identifiable {
                     "sourceSHA256": SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()]
         }
         accessReady = false
-        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "authenticated": true, "contractVersion": "compact-actions-short-overview-v1", "automaticNarrative": true]
+        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "authenticated": true, "contractVersion": "compact-actions-short-overview-v1", "automaticNarrative": true, "serverOverview": true]
         state = "queued"
         do { try persist(); await resume() } catch { self.error = error.localizedDescription }
     }
@@ -183,7 +183,7 @@ struct BTrialArea: Identifiable {
         defer { busy = false }
         do {
             if saved["id"] == nil {
-                let result = try await request("prepare", extras: ["records": saved["records"] ?? []])
+                let result = try await request("prepare", extras: ["records": saved["records"] ?? [], "serverOverview": saved["serverOverview"] as? Bool ?? false])
                 guard let id = result["id"] as? String, let locators = result["locators"] as? [String: Any] else { throw BTrialFailure(message: "The trial submission did not return a recoverable identity.") }
                 saved["id"] = id; saved["locators"] = locators; saved["contractVersion"] = result["version"]; state = result["state"] as? String ?? "queued"; try persist()
             }
@@ -191,7 +191,7 @@ struct BTrialArea: Identifiable {
             if response["state"] as? String == "queued" {
                 // This always operates on the persisted job ID; never submits another model job.
                 do { response = try await request("run") }
-                catch { response = try await request("job") }
+                catch { try Task.checkCancellation(); response = try await request("job") }
             }
             let deadline = Date().addingTimeInterval(360)
             while ["queued", "running"].contains(response["state"] as? String ?? "") {
@@ -209,7 +209,12 @@ struct BTrialArea: Identifiable {
                 do { try decode(raw) } catch {
                     state = "invalid"; try persist(); _ = try? await request("forget"); throw error
                 }
-                saved["output"] = raw; try persist()
+                saved["output"] = raw
+                if let childID = result["overviewJobID"] as? String, !hasNarrativeJob {
+                    saved["narrativeJob"] = ["run": childID, "id": childID, "authenticated": true, "state": "queued", "writerVersion": "b-narrative-compact-v6"]
+                    narrativeState = "queued"
+                }
+                try persist()
                 // Save the validated local preview before deleting this run's remote payload.
                 _ = try? await request("forget")
                 if saved["automaticNarrative"] as? Bool == true {
@@ -277,7 +282,7 @@ struct BTrialArea: Identifiable {
             var response = try await request(job["stopRequested"] as? Bool == true ? "cancel" : "job", narrativePass: true)
             if response["state"] as? String == "queued" {
                 do { response = try await request("run", narrativePass: true) }
-                catch { response = try await request("job", narrativePass: true) }
+                catch { try Task.checkCancellation(); response = try await request("job", narrativePass: true) }
             }
             let deadline = Date().addingTimeInterval(140)
             while ["queued", "running"].contains(response["state"] as? String ?? "") {

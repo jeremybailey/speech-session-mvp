@@ -33,3 +33,13 @@ Production deployment `dpl_7pnBzmnmGgqMkoXUkTLKZxMzaHuf` is ready on the existin
 For local replay, run `python3 scripts/replay_whole_history_native.py --fixtures /private/path/to/frozen-cases`. The private folder must contain the five original `*/native-cache.json` fixtures; fixtures are never committed. The helper removes its generated test afterward.
 
 Earlier compact-overview evaluation covered one cached patient result and four synthetic histories. These checks do not establish population-level clinical accuracy. This development mainline is not an App Store release.
+
+## Phone locking and background continuation
+
+New whole-history updates request server-managed continuation. Once the source upload is admitted, the existing private processing queue runs generation, reserves one deterministic overview child, and dispatches that child without a phone-side handoff. The app retains both identities and collects/publishes the results when active again. Overview-only requests are also queued immediately. Existing interrupted runs retain their earlier request protocol to avoid changing their deduplication identity.
+
+Stop prevents a queued overview or cancels it if already queued; an already dispatched provider call may still settle. Queue redelivery reuses the durable child. Failed, incomplete, uncertain and malformed outcomes never create an automatic paid retry. Untargeted maintenance excludes these longer B jobs so the private queue owns their dispatch.
+
+The background change passed 123 backend tests with five existing skips, including simulated phone absence, duplicate delivery, failed child publication, cancellation, uncertain generation and malformed output. The device build passes. A physical locked-phone end-to-end run remains a device validation step; these tests make no phone timing claim.
+
+Background continuation deployment: `dpl_FnaoHy48SETLdiSHXVGvxTrP1MUV`, using the existing private `health-processing-jobs` consumer with a 300-second bound. Deployment is READY on the existing production domain. No account-plan change, budget reset or paid test inference was required.

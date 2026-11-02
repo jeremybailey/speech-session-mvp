@@ -110,6 +110,7 @@ export async function claim(id?: string) {
   return transaction(async db => {
     const job = (await db.query(`SELECT j.* FROM ai_jobs j JOIN ai_payloads p ON p.job_id=j.id
       WHERE j.state='queued' AND p.expires_at>now() AND ($1::uuid IS NULL OR j.id=$1::uuid)
+      AND ($1::uuid IS NOT NULL OR j.stage NOT IN ('whole-history-generation','whole-history-overview'))
       ORDER BY j.created_at FOR UPDATE OF j SKIP LOCKED LIMIT 1`,[id ?? null])).rows[0];
     if (!job) return null;
     await db.query("UPDATE ai_jobs SET state='running',started_at=now() WHERE id=$1", [job.id]);
