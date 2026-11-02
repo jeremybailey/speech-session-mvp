@@ -393,7 +393,10 @@ struct HealthSummaryView: View {
             case .add(let category):
                 HealthManualEntryView(model: model, home: home, store: store, topicID: nil, initialCategory: category)
             case .contact(let member): CareTeamEditor(member: member, model: model)
-            case .progress: SummaryUpdateProgressSheet(model: model, progress: model.processingProgress, supportsConditions: backend != "onDevice", onRetry: { prepare(retryUnfinished: true) }, onNewConditionAttempt: startNewConditionAttempt, onStop: stopPreparation)
+            case .progress: SummaryUpdateProgressSheet(model: model, progress: model.processingProgress, supportsConditions: backend != "onDevice", onRetry: {
+                if model.overviewNotice != nil && model.conditionNotice == nil && model.state(for: .details) == .ready { overviewOnlyRequest = true }
+                prepare(retryUnfinished: true)
+            }, onNewConditionAttempt: startNewConditionAttempt, onStop: stopPreparation)
             case .share: HealthShareView(model: model)
             case .condition(let id): ConditionAssignmentSheet(factID: id, model: model)
             case .combine(let id): FactDuplicateSheet(factID: id, model: model)
@@ -1513,7 +1516,7 @@ private struct SummaryUpdateProgressSheet: View {
                     Section {
                         if needsAttention || isPaused {
                             Text("Your saved details are available. You can leave this screen and continue using the app.")
-                            Button(isPaused && !needsAttention ? "Resume update" : "Retry unfinished update", action: onRetry)
+                            Button(model.overviewNotice != nil && model.conditionNotice == nil && model.state(for: .details) == .ready ? "Try overview again" : (isPaused && !needsAttention ? "Resume update" : "Retry unfinished update"), action: onRetry)
                                 .frame(minHeight: 44)
                             if supportsConditions && model.conditionNotice != nil {
                                 Button("Start a new condition attempt…") { showNewAttemptConsent = true }
@@ -1561,7 +1564,7 @@ private struct SummaryUpdateProgressSheet: View {
                         }
                     }
                 }
-                if let error = model.updateError ?? model.error { Section("Update") { Text(error).textSelection(.enabled) } }
+                if let error = model.updateError ?? model.error, error != model.overviewNotice, error != model.conditionNotice { Section("Update") { Text(error).textSelection(.enabled) } }
                 if isActive {
                     Section {
                         Button("Stop updating", role: .destructive) { onStop(); dismiss() }

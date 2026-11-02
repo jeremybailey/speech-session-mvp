@@ -162,6 +162,7 @@ final class HealthSummaryModel: ObservableObject {
     func state(for region: SummaryUpdateRegion) -> SummaryUpdateState? { updateStates[region] }
 
     func shouldAutomaticallyUpdate(onDevice: Bool, consent: Bool) -> Bool {
+        if !onDevice && wholeHistoryCurrent && wholeHistory.narrativeTerminal && wholeHistory.narrativeState != "completed" { return false }
         guard automaticProcessingAllowed, !isProcessing, !isUpdatingStory,
               onDevice || consent, !stoppedForCurrentSources, automaticPolicy.allows(updateInputKey) else { return false }
         return snapshot.sessions.contains { !importedRecordIDs.contains($0.id) && $0.needsSummaryVerification && $0.processingState != .failed && $0.processingState != .transcribing && !$0.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -286,7 +287,7 @@ final class HealthSummaryModel: ObservableObject {
         explicitlyStopped = false; updateError = nil; error = nil; processingIssue = nil
         conditionNotice = nil; overviewNotice = nil; careOrganizationNotice = nil
         isUpdatingStory = true; isProcessing = true
-        updateStates = [.details: .updating, .conditions: .updating, .overview: .waiting]
+        updateStates = overviewOnly && wholeHistoryCurrent ? [.details: .ready, .conditions: .ready, .overview: .updating] : [.details: .updating, .conditions: .updating, .overview: .waiting]
         progressTitle = overviewOnly ? "Creating overview" : "Updating your health story"
         progress = "Organizing original records and writing your overview…"
         progressShowsRecordCount = false; progressTotal = 0; progressValue = 0
@@ -305,7 +306,8 @@ final class HealthSummaryModel: ObservableObject {
             await wholeHistory.load(store: store)
             guard !wholeHistory.records.isEmpty else { updateStates = [:]; return }
             let current = try await store.wholeHistoryIsCurrent()
-            let needsRun = force || overviewOnly || !current
+            let overviewCurrent = try await store.wholeHistoryOverviewIsCurrent()
+            let needsRun = force || overviewOnly || !current || !overviewCurrent
             if needsRun {
                 try await wholeHistory.process(force: force, overviewOnly: overviewOnly && current)
                 try Task.checkCancellation()
@@ -320,10 +322,24 @@ final class HealthSummaryModel: ObservableObject {
         } catch {
             if let stopID { await transport.explicitStop?.completed(stopID) }
             if error is CancellationError || Task.isCancelled { return }
-            updateError = error.localizedDescription
-            if overviewOnly { overviewNotice = error.localizedDescription }
-            else { conditionNotice = error.localizedDescription }
-            updateStates = [.details: .needsAttention, .conditions: .needsAttention, .overview: .interrupted]
+            // A failed writer does not invalidate a source-validated first pass.
+            // Publish only that first pass; keep the previous displayed overview.
+            if let partial = try? wholeHistory.publication(allowMissingOverview: true) {
+                do {
+                    try await store.publishWholeHistory(partial, expected: wholeHistory.records)
+                    await refresh()
+                    updateError = error.localizedDescription; overviewNotice = error.localizedDescription; conditionNotice = nil
+                    updateStates = [.details: .ready, .conditions: .ready, .overview: .needsAttention]
+                } catch {
+                    updateError = error.localizedDescription
+                    updateStates = [.details: .needsAttention, .conditions: .needsAttention, .overview: .interrupted]
+                }
+            } else {
+                updateError = error.localizedDescription
+                if overviewOnly { overviewNotice = error.localizedDescription }
+                else { conditionNotice = error.localizedDescription }
+                updateStates = [.details: .needsAttention, .conditions: .needsAttention, .overview: .interrupted]
+            }
         }
     }
 
@@ -391,7 +407,7 @@ final class HealthSummaryModel: ObservableObject {
             await wholeHistory.load(store: store)
             // Migrate a complete matching on-phone B result without another paid call.
             // Source hashes and exact quotations must still validate before admission.
-            if !(try await store.wholeHistoryIsCurrent()), let publication = try? wholeHistory.publication() {
+            if !(try await store.wholeHistoryIsCurrent()), let publication = try? wholeHistory.publication(allowMissingOverview: true) {
                 try await store.publishWholeHistory(publication, expected: wholeHistory.records)
                 try wholeHistory.markPublished()
             }
@@ -440,11 +456,16 @@ final class HealthSummaryModel: ObservableObject {
             // The store reuses prior condition groups only for unchanged surviving
             // source entries while a replacement is being prepared.
             needsConditionOrganization = !wholeHistoryCurrent && !projected.isEmpty && synthesized == nil
-            overviewIsCurrent = savedOverview != nil
+            overviewIsCurrent = wholeHistoryCurrent ? (try await store.wholeHistoryOverviewIsCurrent()) : savedOverview != nil
             if let savedOverview { displayedOverview = savedOverview }
             else if displayedOverview == nil { displayedOverview = previousOverview }
             if projected.isEmpty { displayedOverview = nil }
-            overview = savedOverview
+            overview = overviewIsCurrent ? savedOverview : nil
+            if wholeHistoryCurrent && wholeHistory.narrativeState == "invalid" && !isUpdatingStory && !isProcessing {
+                conditionNotice = nil
+                overviewNotice = wholeHistory.error ?? "The overview could not be saved. Your details and conditions are updated. You can try writing the overview again."
+                updateStates = [.details: .ready, .conditions: .ready, .overview: .needsAttention]
+            }
             sourceInputKey = presentation.keys.sources
             if updateInputKey != presentation.keys.inputs { updateInputKey = presentation.keys.inputs }
             if stoppedForCurrentSources && !isUpdatingStory && !isProcessing && updateStates.isEmpty {

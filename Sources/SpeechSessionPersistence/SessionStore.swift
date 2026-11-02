@@ -763,6 +763,10 @@ public actor SessionStore {
         return env.wholeHistorySourceFingerprint == WholeHistoryPublication.fingerprint(env.sessions)
     }
     public func wholeHistoryOverview() throws -> String? { try loadEnvelope().wholeHistoryOverview }
+    public func wholeHistoryOverviewIsCurrent() throws -> Bool {
+        let env = try loadEnvelope()
+        return env.wholeHistoryOverview != nil && env.wholeHistoryOverviewSourceFingerprint == WholeHistoryPublication.fingerprint(env.sessions)
+    }
 
     /// Commit the full source snapshot atomically. Preserve edits, preferences and
     /// original transcripts, and retain a local pre-B backup and per-record revisions.
@@ -804,7 +808,8 @@ public actor SessionStore {
         }
         for topic in publication.topics where !env.topics.contains(where: { $0.id == topic.id }) { env.topics.append(topic) }
         env.wholeHistorySourceFingerprint = fingerprint
-        env.wholeHistoryOverview = publication.overview
+        if let overview = publication.overview { env.wholeHistoryOverview = overview }
+        env.wholeHistoryOverviewSourceFingerprint = publication.overview == nil ? nil : fingerprint
         try saveEnvelope(env)
     }
 

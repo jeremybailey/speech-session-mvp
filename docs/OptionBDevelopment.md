@@ -14,7 +14,7 @@ B associations are proposals: exact source references/quotations are validated l
 
 The normal endpoint is `/api/v1/health-processing/whole-history`. It uses current Kinde authentication, normal owner isolation and the existing shared pilot ledger. No expiring diagnostic configuration is bundled. The historical experiment allowance and accounting remain untouched.
 
-Each generation and writing request persists its identity before dispatch. Duplicate submissions reuse their reservation; interrupted polling resumes that job. Uncertain, incomplete, cancelled and invalid outcomes do not trigger automatic paid retry or splitting. Explicit Stop requests cancellation. The prior saved story remains until both passes validate and publish.
+Each generation and writing request persists its identity before dispatch. Duplicate submissions reuse their reservation; interrupted polling resumes that job. Uncertain, incomplete, cancelled and invalid outcomes do not trigger automatic paid retry or splitting. Explicit Stop requests cancellation. A valid first pass can publish details, conditions and care plans even when the overview writer is rejected. The last valid overview remains displayed; its freshness is tracked separately. A rejected writer never publishes its narrative or starts an automatic paid retry.
 
 A complete on-phone trial result can be migrated without another model call only when its originals match all current ready records. Private processing state is saved under `whole-history/preview.json`, excluded from backup. Old diagnostic connections are removed after successful publication.
 
@@ -43,3 +43,9 @@ Stop prevents a queued overview or cancels it if already queued; an already disp
 The background change passed 123 backend tests with five existing skips, including simulated phone absence, duplicate delivery, failed child publication, cancellation, uncertain generation and malformed output. The device build passes. A physical locked-phone end-to-end run remains a device validation step; these tests make no phone timing claim.
 
 Background continuation deployment: `dpl_FnaoHy48SETLdiSHXVGvxTrP1MUV`, using the existing private `health-processing-jobs` consumer with a 300-second bound. Deployment is READY on the existing production domain. No account-plan change, budget reset or paid test inference was required.
+
+## Overview rejection recovery
+
+Only the overview is marked as needing attention when the first pass completed. The progress screen offers **Try overview again**, which uses the saved B proposal and runs only the writer. Rejected writer output and a specific validation reason are saved locally before remote payload cleanup, permitting diagnosis without another inference request. The original rejected response from the reported failure had already been discarded and could not be recovered.
+
+The on-phone checkpoint replay recovered 156 details and 13 concerns across 11 records without API calls. Direct XCTest execution passed 427 tests with three existing skips, including private replay checks and strict number/reference/word-limit validation. The phone build passed. This recovery change needs no backend deployment.

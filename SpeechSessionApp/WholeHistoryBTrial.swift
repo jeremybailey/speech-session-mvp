@@ -299,8 +299,12 @@ struct BTrialArea: Identifiable {
                let a = f.date(from: start), let b = f.date(from: finish) { narrativeElapsed = b.timeIntervalSince(a); job["elapsed"] = narrativeElapsed }
             saved["narrativeJob"] = job; try persist()
             if narrativeState == "completed", let result = response["result"] as? [String: Any], let raw = result["output"] as? String {
+                // Persist the response before validation, including rejected outputs.
+                // Keep clinical diagnostics local; the paid job is never repeated automatically.
+                job["output"] = raw; saved["narrativeJob"] = job; try persist()
                 do { try decodeNarrative(raw) }
                 catch {
+                    job["validationIssue"] = (error as? BTrialFailure)?.code ?? "overview_validation_format"
                     job["state"] = "invalid"; narrativeState = "invalid"; saved["narrativeJob"] = job; try persist()
                     _ = try? await request("forget", narrativePass: true)
                     throw error
@@ -329,10 +333,15 @@ struct BTrialArea: Identifiable {
         } catch { self.error = "Could not confirm overview cancellation. Resume checks the same request." }
     }
     private func decodeNarrative(_ raw: String) throws {
-        func fail() -> BTrialFailure { BTrialFailure(message: "The new overview failed its format, reference or number checks. The original B overview is retained; no paid retry was made.") }
+        func fail(_ reason: String = "format_or_reference") -> BTrialFailure {
+            let messages = ["numbers": "The overview included a number that could not be matched to its cited details.", "coverage": "The overview did not consistently account for the conditions in your records.", "sentence_length": "The overview contained a sentence longer than the allowed limit.", "word_limit": "The overview exceeded its 100-word limit.", "character_limit": "The overview exceeded its length limit."]
+            return BTrialFailure(message: (messages[reason] ?? "The overview could not be saved because its format or source references were invalid.") + " Your completed details are available. No automatic paid retry was made.", code: "overview_validation_" + reason)
+        }
         let compact = narrativeJob["writerVersion"] as? String == "b-narrative-compact-v6"
         let balanced = ["b-narrative-balanced-v3", "b-narrative-balanced-luna-v4", "b-narrative-balanced-v5", "b-narrative-compact-v6"].contains(narrativeJob["writerVersion"] as? String ?? "")
-        guard let obj = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any], Set(obj.keys) == (balanced ? ["sentences", "coverage"] : ["sentences"]),
+        let parsed: Any
+        do { parsed = try JSONSerialization.jsonObject(with: Data(raw.utf8)) } catch { throw fail() }
+        guard let obj = parsed as? [String: Any], Set(obj.keys) == (balanced ? ["sentences", "coverage"] : ["sentences"]),
               let sentences = obj["sentences"] as? [[String: Any]], (1...(balanced ? 8 : 6)).contains(sentences.count) else { throw fail() }
         let byID = Dictionary(uniqueKeysWithValues: facts.map { ($0.id, $0) })
         func numbers(_ text: String) -> Set<String> {
@@ -349,7 +358,7 @@ struct BTrialArea: Identifiable {
             let evidence = refs.compactMap { byID[$0] }.map { fact in
                 ([fact.text, fact.by, fact.event] + (fact.plan?.values.map { $0 } ?? [])).joined(separator: " ")
             }.joined(separator: " ")
-            guard numbers(text).isSubset(of: numbers(evidence)) else { throw fail() }
+            guard numbers(text).isSubset(of: numbers(evidence)) else { throw fail("numbers") }
             cited.formUnion(refs); texts.append(text)
         }
         if narrativeJob["writerVersion"] as? String == "b-narrative-focus-v2" {
@@ -361,13 +370,13 @@ struct BTrialArea: Identifiable {
         if balanced {
             let codes: Set<String> = ["included_major", "included_secondary", "omitted_minor", "omitted_routine", "omitted_duplicate", "omitted_resolved_without_ongoing_impact", "omitted_uncertain_peripheral"]
             guard let decisions = obj["coverage"] as? [String: String], Set(decisions.keys) == Set(concerns.map(\.id)),
-                  decisions.values.allSatisfy({ codes.contains($0) }), decisions.values.contains(where: { $0.hasPrefix("included_") }) else { throw fail() }
+                  decisions.values.allSatisfy({ codes.contains($0) }), decisions.values.contains(where: { $0.hasPrefix("included_") }) else { throw fail("coverage") }
             for (group, decision) in decisions where decision.hasPrefix("included_") {
                 guard facts.contains(where: { $0.groups.contains(group) && cited.contains($0.id) }) else { throw fail() }
             }
             if compact || narrativeJob["writerVersion"] as? String == "b-narrative-balanced-v5" {
                 let included = Set(decisions.filter { $0.value.hasPrefix("included_") }.keys)
-                guard sentences.count <= (compact ? 5 : 6), sentences.allSatisfy({ (($0["text"] as? String)?.count ?? 321) <= (compact ? 260 : 320) }) else { throw fail() }
+                guard sentences.count <= (compact ? 5 : 6), sentences.allSatisfy({ (($0["text"] as? String)?.count ?? 321) <= (compact ? 260 : 320) }) else { throw fail("sentence_length") }
                 for id in cited {
                     guard let fact = byID[id], fact.groups.isEmpty || !Set(fact.groups).isDisjoint(with: included) else { throw fail() }
                 }
@@ -375,7 +384,8 @@ struct BTrialArea: Identifiable {
             coverage = decisions
         }
         let joined = texts.joined(separator: " ")
-        guard joined.count <= (compact ? 850 : (balanced ? 1200 : 1000)), joined.split(whereSeparator: { $0.isWhitespace }).count <= (compact ? 100 : (balanced ? 150 : 130)) else { throw fail() }
+        guard joined.count <= (compact ? 850 : (balanced ? 1200 : 1000)) else { throw fail("character_limit") }
+        guard joined.split(whereSeparator: { $0.isWhitespace }).count <= (compact ? 100 : (balanced ? 150 : 130)) else { throw fail("word_limit") }
         narrative = joined; narrativeCoverage = coverage
     }
     private func decode(_ raw: String) throws {
@@ -479,7 +489,7 @@ extension BTrialModel {
         if !hasRun { await start() }
         else if !terminal { await resume() }
         else if state == "completed", overviewOnly {
-            if narrativeTerminal, saved["publishedNarrativeRun"] as? String == narrativeJob["run"] as? String { await rewriteOverview(force: true) }
+            if narrativeTerminal, narrativeState != "completed" || saved["publishedNarrativeRun"] as? String == narrativeJob["run"] as? String { await rewriteOverview(force: true) }
             else if !narrativeTerminal { await writeOverview() }
         }
         else if state == "completed", !narrativeTerminal { await writeOverview() }
@@ -489,14 +499,14 @@ extension BTrialModel {
         }
     }
     func markPublished() throws {
-        saved["publishedNarrativeRun"] = narrativeJob["run"]
+        if narrativeState == "completed", narrative != nil { saved["publishedNarrativeRun"] = narrativeJob["run"] }
         // Completed diagnostic connections are no longer needed after migration.
         if terminal { saved.removeValue(forKey: "connection") }
         if narrativeTerminal { var job = narrativeJob; job.removeValue(forKey: "connection"); saved["narrativeJob"] = job }
         try persist()
     }
-    func publication() throws -> WholeHistoryPublication {
-        guard sourcesMatch, state == "completed", narrativeState == "completed", let narrative,
+    func publication(allowMissingOverview: Bool = false) throws -> WholeHistoryPublication {
+        guard sourcesMatch, state == "completed", (allowMissingOverview || (narrativeState == "completed" && narrative != nil)),
               let locators = saved["locators"] as? [String: [String: Any]] else {
             throw BTrialFailure(message: "The completed result does not match the current original records.")
         }
@@ -552,7 +562,7 @@ extension BTrialModel {
             entry.evidence?.assessment = SummaryAssessment(admission: .sourceLinked, reason: "Exact source quotations validated locally; no independent model check.", sourceHash: SummaryVerification.hash(record.transcript), contentHash: contentHash, citations: quotations.map { SummaryCitation(field: "detail", excerpt: $0) })
             entries[record.id, default: []].append(entry)
         }
-        return WholeHistoryPublication(entries: entries, topics: topics, overview: narrative)
+        return WholeHistoryPublication(entries: entries, topics: topics, overview: narrativeState == "completed" ? narrative : nil)
     }
 }
 

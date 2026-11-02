@@ -73,4 +73,25 @@ final class WholeHistoryPublicationTests: XCTestCase {
         let current = try await store.wholeHistoryIsCurrent()
         XCTAssertFalse(current)
     }
+    func testRejectedOverviewDoesNotInvalidatePublishedDetailsOrErasePriorOverview() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try SessionStore(storageDirectory: dir)
+        let session = Session(transcript: "I have headaches.")
+        try await store.upsert(session)
+        let entry = linked(session)
+        try await store.publishWholeHistory(.init(entries: [session.id: [entry]], topics: [], overview: "Previous overview"), expected: [session])
+        let initiallyCurrent = try await store.wholeHistoryOverviewIsCurrent()
+        XCTAssertTrue(initiallyCurrent)
+        try await store.publishWholeHistory(.init(entries: [session.id: [entry]], topics: [], overview: nil), expected: [session])
+        let detailsCurrent = try await store.wholeHistoryIsCurrent()
+        let overviewCurrent = try await store.wholeHistoryOverviewIsCurrent()
+        let previous = try await store.wholeHistoryOverview()
+        XCTAssertTrue(detailsCurrent)
+        XCTAssertFalse(overviewCurrent)
+        XCTAssertEqual(previous, "Previous overview")
+        let snapshot = try await store.healthSnapshot()
+        XCTAssertEqual(HealthMemoryProjection.facts(in: snapshot).count, 1)
+    }
+
 }
