@@ -1,6 +1,8 @@
 import Foundation
 
 struct SessionsEnvelope: Codable, Equatable {
+    var wholeHistorySourceFingerprint: String? = nil
+    var wholeHistoryOverview: String? = nil
     var verifiedPairDecisions: [String: Bool] = [:]
     var carePlanCards: [CarePlanCard] = []
     var version: Int
@@ -15,7 +17,7 @@ struct SessionsEnvelope: Codable, Equatable {
     static let currentVersion = 4
 
     enum CodingKeys: String, CodingKey {
-        case version, sessions, folders, topics, careTeam, preferences, profile, verifiedPairDecisions, carePlanCards
+        case wholeHistorySourceFingerprint, wholeHistoryOverview, version, sessions, folders, topics, careTeam, preferences, profile, verifiedPairDecisions, carePlanCards
     }
 
     init(version: Int = Self.currentVersion, sessions: [Session], folders: [SessionFolder] = []) {
@@ -26,6 +28,8 @@ struct SessionsEnvelope: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        wholeHistorySourceFingerprint = try c.decodeIfPresent(String.self, forKey: .wholeHistorySourceFingerprint)
+        wholeHistoryOverview = try c.decodeIfPresent(String.self, forKey: .wholeHistoryOverview)
         verifiedPairDecisions = try c.decodeIfPresent([String: Bool].self, forKey: .verifiedPairDecisions) ?? [:]
         carePlanCards = try c.decodeIfPresent([CarePlanCard].self, forKey: .carePlanCards) ?? []
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1

@@ -1,13 +1,30 @@
 {
-  "crons": [{ "path": "/api/v1/health-processing/cleanup", "schedule": "0 4 * * *" }],
+  "crons": [
+    {
+      "path": "/api/v1/health-processing/cleanup",
+      "schedule": "0 4 * * *"
+    }
+  ],
   "functions": {
     "api/v1/health-processing/condition-workflow-queue.ts": {
       "maxDuration": 120,
-      "experimentalTriggers": [{ "type": "queue/v2beta", "topic": "condition-workflows", "maxDeliveries": 20 }]
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "condition-workflows",
+          "maxDeliveries": 20
+        }
+      ]
     },
     "api/v1/health-processing/queue.ts": {
       "maxDuration": 120,
-      "experimentalTriggers": [{ "type": "queue/v2beta", "topic": "health-processing-jobs", "maxDeliveries": 20 }]
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "health-processing-jobs",
+          "maxDeliveries": 20
+        }
+      ]
     },
     "api/v1/health-processing/continue.ts": {
       "maxDuration": 120
@@ -20,6 +37,9 @@
     },
     "api/v1/audio/transcriptions.ts": {
       "maxDuration": 120
+    },
+    "api/v1/health-processing/whole-history.ts": {
+      "maxDuration": 300
     }
   }
 }

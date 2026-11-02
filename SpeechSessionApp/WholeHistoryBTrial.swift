@@ -2,18 +2,18 @@ import SwiftUI
 import CryptoKit
 import SpeechSessionPersistence
 
-// This screen has no SessionStore write API. Results are private unverified previews.
-private struct BTrialFailure: LocalizedError {
+// Whole-history processing engine. Source linkage is validated locally; it is not independent clinical verification.
+struct BTrialFailure: LocalizedError {
     let message: String
     var code: String? = nil
     var errorDescription: String? { message }
 }
-private struct BTrialFact: Identifiable {
+struct BTrialFact: Identifiable {
     let id: String, text: String, category: String, status: String, by: String, event: String
     let groups: [String], quotes: [String]
     let plan: [String: String]?
 }
-private struct BTrialConcern: Identifiable {
+struct BTrialConcern: Identifiable {
     let id: String; let name: String; let systems: [String]
     var areas: [HealthAreaKind] {
         let mapped = systems.compactMap { code -> HealthAreaKind? in
@@ -38,7 +38,7 @@ private struct BTrialConcern: Identifiable {
         return unique.isEmpty ? [.other] : unique
     }
 }
-private struct BTrialArea: Identifiable {
+struct BTrialArea: Identifiable {
     let id: HealthAreaKind
     var concerns: [BTrialConcern]
     static func group(_ concerns: [BTrialConcern]) -> [Self] {
@@ -58,7 +58,7 @@ private struct BTrialArea: Identifiable {
     }
 }
 
-@MainActor private final class BTrialModel: ObservableObject {
+@MainActor final class BTrialModel: ObservableObject {
     @Published var records: [Session] = []
     @Published var selected = Set<UUID>()
     @Published var state = "Ready"
@@ -80,17 +80,19 @@ private struct BTrialArea: Identifiable {
     var hasNarrativeJob: Bool { narrativeJob["run"] != nil }
     private var saved: [String: Any] = [:]
     private var config: [String: Any] = [:]
+    private var transport: OpenAIChatTransport?
+    private var storageRoot: URL?
     private var loaded = false
     private var accessReady = false
     var hasRun: Bool { saved["run"] != nil }
-    var terminal: Bool { ["completed", "incomplete", "uncertain", "cancelled", "failed"].contains(state) }
-    var configured: Bool { config["url"] is String && config["token"] is String }
+    var terminal: Bool { ["completed", "incomplete", "uncertain", "cancelled", "failed", "invalid"].contains(state) }
+    var configured: Bool { transport?.durableJobsURL != nil || (config["url"] is String && config["token"] is String) }
     var expiry: String { (config["expires"] as? String) ?? "Unavailable" }
     var bodyAreas: [BTrialArea] { BTrialArea.group(concerns) }
     var plans: [BTrialFact] { facts.filter { $0.plan != nil } }
     private var file: URL {
         get throws {
-            let root = try SessionStore.makeDefaultStorageDirectory().appendingPathComponent("experiments/whole-history-b", isDirectory: true)
+            let root = try (storageRoot ?? SessionStore.makeDefaultStorageDirectory()).appendingPathComponent("whole-history", isDirectory: true)
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             var values = URLResourceValues(); values.isExcludedFromBackup = true
             var directory = root; try directory.setResourceValues(values)
@@ -98,13 +100,16 @@ private struct BTrialArea: Identifiable {
         }
     }
     func load(store: SessionStore) async {
-        guard !loaded else { return }; loaded = true
+        storageRoot = await store.storageDirectory
         do {
-            if let path = Bundle.main.url(forResource: "WholeHistoryB.local", withExtension: "json") {
-                config = (try JSONSerialization.jsonObject(with: Data(contentsOf: path))) as? [String: Any] ?? [:]
-            }
-            records = try await store.loadAll().filter { !$0.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.sorted { $0.date < $1.date }
+            records = try await store.loadAll().filter { !$0.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.processingState != .failed && $0.processingState != .transcribing }.sorted { $0.date == $1.date ? $0.id.uuidString < $1.id.uuidString : $0.date < $1.date }
             selected = Set(records.map(\.id))
+            guard !loaded else { return }; loaded = true
+            let destination = try file
+            let legacy = storageRoot!.appendingPathComponent("experiments/whole-history-b/preview.json")
+            if !FileManager.default.fileExists(atPath: destination.path), FileManager.default.fileExists(atPath: legacy.path) {
+                try Data(contentsOf: legacy).write(to: destination, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            }
             if let data = try? Data(contentsOf: file), let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 saved = value; state = saved["state"] as? String ?? "queued"
                 if let raw = saved["output"] as? String { try decode(raw) }
@@ -122,8 +127,18 @@ private struct BTrialArea: Identifiable {
     private func request(_ action: String, extras: [String: Any] = [:], narrativePass: Bool = false) async throws -> [String: Any] {
         let context = narrativePass ? narrativeJob : saved
         let connection = context["connection"] as? [String: Any] ?? (config["previousConnection"] as? [String: Any]) ?? config
-        guard let rawURL = connection["url"] as? String, let url = URL(string: rawURL), url.scheme == "https", let token = connection["token"] as? String, let run = context["run"] as? String else { throw BTrialFailure(message: "The phone trial is not configured in this build.") }
-        if !accessReady, let access = connection["deploymentAccess"] as? String {
+        let url: URL, authorization: String
+        guard let run = context["run"] as? String else { throw BTrialFailure(message: "The saved processing identity is missing.") }
+        if context["authenticated"] as? Bool == true {
+            guard let transport, let jobs = transport.durableJobsURL else { throw BTrialFailure(message: "Sign in to update your health story.") }
+            url = jobs.deletingLastPathComponent().appendingPathComponent("whole-history")
+            authorization = try await transport.makeAuthorizationHeader()
+        } else {
+            // Resume only an already-submitted diagnostic job with its original connection.
+            guard let raw = connection["url"] as? String, let legacyURL = URL(string: raw), legacyURL.scheme == "https", let token = connection["token"] as? String else { throw BTrialFailure(message: "This older processing request cannot be resumed in this build.") }
+            url = legacyURL; authorization = "Bearer " + token
+        }
+        if context["authenticated"] as? Bool != true, !accessReady, let access = connection["deploymentAccess"] as? String {
             var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
             components.queryItems = [URLQueryItem(name: "_vercel_share", value: access)]
             var handshake = URLRequest(url: components.url!); handshake.timeoutInterval = 30
@@ -136,7 +151,7 @@ private struct BTrialArea: Identifiable {
         var body = extras; body["action"] = action; body["run"] = run
         if let id = context["id"] { body["id"] = id }
         var req = URLRequest(url: url); req.httpMethod = "POST"; req.timeoutInterval = action == "run" ? 305 : 30
-        req.setValue("Bearer " + token, forHTTPHeaderField: "Authorization"); req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue(authorization, forHTTPHeaderField: "Authorization"); req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
         let (data, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse, let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw BTrialFailure(message: "The trial service returned an unreadable response. Resume this same run to check its status.") }
@@ -158,7 +173,7 @@ private struct BTrialArea: Identifiable {
                     "sourceSHA256": SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()]
         }
         accessReady = false
-        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "connection": config, "contractVersion": config["version"] ?? "", "automaticNarrative": true]
+        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "authenticated": true, "contractVersion": "compact-actions-short-overview-v1", "automaticNarrative": true]
         state = "queued"
         do { try persist(); await resume() } catch { self.error = error.localizedDescription }
     }
@@ -191,7 +206,10 @@ private struct BTrialArea: Identifiable {
             }
             if let nanos = response["cost_nusd"] as? String, let value = Double(nanos) { cost = value / 1e9; saved["cost"] = cost }
             if state == "completed", let result = response["result"] as? [String: Any], let raw = result["output"] as? String {
-                try decode(raw); saved["output"] = raw; try persist()
+                do { try decode(raw) } catch {
+                    state = "invalid"; try persist(); _ = try? await request("forget"); throw error
+                }
+                saved["output"] = raw; try persist()
                 // Save the validated local preview before deleting this run's remote payload.
                 _ = try? await request("forget")
                 if saved["automaticNarrative"] as? Bool == true {
@@ -226,8 +244,8 @@ private struct BTrialArea: Identifiable {
         do { try FileManager.default.removeItem(at: file); saved = [:]; accessReady = false; state = "Ready"; facts = []; concerns = []; overview = []; error = nil; elapsed = nil; cost = nil; narrative = nil; narrativeCoverage = [:]; narrativeState = "Not started"; narrativeCost = nil; narrativeElapsed = nil }
         catch { self.error = error.localizedDescription }
     }
-    func rewriteOverview() async {
-        guard canReviseOverview else { return }
+    func rewriteOverview(force: Bool = false) async {
+        guard !busy, (!hasNarrativeJob || narrativeTerminal), (force || canReviseOverview) else { return }
         if hasNarrativeJob {
             var history = saved["narrativeHistory"] as? [[String: Any]] ?? []
             history.append(narrativeJob); saved["narrativeHistory"] = history
@@ -243,7 +261,7 @@ private struct BTrialArea: Identifiable {
         defer { busy = false }
         do {
             if !hasNarrativeJob {
-                saved["narrativeJob"] = ["run": UUID().uuidString.lowercased(), "connection": config, "state": "queued", "writerVersion": "b-narrative-compact-v6"]
+                saved["narrativeJob"] = ["run": UUID().uuidString.lowercased(), "authenticated": true, "state": "queued", "writerVersion": "b-narrative-compact-v6"]
                 narrativeState = "queued"; try persist()
             }
             var job = narrativeJob
@@ -424,6 +442,115 @@ private struct BTrialArea: Identifiable {
     }
 }
 
+extension BTrialModel {
+    var sourcesMatch: Bool {
+        guard let originals = saved["records"] as? [[String: Any]], originals.count == records.count else { return false }
+        let byID = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0.transcript) })
+        return originals.allSatisfy { original in
+            guard let rawID = original["id"] as? String, let id = UUID(uuidString: rawID), let text = original["text"] as? String else { return false }
+            return byID[id] == text
+        }
+    }
+    func configure(_ transport: OpenAIChatTransport) { self.transport = transport }
+    func process(force: Bool = false, overviewOnly: Bool = false) async throws {
+        guard !busy else { return }
+        error = nil
+        if hasRun && !sourcesMatch && (!terminal || (hasNarrativeJob && !narrativeTerminal)) {
+            throw BTrialFailure(message: "A previous update is unfinished. Resume or stop it before processing changed records.")
+        }
+        if !sourcesMatch || (force && terminal) {
+            guard !hasRun || (terminal && (!hasNarrativeJob || narrativeTerminal)) else {
+                throw BTrialFailure(message: "The previous request is still pending. Resume checks the same request.")
+            }
+            // Retain the old result for recovery without retaining expired credentials.
+            if hasRun {
+                var archive = saved; archive.removeValue(forKey: "connection")
+                let path = try file.deletingLastPathComponent().appendingPathComponent("previous-result.json")
+                try JSONSerialization.data(withJSONObject: archive).write(to: path, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            }
+            saved = [:]; state = "Ready"; facts = []; concerns = []; narrative = nil; narrativeState = "Not started"
+            selected = Set(records.map(\.id))
+        }
+        if !hasRun { await start() }
+        else if !terminal { await resume() }
+        else if state == "completed", overviewOnly {
+            if narrativeTerminal, saved["publishedNarrativeRun"] as? String == narrativeJob["run"] as? String { await rewriteOverview(force: true) }
+            else if !narrativeTerminal { await writeOverview() }
+        }
+        else if state == "completed", !narrativeTerminal { await writeOverview() }
+        if let error { throw BTrialFailure(message: error) }
+        guard state == "completed", narrativeState == "completed", narrative != nil, sourcesMatch else {
+            throw BTrialFailure(message: "Updating stopped (\(state), overview \(narrativeState)). Your previous saved story is retained. No automatic paid retry was made.")
+        }
+    }
+    func markPublished() throws {
+        saved["publishedNarrativeRun"] = narrativeJob["run"]
+        // Completed diagnostic connections are no longer needed after migration.
+        if terminal { saved.removeValue(forKey: "connection") }
+        if narrativeTerminal { var job = narrativeJob; job.removeValue(forKey: "connection"); saved["narrativeJob"] = job }
+        try persist()
+    }
+    func publication() throws -> WholeHistoryPublication {
+        guard sourcesMatch, state == "completed", narrativeState == "completed", let narrative,
+              let locators = saved["locators"] as? [String: [String: Any]] else {
+            throw BTrialFailure(message: "The completed result does not match the current original records.")
+        }
+        func stableID(_ value: String) -> UUID {
+            let bytes = Array(SHA256.hash(data: Data(value.utf8)).prefix(16))
+            return UUID(uuid: (bytes[0],bytes[1],bytes[2],bytes[3],bytes[4],bytes[5],bytes[6],bytes[7],bytes[8],bytes[9],bytes[10],bytes[11],bytes[12],bytes[13],bytes[14],bytes[15]))
+        }
+        let byID = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
+        let groupByID = Dictionary(uniqueKeysWithValues: concerns.map { ($0.id, $0) })
+        let topics = concerns.flatMap { concern in (concern.systems.isEmpty ? ["unknown"] : concern.systems).map { system in
+            HealthTopic(id: stableID("b-topic:" + concern.name.lowercased() + ":" + system), name: concern.name, bodySystem: system)
+        } }
+        var entries = Dictionary(uniqueKeysWithValues: records.map { ($0.id, [SummaryEntry]()) })
+        for fact in facts {
+            let pid = fact.id.split(separator: ".").dropLast().joined(separator: ".")
+            guard let locator = locators[pid], let rid = locator["recordID"] as? String, let recordID = UUID(uuidString: rid), let record = byID[recordID],
+                  let quote = locator["quote"] as? String, let category = SummaryEntryCategory(rawValue: fact.category) else {
+                throw BTrialFailure(message: "A result has lost its source record reference.")
+            }
+            let quotations = fact.quotes.compactMap { $0.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).last.map(String.init) }
+            guard !quotations.isEmpty, quotations.allSatisfy({ !$0.isEmpty && record.transcript.contains($0) }) else { throw BTrialFailure(message: "A source quotation no longer matches its original.") }
+            let identity = stableID(rid + ":" + String(describing: locator["start"] ?? "") + ":" + fact.category + ":" + fact.text + ":" + fact.by + ":" + fact.event)
+            var entry = SummaryEntry(id: identity, category: category, title: fact.text,
+                details: (["Recorded status: " + fact.status] + (fact.by.isEmpty ? [] : ["Attribution: " + fact.by]) + (fact.event.isEmpty ? [] : ["Recorded date: " + fact.event]) + (fact.plan?["q"].flatMap { $0.isEmpty ? nil : "Qualifier: " + $0 }.map { [$0] } ?? [])).joined(separator: "\n"),
+                sourceSessionID: record.id, sourceTitle: record.displayTitle, sourceDate: record.date, sourceExcerpt: quote,
+                provenance: "Whole-history processing · source linked", needsReview: true,
+                reviewReason: "Source linked; not independently checked.",
+                clinicalStatus: ["historical", "performed", "resolved", "declined"].contains(fact.status) ? .past : .current,
+                factKey: "b:" + identity.uuidString)
+            var evidence = ClinicalEvidence()
+            evidence.assessmentMethod = WholeHistoryPublication.version
+            evidence.excerpt = quote; evidence.eventDate = fact.event.isEmpty ? nil : fact.event
+            evidence.practitioner = fact.by.isEmpty ? nil : fact.by
+            evidence.topicNames = fact.groups.compactMap { groupByID[$0]?.name }
+            evidence.wholeHistoryTopicIDs = fact.groups.compactMap { groupByID[$0] }.flatMap { concern in
+                (concern.systems.isEmpty ? ["unknown"] : concern.systems).map { stableID("b-topic:" + concern.name.lowercased() + ":" + $0) }
+            }
+            evidence.conditionSynthesisUnassigned = fact.groups.isEmpty
+            evidence.bodySystem = fact.groups.compactMap { groupByID[$0]?.systems.first }.first
+            evidence.statusExplicit = ["historical", "performed", "resolved", "declined"].contains(fact.status)
+            evidence.factIdentity = "b:" + identity.uuidString
+            evidence.reviewReason = "Source linked; not independently checked. Recorded status: " + fact.status
+            if let plan = fact.plan {
+                var instruction = CareInstruction(instruction: fact.text, schedule: plan["t"].flatMap { $0.isEmpty ? nil : $0 })
+                instruction.owner = plan["a"].flatMap { $0.isEmpty ? nil : $0 }
+                instruction.consideration = plan["q"].flatMap { $0.isEmpty ? nil : $0 }
+                instruction.bucket = ["conditional", "unclear", "declined", "performed", "historical", "resolved", "reported"].contains(fact.status) ? .considerations : (category == .followUp ? .followUp : .carePlan)
+                evidence.careInstruction = instruction
+                evidence.actionKind = ["performed", "historical", "resolved"].contains(fact.status) ? "treatment_received" : (category == .followUp ? "follow_up" : "homecare")
+            }
+            entry.evidence = evidence
+            let contentHash = SummaryVerification.contentHash(entry)
+            entry.evidence?.assessment = SummaryAssessment(admission: .sourceLinked, reason: "Exact source quotations validated locally; no independent model check.", sourceHash: SummaryVerification.hash(record.transcript), contentHash: contentHash, citations: quotations.map { SummaryCitation(field: "detail", excerpt: $0) })
+            entries[record.id, default: []].append(entry)
+        }
+        return WholeHistoryPublication(entries: entries, topics: topics, overview: narrative)
+    }
+}
+
 struct WholeHistoryBTrialView: View {
     let store: SessionStore
     @StateObject private var model = BTrialModel()
@@ -508,7 +635,7 @@ struct WholeHistoryBTrialView: View {
         .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await model.resume(); if model.hasNarrativeJob && !model.narrativeTerminal { await model.writeOverview() } } } }
     }
 }
-private struct BTrialFactsView: View {
+struct BTrialFactsView: View {
     let facts: [BTrialFact]
     var body: some View {
         List(facts) { fact in
@@ -527,7 +654,7 @@ private struct BTrialFactsView: View {
     }
 }
 
-private struct BTrialBodySystemRows: View {
+struct BTrialBodySystemRows: View {
     let areas: [BTrialArea]
     let facts: [BTrialFact]
     var body: some View {
@@ -555,7 +682,7 @@ private struct BTrialBodySystemRows: View {
         }
     }
 }
-private struct BTrialBodySystemsView: View {
+struct BTrialBodySystemsView: View {
     let areas: [BTrialArea]
     let facts: [BTrialFact]
     var body: some View {
@@ -567,7 +694,7 @@ private struct BTrialBodySystemsView: View {
         }.navigationTitle("B body systems")
     }
 }
-private struct BTrialConditionListView: View {
+struct BTrialConditionListView: View {
     let concerns: [BTrialConcern]
     let facts: [BTrialFact]
     var body: some View {

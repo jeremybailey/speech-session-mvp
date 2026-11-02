@@ -197,6 +197,10 @@ final class HealthSummaryModel: ObservableObject {
     /// already-current stages use their validated cache instead of making requests.
     func updateHealthStory(transport: OpenAIChatTransport?, onDevice: Bool, explicitlyRequested: Bool = false,
                            forceConditionRefresh: Bool = false, retryUnfinished: Bool = false) async {
+        if !onDevice {
+            await updateWholeHistory(transport: transport, explicitlyRequested: explicitlyRequested, force: forceConditionRefresh)
+            return
+        }
         guard (explicitlyRequested ? hasLoaded && !isTransferringData : automaticProcessingAllowed),
               !isUpdatingStory, !isProcessing, !Task.isCancelled else { return }
         guard explicitlyRequested || !stoppedForCurrentSources else { return }
@@ -267,9 +271,67 @@ final class HealthSummaryModel: ObservableObject {
         } while !Task.isCancelled && !explicitlyStopped
     }
 
+    /// The normal cloud flow is B: whole-history details/conditions/care plans,
+    /// followed by the concise overview writer. No legacy cloud stage is chained on.
+    private func updateWholeHistory(transport: OpenAIChatTransport?, explicitlyRequested: Bool, force: Bool = false, overviewOnly: Bool = false) async {
+        guard hasLoaded, !isTransferringData, !isUpdatingStory, !isProcessing, !Task.isCancelled,
+              explicitlyRequested || (automaticProcessingAllowed && !stoppedForCurrentSources) else { return }
+        guard automaticPolicy.claim(updateInputKey, explicitlyRequested: explicitlyRequested) else { return }
+        guard let transport else { updateError = "Sign in to update your health story."; return }
+        if explicitlyRequested {
+            UserDefaults.standard.removeObject(forKey: "collectivecare.stoppedSummaryInput")
+            UserDefaults.standard.removeObject(forKey: "collectivecare.stoppedSummarySources")
+        }
+        wholeHistory.configure(transport)
+        explicitlyStopped = false; updateError = nil; error = nil; processingIssue = nil
+        conditionNotice = nil; overviewNotice = nil; careOrganizationNotice = nil
+        isUpdatingStory = true; isProcessing = true
+        updateStates = [.details: .updating, .conditions: .updating, .overview: .waiting]
+        progressTitle = overviewOnly ? "Creating overview" : "Updating your health story"
+        progress = "Organizing original records and writing your overview…"
+        progressShowsRecordCount = false; progressTotal = 0; progressValue = 0
+        var stopID: UUID?
+        defer {
+            isUpdatingStory = false; isProcessing = false; progress = ""
+            if Task.isCancelled {
+                automaticPolicy.interrupted(updateInputKey)
+                interruptUpdates()
+            } else if !explicitlyStopped { automaticPolicy.finished(updateInputKey) }
+        }
+        do {
+            stopID = try await transport.explicitStop?.register { [wholeHistory] in
+                await wholeHistory.stop(); await wholeHistory.stopOverview()
+            }
+            await wholeHistory.load(store: store)
+            guard !wholeHistory.records.isEmpty else { updateStates = [:]; return }
+            let current = try await store.wholeHistoryIsCurrent()
+            let needsRun = force || overviewOnly || !current
+            if needsRun {
+                try await wholeHistory.process(force: force, overviewOnly: overviewOnly && current)
+                try Task.checkCancellation()
+                guard !explicitlyStopped else { return }
+                let publication = try wholeHistory.publication()
+                try await store.publishWholeHistory(publication, expected: wholeHistory.records)
+                try wholeHistory.markPublished()
+            }
+            if let stopID { await transport.explicitStop?.completed(stopID) }
+            await refresh()
+            updateStates = [.details: .ready, .conditions: .ready, .overview: .ready]
+        } catch {
+            if let stopID { await transport.explicitStop?.completed(stopID) }
+            if error is CancellationError || Task.isCancelled { return }
+            updateError = error.localizedDescription
+            if overviewOnly { overviewNotice = error.localizedDescription }
+            else { conditionNotice = error.localizedDescription }
+            updateStates = [.details: .needsAttention, .conditions: .needsAttention, .overview: .interrupted]
+        }
+    }
+
     private var retryRecordIDs: Set<UUID> = []
     private let store: SessionStore
     private let processor = RecordSummaryProcessor()
+    private let wholeHistory = BTrialModel()
+    private var wholeHistoryCurrent = false
     private var refreshRevision = 0
 
     init(store: SessionStore) { self.store = store }
@@ -326,6 +388,14 @@ final class HealthSummaryModel: ObservableObject {
         do {
             isImportedHistory = await store.isImportedHistory
             importedRecordIDs = try await store.importedRecordIDs()
+            await wholeHistory.load(store: store)
+            // Migrate a complete matching on-phone B result without another paid call.
+            // Source hashes and exact quotations must still validate before admission.
+            if !(try await store.wholeHistoryIsCurrent()), let publication = try? wholeHistory.publication() {
+                try await store.publishWholeHistory(publication, expected: wholeHistory.records)
+                try wholeHistory.markPublished()
+            }
+            wholeHistoryCurrent = try await store.wholeHistoryIsCurrent()
             var saved = try await store.healthSnapshot()
             for session in saved.sessions where !isImportedHistory && session.summaryEntries?.isEmpty != false {
                 guard let markdown = session.summary, !markdown.isEmpty else { continue }
@@ -341,15 +411,22 @@ final class HealthSummaryModel: ObservableObject {
             }.value
             guard revision == refreshRevision else { return }
             // Saved care-team members are explicitly maintained by the patient. Generated contacts use the verified fact projection.
-            let savedOverview = await store.storyOverview(for: projected)?.text
+            let savedOverview: String?
+            if wholeHistoryCurrent { savedOverview = try await store.wholeHistoryOverview() }
+            else { savedOverview = await store.storyOverview(for: projected)?.text }
             let previousOverview = await store.lastStoryOverviewForDisplay()?.text
             guard revision == refreshRevision else { return }
             let synthesized = await store.conditionSynthesis(for: projected)
-            let displayed = await store.displayedConditionFacts(for: projected)
+            let displayed = wholeHistoryCurrent ? projected : await store.displayedConditionFacts(for: projected)
+            let useWholeHistory = wholeHistoryCurrent
             let presentation = await Task.detached(priority: .userInitiated) {
                 let keys = Self.updateKeys(snapshot: projectionSnapshot, facts: projected, conditionFacts: displayed)
                 let conditions = ConditionSummaryProjection.groups(facts: displayed, topics: projectionSnapshot.topics)
-                return (keys: keys, conditions: conditions, areas: HealthAreaProjection.groups(conditions))
+                let areas = HealthAreaProjection.groups(conditions)
+                let ranked = useWholeHistory ? areas.enumerated().sorted {
+                    $0.element.conditions.count == $1.element.conditions.count ? $0.offset < $1.offset : $0.element.conditions.count > $1.element.conditions.count
+                }.map(\.element) : areas
+                return (keys: keys, conditions: conditions, areas: ranked)
             }.value
             guard revision == refreshRevision else { return }
             let savedCareCards = await store.carePlanCards()
@@ -362,7 +439,7 @@ final class HealthSummaryModel: ObservableObject {
             conditionFacts = displayed
             // The store reuses prior condition groups only for unchanged surviving
             // source entries while a replacement is being prepared.
-            needsConditionOrganization = !projected.isEmpty && synthesized == nil
+            needsConditionOrganization = !wholeHistoryCurrent && !projected.isEmpty && synthesized == nil
             overviewIsCurrent = savedOverview != nil
             if let savedOverview { displayedOverview = savedOverview }
             else if displayedOverview == nil { displayedOverview = previousOverview }
@@ -511,6 +588,7 @@ final class HealthSummaryModel: ObservableObject {
     }
 
     func organizeConditions(transport: OpenAIChatTransport?, onDevice: Bool) async {
+        if !onDevice { await updateWholeHistory(transport: transport, explicitlyRequested: true, force: true); return }
         guard !isProcessing, !isTransferringData else { return }
         isProcessing = true
         progressTitle = "Organizing conditions"
@@ -584,6 +662,10 @@ final class HealthSummaryModel: ObservableObject {
                           forceAll: Bool = false, retryUnfinished: Bool = false,
                           organizeConditionsAfterRecords: Bool = true, overviewOnly: Bool = false,
                           forceConditionRefresh: Bool = false, excludedRecordIDs: Set<UUID> = []) async {
+        if !onDevice {
+            await updateWholeHistory(transport: configuredTransport, explicitlyRequested: true, force: forceAll || forceSessionID != nil || forceConditionRefresh, overviewOnly: overviewOnly)
+            return
+        }
         if overviewOnly {
             await createOverview(transport: configuredTransport, onDevice: onDevice)
             return
@@ -738,7 +820,8 @@ final class HealthSummaryModel: ObservableObject {
     }
 
     func careCard(for input: CarePlanCardInput) -> CarePlanCard? {
-        careCards.first { $0.id == input.id && $0.fingerprint == input.fingerprint }
+        if wholeHistoryCurrent { return WholeHistoryPublication.careCard(input) }
+        return careCards.first { $0.id == input.id && $0.fingerprint == input.fingerprint }
     }
 
     /// Aggregate only the presentation. Source occurrences, condition links and edits stay intact.
@@ -817,6 +900,7 @@ final class HealthSummaryModel: ObservableObject {
     /// An explicit user request must always end with a visible result or explanation.
     /// It does not restart repair work or clear a record-processing failure.
     func createOverview(transport: OpenAIChatTransport?, onDevice: Bool) async {
+        if !onDevice { await updateWholeHistory(transport: transport, explicitlyRequested: true, overviewOnly: true); return }
         guard !isProcessing, !isTransferringData else { return }
         isProcessing = true
         updateStates[.overview] = .updating

@@ -901,7 +901,7 @@ struct HealthSummaryView: View {
         overviewOnlyRequest = false
         let recordsOnly = reprocessAllRecordsRequest
         reprocessAllRecordsRequest = false
-        let forceConditions = conditionsOnly && (!automaticResume || pendingSummaryJob == "regenerateConditions")
+        let forceConditions = conditionsOnly && !automaticResume
         let job = conditionsOnly ? (forceConditions ? "regenerateConditions" : "conditions")
             : (overviewOnly ? "overview" : (recordsOnly ? "records" : "summary"))
         pendingSummaryJob = job
@@ -946,7 +946,7 @@ struct HealthSummaryView: View {
             } else {
                 if recordsOnly {
                     await model.prepareSummaries(transport: transport, onDevice: backend == "onDevice",
-                                                 forceAll: true, retryUnfinished: resume, organizeConditionsAfterRecords: true)
+                                                 forceAll: !automaticResume, retryUnfinished: resume, organizeConditionsAfterRecords: true)
                 } else {
                     await model.updateHealthStory(transport: transport, onDevice: backend == "onDevice",
                                                  explicitlyRequested: !automatic || automaticResume,

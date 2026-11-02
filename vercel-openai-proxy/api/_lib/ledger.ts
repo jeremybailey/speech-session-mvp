@@ -19,7 +19,7 @@ export async function transaction<T>(work: (client: PoolClient) => Promise<T>): 
   finally { client.release(); }
 }
 export const stages = new Set(["extraction", "classification", "checking", "duplicates",
-  "overview_condense", "overview", "condition-synthesis", "condition-context-recovery", "condition-verification"]);
+  "overview_condense", "overview", "condition-synthesis", "condition-context-recovery", "condition-verification", "whole-history-generation", "whole-history-overview"]);
 export type WorkloadType='initial'|'incremental'|'retry'|'development'|'unknown';
 export function workloadType(value:unknown):WorkloadType {
   return ['initial','incremental','retry','development'].includes(String(value))?value as WorkloadType:'unknown';
@@ -29,7 +29,7 @@ export function validatePayload(value: unknown, experimental = false): Payload {
   const p = value as Payload;
   if (!p || !stages.has(p.stage) || typeof p.instructions !== "string" || typeof p.input !== "string" ||
       !p.response_format || !["json_schema","json_object"].includes(String(p.response_format.type)) ||
-      Buffer.byteLength(JSON.stringify(p)) > 200_000) throw new Error("invalid_request");
+      Buffer.byteLength(JSON.stringify(p)) > (String(p.stage).startsWith('whole-history-') ? 2_000_000 : 200_000)) throw new Error("invalid_request");
   if (p.instructions.startsWith('Pipeline: fast-details-') && !p.instructions.startsWith('Pipeline: fast-details-v2.2\n') && !experimental && !fastDetailsEnabled()) throw new Error('fast_experiment_disabled');
   const schema = p.response_format.json_schema as Record<string, unknown>;
   if (p.response_format.type === "json_schema" &&

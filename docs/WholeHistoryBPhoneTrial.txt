@@ -1,10 +1,4 @@
-WHOLE-HISTORY B PHONE TRIAL
-
-See docs/OptionBDevelopment.md for the current contract, build steps and limits.
-
-Settings -> Experiments -> Whole-history B trial. Existing B results are retained.
-Use Write revised overview to try a newer writing policy without repeating extraction.
-Conditions by body system opens B's own source-linked, unverified proposals.
-Body systems also appear below the overview, ordered by concern count descending.
-
-The local WholeHistoryB.local.json is ignored, Debug-only and expires. It is not part of the GitHub snapshot. The normal app pipeline and saved records are unchanged.
+Whole-history B is now the normal cloud pipeline on codex/option-b-development.
+Build SpeechSessionApp.xcodeproj using Whole-history B Phone and open My health story.
+See docs/OptionBDevelopment.md for authentication, source-linked trust, recovery and fallback details.
+Historical diagnostic harnesses remain for reproducibility; do not bundle WholeHistoryB.local.json.

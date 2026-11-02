@@ -103,6 +103,19 @@ public enum ConditionSummaryProjection {
                 if let ids = fact.preference.topicIDs {
                     // An explicit empty array is the patient's choice to leave this unassigned.
                     candidates = ids.compactMap { topicMap[$0] }.map { Candidate(name: $0.name, system: normalized($0.bodySystem)) }
+                } else if entry.evidence?.assessmentMethod == WholeHistoryPublication.version,
+                          entry.evidence?.assessment?.admission == .sourceLinked {
+                    // B's explicit proposal links are organizational, not independent checks.
+                    // Preserve all assigned systems without applying the legacy lexical heuristic.
+                    if let ids = entry.evidence?.wholeHistoryTopicIDs {
+                        candidates = ids.compactMap { topicMap[$0] }.map { Candidate(name: $0.name, system: normalized($0.bodySystem)) }
+                    } else {
+                        candidates = (entry.evidence?.topicNames ?? []).flatMap { name -> [Candidate] in
+                            let matches = topics.filter { normalized($0.name) == normalized(name) }
+                            return matches.isEmpty ? [Candidate(name: name, system: normalized(entry.evidence?.bodySystem ?? ""))]
+                                : matches.map { Candidate(name: name, system: normalized($0.bodySystem)) }
+                        }
+                    }
                 } else if entry.evidence?.conditionSynthesisUnassigned == true {
                     candidates = []
                 } else if let group = entry.evidence?.conditionGroup, !normalized(group).isEmpty,
@@ -158,7 +171,11 @@ public enum ConditionSummaryProjection {
                 let id = candidate.key + "|" + system
                 destinations.insert(id)
                 // Stable display label regardless of source order or casing.
-                names[id] = candidate.key.prefix(1).uppercased() + candidate.key.dropFirst()
+                if entry.evidence?.assessmentMethod == WholeHistoryPublication.version {
+                    names[id] = candidate.name
+                } else if names[id] == nil {
+                    names[id] = candidate.key.prefix(1).uppercased() + candidate.key.dropFirst()
+                }
                 bodies[id] = system
             }
             if destinations.isEmpty { destinations.insert("uncategorized") }

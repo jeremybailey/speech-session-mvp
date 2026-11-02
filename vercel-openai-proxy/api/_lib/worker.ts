@@ -24,7 +24,7 @@ export async function runJob(id?: string): Promise<number> {
       await settle(job.id, "incomplete", { input_tokens: 0, output_tokens: 0 });
     } else {
       const schema = job.payload.response_format.json_schema as Record<string, unknown>;
-      const client = new OpenAI({ maxRetries: 0, timeout: 100_000 });
+      const client = new OpenAI({ maxRetries: 0, timeout: job.payload.stage === 'whole-history-generation' ? 270_000 : 100_000 });
       const outputLimit = reservedOutputTokenLimit(job.model, job.payload.stage, job.reserve_nusd);
       const providerStarted = performance.now();
       const result = await client.responses.create({ model: job.model, store: false, service_tier: "default",

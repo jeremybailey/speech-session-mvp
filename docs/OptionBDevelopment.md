@@ -1,34 +1,35 @@
-# Option B development fork
+# Whole-history B mainline
 
-The fallback is branch `codex/pre-option-b-fallback-2026-11-02` at commit `9be4b9c18b76eede655bb94becf31282518becda`. This development branch starts directly from that snapshot, preserving its combined care-plan and recovery work.
+The normal cloud “My health story” flow on `codex/option-b-development` now uses B. The fallback remains `codex/pre-option-b-fallback-2026-11-02` at `9be4b9c18b76eede655bb94becf31282518becda`.
 
-## Current candidate
+## Processing
 
-B reads source-only copies of saved records in one whole-history call. A second dedicated overview-writing call uses B's proposals and condition links. Both calls use Luna with medium reasoning. The overview targets 70–90 words, with a 100-word phone limit, and automatic all-condition coverage decisions; it has no patient-selected or patient-specific priority defaults.
+One source-only whole-history request produces details, condition associations and care-plan occurrences. A second Luna medium writing request produces the compact overview (70–90 words targeted; 100 words maximum). No legacy extraction, checking, condition synthesis or care-plan classification is chained onto B. Explicit on-device processing retains its existing implementation.
 
-The phone preview includes source-linked details, care-plan occurrences, a compact overview and conditions grouped by body system. Systems are ordered by concern count descending; ties preserve their original order. Existing cached results can be viewed without new inference.
+Normal updating, reprocessing records, regenerating conditions and regenerating the overview use this pipeline. An overview-only regeneration reuses the existing B proposal when its originals still match. Systems rank by concern count descending, with stable ties.
 
-## Source entry points
+B associations are proposals: exact source references/quotations are validated locally, and details enter the existing saved-story model as `sourceLinked`, with `reviewRequired` trust. Neither the overview writing pass nor reference validation establishes independent clinical verification. Patient edits, removals, preferences and original records are preserved. Publication is atomic across the full matching source snapshot; an original-record change rejects the commit. The first publication retains `pre-whole-history-sessions.json` locally and records per-record revisions.
 
-- `SpeechSessionApp/WholeHistoryBTrial.swift`: read-only phone trial, resumable identities, local validation, source quotations and preview navigation.
-- `scripts/whole_history_aggregation/contracts_v13.py`: the phone's initial B contract, based on the earlier compact-actions version.
-- `scripts/whole_history_aggregation/phone/contract.ts`: source-only TypeScript bundle/payload builder.
-- `scripts/whole_history_aggregation/phone/overview_v6.ts`: current general-purpose compact overview prompt and response schema.
-- `scripts/whole_history_aggregation/phone/endpoint_v7.ts`: current scoped diagnostic endpoint source.
-- Earlier contract and endpoint versions remain for reproducibility; they are not the active policy.
+## Recovery and authentication
 
-## Build and preview
+The normal endpoint is `/api/v1/health-processing/whole-history`. It uses current Kinde authentication, normal owner isolation and the existing shared pilot ledger. No expiring diagnostic configuration is bundled. The historical experiment allowance and accounting remain untouched.
 
-Open `SpeechSessionApp.xcodeproj` in this checkout and select the `Whole-history B Phone` scheme with Debug. Open Settings → Experiments → Whole-history B trial. Body-system previews are beneath the two-pass overview and also accessible through Conditions by body system.
+Each generation and writing request persists its identity before dispatch. Duplicate submissions reuse their reservation; interrupted polling resumes that job. Uncertain, incomplete, cancelled and invalid outcomes do not trigger automatic paid retry or splitting. Explicit Stop requests cancellation. The prior saved story remains until both passes validate and publish.
 
-The local `SpeechSessionApp/WholeHistoryB.local.json` is ignored and excluded from this commit. It contains expiring diagnostic access, not a production provider key. A clean checkout needs fresh private configuration before paid runs; do not commit it or include it in a Release build. The existing configured phone checkout can continue to use its local configuration until it expires.
+A complete on-phone trial result can be migrated without another model call only when its originals match all current ready records. Private processing state is saved under `whole-history/preview.json`, excluded from backup. Old diagnostic connections are removed after successful publication.
 
-The diagnostic endpoint/template are materialized into a private backend copy for testing; do not add the historical endpoint variants to production routes directly. Existing preparation scripts retain frozen historical experiment paths, so adapting their local paths is required when replaying on another machine.
+## Build
 
-## Status and limits
+Open `SpeechSessionApp.xcodeproj` in this checkout and choose `Whole-history B Phone` and your phone. The normal home screen shows the result; there is no Experiments entry to use. The existing bundle ID is retained so installation preserves app data.
 
-This is a development fork of the tested B preview, not a production processing switch. The normal app still uses the existing pipeline. B outputs remain unverified proposals and are not imported into checked patient data. Reference integrity and coverage bookkeeping do not establish clinical accuracy.
+The historical frozen harness/contracts under `scripts/whole_history_aggregation` remain for reproducibility. Active backend source is in `vercel-openai-proxy/api/_lib/whole-history-*` and `api/v1/health-processing/whole-history.ts`.
 
-The latest compact overview passed five targeted cases (one cached patient result and four synthetic histories), including native source, citation, number, coverage and length checks. These small checks do not establish population-level accuracy. Private records, answer keys, outputs and grading artifacts remain in ignored benchmark storage.
+## Validation and limitations
 
-The existing cumulative $5 experiment allowance, shared pilot cap, historical charges and unresolved reservations are unchanged. Forking these branches does not authorize resetting budgets, changing production domains or releasing an app.
+The final package suite passed 424 tests with three existing skips. Four new persistence tests cover source changes, missing quotations, exclusions, edit preservation and source-linked trust. Backend checks passed 115 tests with five existing skips. A replay through the actual native converter retained every fact and concern in all five frozen cases. The device Debug build passes.
+
+Production deployment `dpl_7pnBzmnmGgqMkoXUkTLKZxMzaHuf` is ready on the existing `speech-session-mvp.vercel.app` backend. The existing additive receipt migration (008) was applied; the shared budget readiness check passed. An anonymous request to the B route returns 401. No paid replay was needed for this integration.
+
+For local replay, run `python3 scripts/replay_whole_history_native.py --fixtures /private/path/to/frozen-cases`. The private folder must contain the five original `*/native-cache.json` fixtures; fixtures are never committed. The helper removes its generated test afterward.
+
+Earlier compact-overview evaluation covered one cached patient result and four synthetic histories. These checks do not establish population-level clinical accuracy. This development mainline is not an App Store release.

@@ -292,7 +292,6 @@
 				FW01 /* Frameworks */,
 				RES01 /* Resources */,
 				CPY01 /* Embed Foundation Extensions */,
-							BPHONE03 /* Private B trial configuration (Debug only) */,
 			);
 			buildRules = (
 			);
@@ -422,7 +421,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		BPHONE03 /* Private B trial configuration (Debug only) */ = {isa = PBXShellScriptBuildPhase; buildActionMask = 2147483647; files = (); inputPaths = ("$(SRCROOT)/SpeechSessionApp/WholeHistoryB.local.json",); name = "Private B trial configuration (Debug only)"; outputPaths = ("$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/WholeHistoryB.local.json",); runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = "if [ \"$CONFIGURATION\" = \"Debug\" ] && [ -f \"$SRCROOT/SpeechSessionApp/WholeHistoryB.local.json\" ]; then\n  mkdir -p \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\n  cp \"$SRCROOT/SpeechSessionApp/WholeHistoryB.local.json\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/WholeHistoryB.local.json\"\nfi"; };
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */

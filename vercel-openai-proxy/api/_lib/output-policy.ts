@@ -3,6 +3,7 @@ import { reservation } from './pricing';
 // Extraction includes both reasoning and the complete structured fact list.
 // Keep other stages unchanged; callers cannot select this limit.
 export function outputTokenLimit(model: string, stage: string): number {
+  if (model === 'gpt-6-luna' && stage === 'whole-history-generation') return 64_000;
   return model === 'gpt-6-luna' && stage === 'extraction' ? 10_000 : 6_000;
 }
 

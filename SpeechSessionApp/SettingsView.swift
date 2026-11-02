@@ -355,9 +355,6 @@ struct SettingsView: View {
                 }
 
                 #if DEBUG
-                Section("Experiments") {
-                    NavigationLink("Whole-history B trial") { WholeHistoryBTrialView(store: store) }
-                }
                 #endif
 
                 Section {

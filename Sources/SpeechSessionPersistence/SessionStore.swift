@@ -758,6 +758,56 @@ public actor SessionStore {
         try saveEnvelope(env)
     }
 
+    public func wholeHistoryIsCurrent() throws -> Bool {
+        let env = try loadEnvelope()
+        return env.wholeHistorySourceFingerprint == WholeHistoryPublication.fingerprint(env.sessions)
+    }
+    public func wholeHistoryOverview() throws -> String? { try loadEnvelope().wholeHistoryOverview }
+
+    /// Commit the full source snapshot atomically. Preserve edits, preferences and
+    /// original transcripts, and retain a local pre-B backup and per-record revisions.
+    public func publishWholeHistory(_ publication: WholeHistoryPublication, expected: [Session]) throws {
+        try Task.checkCancellation()
+        var env = try loadEnvelope()
+        let ready = env.sessions.filter { !$0.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.processingState != .failed && $0.processingState != .transcribing }
+        guard Set(ready.map(\.id)) == Set(expected.map(\.id)),
+              WholeHistoryPublication.fingerprint(ready) == WholeHistoryPublication.fingerprint(expected),
+              Set(publication.entries.keys) == Set(expected.map(\.id)) else { throw SummaryCommitError.sourceChanged }
+        let fingerprint = WholeHistoryPublication.fingerprint(expected)
+        for session in ready {
+            for entry in publication.entries[session.id] ?? [] {
+                guard entry.sourceSessionID == session.id,
+                      entry.evidence?.assessment?.admission == .sourceLinked,
+                      entry.evidence?.assessment?.sourceHash == SummaryVerification.hash(session.transcript),
+                      entry.evidence?.assessment?.contentHash == SummaryVerification.contentHash(entry),
+                      entry.evidence?.assessment?.citations.isEmpty == false,
+                      entry.evidence?.assessment?.citations.allSatisfy({ !$0.excerpt.isEmpty && session.transcript.contains($0.excerpt) }) == true else { throw SummaryCommitError.sourceChanged }
+            }
+        }
+        let backup = directoryURL.appendingPathComponent("pre-whole-history-sessions.json")
+        if !fileManager.fileExists(atPath: backup.path) {
+            try encoder.encode(env).write(to: backup, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        }
+        for index in env.sessions.indices where publication.entries[env.sessions[index].id] != nil {
+            let previous = env.sessions[index].summaryEntries ?? []
+            let source = env.sessions[index].transcript
+            var run = SummaryRun(source: source, stage: .complete, promptVersion: WholeHistoryPublication.version)
+            run.updatedAt = Date()
+            env.sessions[index].summaryRevisions = (env.sessions[index].summaryRevisions ?? []) + [SummaryRevision(runID: run.id, entries: previous)]
+            env.sessions[index].summaryEntries = SummaryEntryMerge.merging(generated: publication.entries[env.sessions[index].id] ?? [], existing: previous, supersedeUnmatchedGenerated: true)
+            env.sessions[index].summaryRun = run
+            env.sessions[index].summaryDrafts = nil
+            env.sessions[index].extractionVersion = SummaryVerification.version
+            env.sessions[index].summary = (env.sessions[index].summaryEntries ?? []).filter { !$0.isDeleted && $0.evidence?.assessment?.admission != .superseded }.map { "- " + $0.title + ($0.details.isEmpty ? "" : ": " + $0.details) }.joined(separator: "\n")
+            let folderID = env.sessions[index].folderID
+            invalidateFolderSummary(&env, folderID: folderID)
+        }
+        for topic in publication.topics where !env.topics.contains(where: { $0.id == topic.id }) { env.topics.append(topic) }
+        env.wholeHistorySourceFingerprint = fingerprint
+        env.wholeHistoryOverview = publication.overview
+        try saveEnvelope(env)
+    }
+
     public func publishVerifiedSummary(expected: Session, runID: UUID, entries: [SummaryEntry]) throws {
         _ = try healthSnapshot()
         var env = try loadEnvelope()

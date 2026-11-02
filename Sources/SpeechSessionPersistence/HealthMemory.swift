@@ -44,6 +44,8 @@ public struct ClinicalEvidence: Codable, Equatable, Hashable, Sendable {
     public var practitioner: String?
     public var assessmentMethod: String?
     public var topicNames: [String]?
+    /// Exact generated B associations; patient preferences still take precedence.
+    public var wholeHistoryTopicIDs: [UUID]?
     /// Organizational association, not a diagnosis or a replacement for source text.
     public var conditionGroup: String?
     public var conditionGroupReason: String?
@@ -208,7 +210,8 @@ public enum HealthMemoryProjection {
                 return $0.id.uuidString < $1.id.uuidString
             }
             let topicNames = Set(entries.flatMap { $0.evidence?.topicNames ?? [] }.map(normalize))
-            let topicIDs = preference.topicIDs ?? snapshot.topics.filter { topicNames.contains(normalize($0.name)) }.map(\.id)
+            let proposedIDs = Set(entries.flatMap { $0.evidence?.wholeHistoryTopicIDs ?? [] })
+            let topicIDs = preference.topicIDs ?? (proposedIDs.isEmpty ? snapshot.topics.filter { topicNames.contains(normalize($0.name)) }.map(\.id) : proposedIDs.sorted { $0.uuidString < $1.uuidString })
             return HealthFact(id: key, occurrences: sorted, preference: preference, topicIDs: topicIDs)
         }
         let presented = groupHistoryForDisplay ? ContactHistoryPresentation.group(MedicationHistoryPresentation.group(facts)) : facts
