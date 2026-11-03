@@ -1,0 +1,26 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {makePayload} from '../api/_lib/whole-history-source';import {makeOverviewPayload,overviewVersion,briefOverviewVersion} from '../api/_lib/whole-history-overview';
+import {chainedOverview} from '../api/_lib/whole-history-background';
+const template=require('../api/_lib/whole-history-template.json');
+const records=[{id:'11111111-1111-4111-8111-111111111111',text:'Clinician recommends continuing heat at night. If travelling before the next visit, adjust the backpack.'}];
+const proposal={concerns:[{id:'c1',name:'Back pain',systems:['musculoskeletal'],evidence:['r1.p1']}],overview:[{text:'Synthetic history.',cite:['r1.p1']}],passages:{'r1.p1':[{k:'carePlan',s:'recommended',v:['Continue heat','',''],c:[],p:{a:'Patient',t:'At night',q:'',i:'p1',h:'Comfort plan'},g:['c1'],m:null,f:null}]}};
+test('brief generation is opt-in and leaves the old plan request and validation shape unchanged',()=>{
+ const old=makePayload(records,template,true,true,true),explicit=makePayload(records,template,true,true,true,false),brief=makePayload(records,template,true,true,true,true);
+ assert.deepEqual(old,explicit);
+ assert.equal(JSON.parse(old.payload.input).version,'structured-plans-v4');assert.equal(JSON.parse(brief.payload.input).version,'structured-plans-brief-v5');
+ assert.deepEqual(old.payload.response_format,brief.payload.response_format);
+ assert.equal(brief.payload.stage,old.payload.stage);
+ assert.match(brief.payload.instructions,/4–9 words/);assert.match(brief.payload.instructions,/short target never permits dropping/);
+});
+test('durable continuation routes each saved generation version to its corresponding writer with identical coverage and evidence',()=>{
+ const legacy=makePayload(records,template,true,true,true).payload,fresh=makePayload(records,template,true,true,true,true).payload;
+ for(const payload of [legacy,fresh])payload.input=JSON.stringify({...JSON.parse(payload.input),serverOverview:true});
+ const old=chainedOverview(legacy,JSON.stringify(proposal),'parent-id'),brief=chainedOverview(fresh,JSON.stringify(proposal),'parent-id');
+ const oldDirect=makeOverviewPayload(records,proposal,template),briefDirect=makeOverviewPayload(records,proposal,template,true);
+ assert.equal(oldDirect.version,overviewVersion);assert.equal(briefDirect.version,briefOverviewVersion);
+ assert.equal(old.instructions,oldDirect.payload.instructions);assert.equal(brief.instructions,briefDirect.payload.instructions);
+ assert.deepEqual(JSON.parse(old.input),JSON.parse(brief.input));
+ assert.deepEqual(old.response_format.json_schema.schema,brief.response_format.json_schema.schema);
+ assert.match(brief.instructions,/45–65 words/);assert.match(brief.instructions,/Never omit a major condition/);
+ assert.deepEqual(JSON.parse(brief.input).facts[0].care.a,'Patient');
+});

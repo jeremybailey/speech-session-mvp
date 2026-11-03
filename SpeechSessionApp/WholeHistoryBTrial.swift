@@ -78,7 +78,7 @@ struct BTrialArea: Identifiable {
     @Published var narrativeElapsed: Double?
     private var narrativeJob: [String: Any] { saved["narrativeJob"] as? [String: Any] ?? [:] }
     var narrativeTerminal: Bool { ["completed", "incomplete", "uncertain", "cancelled", "failed", "invalid"].contains(narrativeState) }
-    var canReviseOverview: Bool { !busy && (!hasNarrativeJob || narrativeTerminal) && narrativeJob["writerVersion"] as? String != "b-narrative-compact-v6" }
+    var canReviseOverview: Bool { !busy && (!hasNarrativeJob || narrativeTerminal) && narrativeJob["writerVersion"] as? String != "b-narrative-brief-v7" }
     var hasNarrativeJob: Bool { narrativeJob["run"] != nil }
     private var saved: [String: Any] = [:]
     private var config: [String: Any] = [:]
@@ -175,7 +175,7 @@ struct BTrialArea: Identifiable {
                     "sourceSHA256": SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()]
         }
         accessReady = false
-        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "authenticated": true, "contractVersion": "compact-actions-short-overview-v1", "automaticNarrative": true, "serverOverview": true, "structuredMedications": true, "structuredArtifacts": true, "aggregatePlans": true]
+        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "authenticated": true, "contractVersion": "compact-actions-short-overview-v1", "automaticNarrative": true, "serverOverview": true, "structuredMedications": true, "structuredArtifacts": true, "aggregatePlans": true, "briefPlans": true]
         state = "queued"
         do { try persist(); await resume() } catch { self.error = error.localizedDescription }
     }
@@ -185,7 +185,7 @@ struct BTrialArea: Identifiable {
         defer { busy = false }
         do {
             if saved["id"] == nil {
-                let result = try await request("prepare", extras: ["records": saved["records"] ?? [], "serverOverview": saved["serverOverview"] as? Bool ?? false, "structuredMedications": saved["structuredMedications"] as? Bool ?? false, "structuredArtifacts": saved["structuredArtifacts"] as? Bool ?? false, "aggregatePlans": saved["aggregatePlans"] as? Bool ?? false])
+                let result = try await request("prepare", extras: ["records": saved["records"] ?? [], "serverOverview": saved["serverOverview"] as? Bool ?? false, "structuredMedications": saved["structuredMedications"] as? Bool ?? false, "structuredArtifacts": saved["structuredArtifacts"] as? Bool ?? false, "aggregatePlans": saved["aggregatePlans"] as? Bool ?? false, "briefPlans": saved["briefPlans"] as? Bool ?? false])
                 guard let id = result["id"] as? String, let locators = result["locators"] as? [String: Any] else { throw BTrialFailure(message: "The trial submission did not return a recoverable identity.") }
                 saved["id"] = id; saved["locators"] = locators; saved["contractVersion"] = result["version"]; state = result["state"] as? String ?? "queued"; try persist()
             }
@@ -213,7 +213,7 @@ struct BTrialArea: Identifiable {
                 }
                 saved["output"] = raw
                 if let childID = result["overviewJobID"] as? String, !hasNarrativeJob {
-                    saved["narrativeJob"] = ["run": childID, "id": childID, "authenticated": true, "state": "queued", "writerVersion": "b-narrative-compact-v6"]
+                    saved["narrativeJob"] = ["run": childID, "id": childID, "authenticated": true, "state": "queued", "writerVersion": saved["contractVersion"] as? String == "structured-plans-brief-v5" ? "b-narrative-brief-v7":"b-narrative-compact-v6"]
                     narrativeState = "queued"
                 }
                 try persist()
@@ -268,7 +268,7 @@ struct BTrialArea: Identifiable {
         defer { busy = false }
         do {
             if !hasNarrativeJob {
-                saved["narrativeJob"] = ["run": UUID().uuidString.lowercased(), "authenticated": true, "state": "queued", "writerVersion": "b-narrative-compact-v6"]
+                saved["narrativeJob"] = ["run": UUID().uuidString.lowercased(), "authenticated": true, "state": "queued", "writerVersion": "b-narrative-brief-v7", "briefOverview": true]
                 narrativeState = "queued"; try persist()
             }
             var job = narrativeJob
@@ -277,7 +277,7 @@ struct BTrialArea: Identifiable {
                       let proposal = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else {
                     throw BTrialFailure(message: "No saved B result is available for this writing pass.")
                 }
-                let receipt = try await request("prepareOverview", extras: ["records": saved["records"] ?? [], "proposal": proposal], narrativePass: true)
+                let receipt = try await request("prepareOverview", extras: ["records": saved["records"] ?? [], "proposal": proposal, "briefOverview": narrativeJob["briefOverview"] as? Bool ?? false], narrativePass: true)
                 guard let id = receipt["id"] as? String else { throw BTrialFailure(message: "The overview receipt was unreadable. Resume this same request.") }
                 job = narrativeJob; job["id"] = id; saved["narrativeJob"] = job; try persist()
             }
@@ -339,8 +339,8 @@ struct BTrialArea: Identifiable {
             let messages = ["numbers": "The overview included a number that could not be matched to its cited details.", "coverage": "The overview did not consistently account for the conditions in your records.", "sentence_length": "The overview contained a sentence longer than the allowed limit.", "word_limit": "The overview exceeded its 100-word limit.", "character_limit": "The overview exceeded its length limit."]
             return BTrialFailure(message: (messages[reason] ?? "The overview could not be saved because its format or source references were invalid.") + " Your completed details are available. No automatic paid retry was made.", code: "overview_validation_" + reason)
         }
-        let compact = narrativeJob["writerVersion"] as? String == "b-narrative-compact-v6"
-        let balanced = ["b-narrative-balanced-v3", "b-narrative-balanced-luna-v4", "b-narrative-balanced-v5", "b-narrative-compact-v6"].contains(narrativeJob["writerVersion"] as? String ?? "")
+        let compact = ["b-narrative-compact-v6","b-narrative-brief-v7"].contains(narrativeJob["writerVersion"] as? String ?? "")
+        let balanced = ["b-narrative-balanced-v3", "b-narrative-balanced-luna-v4", "b-narrative-balanced-v5", "b-narrative-compact-v6", "b-narrative-brief-v7"].contains(narrativeJob["writerVersion"] as? String ?? "")
         let parsed: Any
         do { parsed = try JSONSerialization.jsonObject(with: Data(raw.utf8)) } catch { throw fail() }
         guard let obj = parsed as? [String: Any], Set(obj.keys) == (balanced ? ["sentences", "coverage"] : ["sentences"]),

@@ -16,7 +16,7 @@ public struct HealthCarePlan: Identifiable, Sendable {
         public let patientWritten: Bool
         public let reminder: Date?
         public var metadata: [String] {
-            [("When",timing),("Context",entries.allSatisfy{$0.evidence?.careInstruction?.isConcise==true} || patientWritten || context?.range(of:#"(?i)\b(if|unless|only when|only if)\b"#,options:.regularExpression) != nil ? context:nil),("Owner",owner)].compactMap { label,value in
+            [("When",timing),("Context",entries.allSatisfy{$0.evidence?.careInstruction?.isConcise==true} || patientWritten || context?.range(of:#"(?i)\b(if|unless|only when|only if)\b"#,options:.regularExpression) != nil ? context:nil)].compactMap { label,value in
                 guard let value, !value.isEmpty, !text.localizedCaseInsensitiveContains(value) else{return nil}
                 return label+": "+value
             } + (status == "Current" ? (reminder.map{["Reminder: "+$0.formatted(date:.abbreviated,time:.shortened)]} ?? []):[])

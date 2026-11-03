@@ -77,6 +77,16 @@ final class HealthCarePlanTests:XCTestCase {
   plans=HealthCarePlan.project(facts:[a],conditions:[],sessions:[])
   XCTAssertEqual(plans[0].actions[0].status,"Completed")
  }
+ func testOwnerIsRetainedButAbsentFromCardAndExportMetadata() {
+  var a=fact("Book a review"),b=fact("Book a review")
+  a.occurrences[0].evidence?.careInstruction?.owner="Patient"
+  b.occurrences[0].evidence?.careInstruction?.owner="Clinic"
+  let plans=HealthCarePlan.project(facts:[a,b],conditions:[],sessions:[])
+  XCTAssertEqual(plans[0].actions.count,2)
+  XCTAssertEqual(Set(plans[0].actions.compactMap(\.owner)),["Patient","Clinic"])
+  XCTAssertFalse(plans[0].actions.flatMap(\.metadata).contains{$0.hasPrefix("Owner:")})
+  XCTAssertFalse(plans[0].exportText.contains("Owner:"))
+ }
  func testOldCareInstructionDataDecodesWithoutNewPlanMetadata() throws {
   let value=try JSONDecoder().decode(CareInstruction.self,from:Data(#"{"instruction":"Old advice","schedule":"At night"}"#.utf8))
   XCTAssertNil(value.planID);XCTAssertNil(value.isConcise);XCTAssertEqual(value.schedule,"At night")

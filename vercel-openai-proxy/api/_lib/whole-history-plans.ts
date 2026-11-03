@@ -24,3 +24,13 @@ For these action rows, v[0] is now a concise patient-readable action, aiming at 
 `;
  return template;
 }
+
+/** New runs only: preserve the exact v4 payload for already pending work. */
+export const briefPlanVersion='structured-plans-brief-v5';
+export function briefPlanTemplate(base:any){
+ const template=structuredPlanTemplate(base);template.version=briefPlanVersion;
+ template.instructions+=`
+BRIEF CARE WORDING v5: Prefer 4–9 words per action, rather than the earlier 6–16-word aim. Use the shortest complete verb-led instruction that preserves its meaning. Use a 3–6-word plan title. Timing and material conditions should be short phrases, normally 2–8 words; omit restatements of the action and explanatory reasoning. Do not repeat the condition name, practitioner attribution, next-step owner, schedule or explanation across title, action, t and q. The next-step owner remains in a when explicitly stated, for routing, but is not displayed as an owner line. Keep a recipient in the action when essential (for example whom to contact). Preserve dose, frequency, laterality, negation, uncertainty, conditionality and action sequence; a short target never permits dropping these. Use a longer phrase within the existing limits when necessary. Full explanations and source wording remain in the original record. This is shorter wording inside the same response, not another summary or processing pass.
+`;
+ return template;
+}
