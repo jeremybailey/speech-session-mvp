@@ -1565,12 +1565,29 @@ private struct HealthCarePlanCardView:View {
             ForEach(CarePlanBucket.allCases,id:\.self) {bucket in
                 let actions=plan.actions.filter{$0.bucket==bucket}
                 if !actions.isEmpty {
-                    Text(bucket == .carePlan ? "Actions":bucket == .followUp ? "Follow-up":"Considerations").font(.subheadline.weight(.semibold))
-                    ForEach(actions) {action in
-                        VStack(alignment:.leading,spacing:4) {
-                            Text("• "+action.text).font(.subheadline)
-                            ForEach(action.metadata.filter{!$0.hasPrefix("When:") && !$0.hasPrefix("Context:")},id:\.self){Text($0).font(.caption).foregroundStyle(.secondary)}
-                            if action.status != "Current" {Text(action.status).font(.caption).foregroundStyle(.secondary)}
+                    VStack(alignment:.leading,spacing:0) {
+                        Label {
+                            Text(bucket == .carePlan ? "Actions":bucket == .followUp ? "Follow-up":"Considerations")
+                        } icon: {
+                            Image(systemName:bucket == .carePlan ? "checkmark.circle":bucket == .followUp ? "calendar":"text.bubble")
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                        .padding(.bottom,4)
+                        ForEach(Array(actions.enumerated()),id:\.element.id) {index,action in
+                            if index > 0 {Divider()}
+                            VStack(alignment:.leading,spacing:4) {
+                                Text(action.text)
+                                    .font(.subheadline)
+                                    .fixedSize(horizontal:false,vertical:true)
+                                ForEach(action.metadata.filter{!$0.hasPrefix("When:") && !$0.hasPrefix("Context:")},id:\.self){Text($0).font(.caption).foregroundStyle(.secondary)}
+                                if action.status != "Current" {Text(action.status).font(.caption).foregroundStyle(.secondary)}
+                            }
+                            .frame(maxWidth:.infinity,alignment:.leading)
+                            .padding(.vertical,12)
+                            .accessibilityElement(children:.combine)
                         }
                     }
                 }
