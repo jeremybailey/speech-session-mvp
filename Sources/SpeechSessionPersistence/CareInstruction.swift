@@ -85,7 +85,8 @@ public enum CareInstructionPresentation {
     }
     public static func status(_ fact: HealthFact) -> String {
         if fact.isAction { return fact.actionStatus == .past ? "Non-current" : fact.actionStatus.title }
-        return fact.statusTitle
+        if fact.category == .medications && !fact.hasKnownStatus { return "Current use unknown" }
+        return fact.hasKnownStatus ? fact.statusTitle : "Status unknown"
     }
     public static func reviewIndicator(_ fact: HealthFact) -> String? {
         if fact.latest.evidence?.actionKind == "uncertain" { return "Check what was recommended" }

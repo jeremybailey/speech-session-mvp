@@ -249,7 +249,15 @@ struct HealthSummaryView: View {
                     report["build"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
                     report["medicationCards"] = model.facts.filter { $0.category == .medications }.count
                     report["medicationOccurrences"] = Set(model.facts.filter { $0.category == .medications }.flatMap(\.occurrences).map(\.id)).count
-                    report["displayGrouping"] = "medication-products-v2"
+                    report["displayGrouping"] = "structured-medications-v2"
+                    let medications = model.facts.filter { $0.category == .medications }
+                    report["maxMedicationHeadingLength"] = medications.map { $0.title.count }.max() ?? 0
+                    report["unknownMedicationUse"] = medications.filter { !($0.hasKnownStatus) }.count
+                    report["fakeMedicationPractitioners"] = medications.filter { fact in
+                        let value = fact.displayEntry.evidence?.practitioner ?? ""
+                        return value.localizedCaseInsensitiveContains("label") || value.localizedCaseInsensitiveContains("record") || value.localizedCaseInsensitiveContains("invoice")
+                    }.count
+                    report["structuredMedicationFields"] = medications.filter { !$0.displayEntry.fields.isEmpty }.count
                     let path = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("health-presentation-check.json")
                     if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) { try? data.write(to: path, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) }
                     return
@@ -1094,7 +1102,7 @@ struct HealthFactRow: View {
                     Text(fact.latest.evidence?.careInstruction?.owner.map { "Next step: " + $0 } ?? "Owner not specified")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
-                if let practitioner = practitionerName ?? fact.latest.evidence?.practitioner, !practitioner.isEmpty {
+                if let practitioner = practitionerName ?? fact.displayEntry.evidence?.practitioner, !practitioner.isEmpty {
                     Text(practitioner).font(.caption).foregroundStyle(.secondary)
                 }
                 DisclosureGroup("Details and sources", isExpanded: $careExpanded) {
@@ -1113,11 +1121,23 @@ struct HealthFactRow: View {
             }
             if !isCare, showBodySystem, let body = fact.latest.evidence?.bodySystem ?? fact.latest.fields.first(where: { $0.label.lowercased().contains("body system") })?.value,
                !body.isEmpty, !fields.contains(where: { $0.value == body }) { RecordFieldLine(label: "Body area", value: body, secondary: true) }
-            if !isCare, let practitioner = practitionerName ?? fact.latest.evidence?.practitioner, !practitioner.isEmpty,
+            if !isCare, let practitioner = practitionerName ?? fact.displayEntry.evidence?.practitioner, !practitioner.isEmpty,
                !fields.contains(where: { $0.value == practitioner }) {
                 RecordFieldLine(label: "Practitioner", value: practitioner, secondary: true)
             }
-            if !isCare, let date = fact.latest.evidence?.eventDate, !fields.contains(where: { $0.value == date }) { RecordFieldLine(label: "Date", value: date, secondary: true) }
+            if !isCare, let date = fact.displayEntry.evidence?.eventDate, !date.isEmpty, !fields.contains(where: { $0.value == date }) { RecordFieldLine(label: "Date", value: date, secondary: true) }
+            if !isCare && fact.occurrences.contains(where: { BClinicalPresentation.applies($0) }) {
+                DisclosureGroup("Source notes and history") {
+                    ForEach(fact.occurrences) { occurrence in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(occurrence.sourceTitle ?? "Original record").font(.subheadline.weight(.semibold))
+                            Text(occurrence.title).font(.subheadline).textSelection(.enabled)
+                            if !occurrence.details.isEmpty { Text(occurrence.details).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
+                            if let quote = occurrence.supportingExcerpt { Text(quote).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
+                        }.padding(.vertical, 4)
+                    }
+                }.font(.subheadline)
+            }
             if !isCare && fact.occurrences.count > 1 {
                 RecordFieldLine(label: "Sources", value: "\(fact.occurrences.count) entries", secondary: true)
             }

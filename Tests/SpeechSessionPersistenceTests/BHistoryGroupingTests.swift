@@ -20,9 +20,10 @@ final class BHistoryGroupingTests: XCTestCase {
         let grouped = MedicationHistoryPresentation.group(rows)
         XCTAssertEqual(grouped.count, 1)
         XCTAssertEqual(grouped[0].occurrences.count, 4)
-        XCTAssertEqual(grouped[0].title, "EXAMPLE 0.5% GEL EYE DROPS")
+        XCTAssertEqual(grouped[0].title, "EXAMPLE")
         XCTAssertEqual(Set(grouped[0].occurrences.map(\.title)), Set(rows.map { $0.latest.title }))
-        XCTAssertTrue(grouped[0].displayEntry.details.contains(grouped[0].latest.title))
+        XCTAssertTrue(grouped[0].displayEntry.details.isEmpty)
+        XCTAssertTrue(grouped[0].displayEntry.fields.contains { $0.label == "Strength" && $0.value == "0.5%" })
     }
     func testDifferentProductsStrengthsFormsAndUnknownsRemainSeparate() {
         let names = ["EXAMPLE 5mg tablet", "EXAMPLE 10mg tablet", "EXAMPLE 5mg capsule", "OTHER 5mg tablet", "EXAMPLE tablet", "UNKNOWN 5mg tablet"]

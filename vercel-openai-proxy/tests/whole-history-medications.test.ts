@@ -1,0 +1,37 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {makePayload} from '../api/_lib/whole-history-source';
+import {makeOverviewPayload} from '../api/_lib/whole-history-overview';
+import {medicationFields,validMedication} from '../api/_lib/whole-history-medications';
+import {chainedOverview} from '../api/_lib/whole-history-background';
+const template=require('../api/_lib/whole-history-template.json');
+const records=[{id:'11111111-1111-4111-8111-111111111111',text:'Example 5 mg tablet. Dr. Jane Doe: Take one tablet at night.'}];
+const medication=Object.fromEntries(medicationFields.map(k=>[k,null]));
+Object.assign(medication,{name:'Example',strength:'5 mg',form:'tablet',clinician:'Dr. Jane Doe',instructions:'Take one tablet at night.'});
+const proposal={concerns:[{id:'c1',name:'Synthetic concern',systems:['unknown'],evidence:['r1.p1']}],overview:[{text:'Synthetic medication record.',cite:['r1.p1']}],passages:{'r1.p1':[{k:'medications',s:'prescribed',v:['Example was prescribed.','Prescription label',''],c:[],p:null,g:['c1'],m:medication}]}};
+test('new structured format is opt-in and old submissions retain their exact contract',()=>{
+ const old=makePayload(records,template),fresh=makePayload(records,template,true);
+ assert.equal(JSON.parse(old.payload.input).version,'compact-actions-short-overview-v1');
+ assert.equal(JSON.parse(fresh.payload.input).version,'structured-medications-v2');
+ assert.equal(template.version,'compact-actions-short-overview-v1');
+ const definitions=(fresh.payload.response_format.json_schema.schema as any).$defs.fact.anyOf;
+ const med=definitions.find((v:any)=>v.properties.k.enum.length===1&&v.properties.k.enum[0]==='medications');
+ assert.deepEqual(med.properties.m.required,medicationFields);
+ assert.ok(definitions.filter((v:any)=>v!==med).every((v:any)=>v.properties.m.type==='null'));
+ assert.equal(validMedication(null,'medications'),false);
+ assert.equal(validMedication(null,'symptoms'),true);
+ assert.equal(validMedication(medication,'medications'),true);
+ assert.equal(validMedication({...medication,currentUse:'current'},'medications'),false);
+});
+test('overview accepts both formats and server continuation preserves the original fact references',()=>{
+ assert.equal(makeOverviewPayload(records,proposal,template).factCount,1);
+ const legacy=structuredClone(proposal) as any;delete legacy.passages['r1.p1'][0].m;
+ assert.equal(makeOverviewPayload(records,legacy,template).factCount,1);
+ const payload=makePayload(records,template,true).payload;
+ payload.input=JSON.stringify({...JSON.parse(payload.input),serverOverview:true});
+ const next=chainedOverview(payload,JSON.stringify(proposal),'parent-id');
+ assert.equal(JSON.parse(next.input).facts[0].id,'r1.p1.1');
+ assert.equal(JSON.parse(next.input).facts[0].text,'Example was prescribed.');
+ const bad=structuredClone(proposal) as any;bad.passages['r1.p1'][0].m={name:'Example'};
+ assert.throws(()=>makeOverviewPayload(records,bad,template),/invalid_proposal/);
+});

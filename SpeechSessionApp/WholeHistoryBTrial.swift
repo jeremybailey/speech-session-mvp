@@ -12,6 +12,7 @@ struct BTrialFact: Identifiable {
     let id: String, text: String, category: String, status: String, by: String, event: String
     let groups: [String], quotes: [String]
     let plan: [String: String]?
+    var medication: StructuredMedication? = nil
 }
 struct BTrialConcern: Identifiable {
     let id: String; let name: String; let systems: [String]
@@ -173,7 +174,7 @@ struct BTrialArea: Identifiable {
                     "sourceSHA256": SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()]
         }
         accessReady = false
-        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "authenticated": true, "contractVersion": "compact-actions-short-overview-v1", "automaticNarrative": true, "serverOverview": true]
+        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "authenticated": true, "contractVersion": "compact-actions-short-overview-v1", "automaticNarrative": true, "serverOverview": true, "structuredMedications": true]
         state = "queued"
         do { try persist(); await resume() } catch { self.error = error.localizedDescription }
     }
@@ -183,7 +184,7 @@ struct BTrialArea: Identifiable {
         defer { busy = false }
         do {
             if saved["id"] == nil {
-                let result = try await request("prepare", extras: ["records": saved["records"] ?? [], "serverOverview": saved["serverOverview"] as? Bool ?? false])
+                let result = try await request("prepare", extras: ["records": saved["records"] ?? [], "serverOverview": saved["serverOverview"] as? Bool ?? false, "structuredMedications": saved["structuredMedications"] as? Bool ?? false])
                 guard let id = result["id"] as? String, let locators = result["locators"] as? [String: Any] else { throw BTrialFailure(message: "The trial submission did not return a recoverable identity.") }
                 saved["id"] = id; saved["locators"] = locators; saved["contractVersion"] = result["version"]; state = result["state"] as? String ?? "queued"; try persist()
             }
@@ -426,7 +427,7 @@ struct BTrialArea: Identifiable {
             guard let rows = passages[pid] as? [[String: Any]], !rows.isEmpty, let locator = locators[pid], let rid = locator["recordID"] as? String else { throw fail() }
             clinical.insert(pid)
             for (index, row) in rows.enumerated() {
-                guard Set(row.keys) == ["k","s","v","c","p","g"], let k = row["k"] as? String, categories.contains(k), let status = row["s"] as? String, allStates.contains(status),
+                guard (Set(row.keys) == ["k","s","v","c","p","g"] || Set(row.keys) == ["k","s","v","c","p","g","m"]), let k = row["k"] as? String, categories.contains(k), let status = row["s"] as? String, allStates.contains(status),
                       let v = row["v"] as? [String], v.count == 3, !v[0].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, v[0].unicodeScalars.count <= 360,
                       let c = row["c"] as? [String], c.count <= 2, c.allSatisfy({ locators[$0]?["recordID"] as? String == rid }),
                       let g = row["g"] as? [String], Set(g).count == g.count, g.allSatisfy({ groupIDs.contains($0) }) else { throw fail() }
@@ -442,8 +443,13 @@ struct BTrialArea: Identifiable {
                 } else if !(row["p"] is NSNull) { throw fail() }
                 if ["carePlan","followUp"].contains(category) { guard plan != nil, careStates.contains(status) else { throw fail() } }
                 let refs = Array(Set([pid] + c)).sorted()
+                var medication: StructuredMedication?
+                if let fields = row["m"] as? [String: Any] {
+                    guard k == "medications", Set(fields.keys) == Set(StructuredMedication.keys), fields.values.allSatisfy({ $0 is String || $0 is NSNull }) else { throw fail() }
+                    medication = StructuredMedication.grounded(fields.compactMapValues { $0 as? String }, in: refs.compactMap { locators[$0]?["quote"] as? String })
+                } else if let value = row["m"], (!(value is NSNull) || k == "medications") { throw fail() }
                 decoded.append(BTrialFact(id: "\(pid).\(index+1)", text: v[0], category: category, status: status, by: v[1], event: v[2], groups: g,
-                    quotes: refs.compactMap { ref in guard let quote = locators[ref]?["quote"] as? String else { return nil }; return ref + "\n" + quote }, plan: plan))
+                    quotes: refs.compactMap { ref in guard let quote = locators[ref]?["quote"] as? String else { return nil }; return ref + "\n" + quote }, plan: plan, medication: medication))
             }
         }
         guard decodedGroups.allSatisfy({ group in decoded.contains { $0.groups.contains(group.id) } }) else { throw fail() }
@@ -539,14 +545,16 @@ extension BTrialModel {
             var evidence = ClinicalEvidence()
             evidence.assessmentMethod = WholeHistoryPublication.version
             evidence.excerpt = quote; evidence.eventDate = fact.event.isEmpty ? nil : fact.event
-            evidence.practitioner = fact.by.isEmpty ? nil : fact.by
+            evidence.sourceAttribution = fact.by.isEmpty ? nil : fact.by
+            evidence.practitioner = BClinicalPresentation.namedPractitioner(fact.by)
+            evidence.medication = fact.medication
             evidence.topicNames = fact.groups.compactMap { groupByID[$0]?.name }
             evidence.wholeHistoryTopicIDs = fact.groups.compactMap { groupByID[$0] }.flatMap { concern in
                 (concern.systems.isEmpty ? ["unknown"] : concern.systems).map { stableID("b-topic:" + concern.name.lowercased() + ":" + $0) }
             }
             evidence.conditionSynthesisUnassigned = fact.groups.isEmpty
             evidence.bodySystem = fact.groups.compactMap { groupByID[$0]?.systems.first }.first
-            evidence.statusExplicit = ["historical", "performed", "resolved", "declined"].contains(fact.status)
+            evidence.statusExplicit = category != .medications && ["historical", "performed", "resolved", "declined"].contains(fact.status)
             evidence.factIdentity = "b:" + identity.uuidString
             evidence.reviewReason = "Source linked; not independently checked. Recorded status: " + fact.status
             if let plan = fact.plan {

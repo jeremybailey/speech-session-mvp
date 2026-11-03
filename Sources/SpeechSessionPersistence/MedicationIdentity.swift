@@ -8,7 +8,8 @@ public enum MedicationIdentity {
     private static let number = try! NSRegularExpression(pattern: #"\d*\.\d+|\d+"#)
 
     public static func key(_ entry: SummaryEntry) -> String {
-        let title = normalized(productTitle(entry))
+        if let key = BClinicalPresentation.productKey(entry) { return key }
+        let title = normalized(entry.title)
         let titleStrengths = strengths(title)
         let name = strength.stringByReplacingMatches(in: title, range: NSRange(title.startIndex..., in: title), withTemplate: " ")
             .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
@@ -34,7 +35,7 @@ public enum MedicationIdentity {
     /// Remove only explicit report scaffolding. Never guess a drug name from
     /// arbitrary prose, infer brand/generic equivalence, or discard dose/form text.
     /// Original statements remain untouched in the saved source occurrences.
-    public static func productTitle(_ entry: SummaryEntry) -> String {
+    public static func reportProductTitle(_ entry: SummaryEntry) -> String {
         guard entry.category == .medications, entry.origin == .generated,
               entry.evidence?.assessmentMethod == WholeHistoryPublication.version else { return entry.title }
         let text = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -53,6 +54,11 @@ public enum MedicationIdentity {
             return name
         }
         return entry.title
+    }
+
+    public static func productTitle(_ entry: SummaryEntry) -> String {
+        guard BClinicalPresentation.applies(entry) else { return entry.title }
+        return BClinicalPresentation.medication(entry)["name"] ?? entry.title
     }
 
     private static func normalized(_ text: String) -> String {

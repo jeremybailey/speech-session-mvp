@@ -56,7 +56,7 @@ private struct HealthFactEditor: View {
         self.fact = fact; self.model = model; self.home = home; self.store = store
         let sourceEntry = preferredEntryID.flatMap { id in fact.occurrences.first { $0.id == id } } ?? fact.latest
         self.originalEntry = sourceEntry
-        var displayEntry = sourceEntry
+        var displayEntry = BClinicalPresentation.display(sourceEntry)
         displayEntry.title = HealthStoryText.clean(displayEntry.title)
         displayEntry.details = HealthStoryText.clean(displayEntry.details)
         if CareInstructionPresentation.applies(displayEntry) {
@@ -70,9 +70,9 @@ private struct HealthFactEditor: View {
         _recurring = State(initialValue: sourceEntry.evidence?.careInstruction?.isRecurring)
         _practitionerID = State(initialValue: fact.preference.practitionerContactID)
         _entry = State(initialValue: displayEntry)
-        _dateText = State(initialValue: sourceEntry.evidence?.eventDate ?? "")
+        _dateText = State(initialValue: displayEntry.evidence?.eventDate ?? "")
         _reviewed = State(initialValue: fact.isReviewed)
-        _status = State(initialValue: fact.clinicalStatus)
+        _status = State(initialValue: fact.hasKnownStatus ? fact.clinicalStatus : nil)
         _actionStatus = State(initialValue: fact.actionStatus)
         _reminder = State(initialValue: fact.preference.reminderEnabled)
         _reminderDate = State(initialValue: fact.preference.dueDate ?? Date().addingTimeInterval(3600))
@@ -110,7 +110,7 @@ private struct HealthFactEditor: View {
                     Button { choosingPractitioner = true } label: {
                         LabeledContent("Contact", value: model.snapshot.careTeam.first(where: { $0.id == practitionerID })?.name ?? "Choose or add")
                     }
-                    let sourceNames = ([originalEntry.evidence?.practitioner].compactMap { $0 }
+                    let sourceNames = ([entry.evidence?.practitioner].compactMap { $0 }
                         + originalEntry.fields.filter { HealthDetailPresentation.isPractitionerField($0.label) }.map(\.value))
                         .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                     ForEach(Array(Set(sourceNames)).sorted(), id: \.self) { name in

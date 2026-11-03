@@ -59,6 +59,7 @@ public enum ConditionSummaryProjection {
         if fact.preference.clinicalStatus != nil || fact.preference.actionStatus != nil {
             return fact.isCurrent ? .current : .notCurrent
         }
+        guard fact.hasKnownStatus else { return .unknown }
         let explicit = fact.occurrences.filter { $0.origin == .userAdded || $0.evidence?.statusExplicit == true }
         // A historic dispensing date alone does not establish current use or discontinuation.
         guard !explicit.isEmpty else { return .unknown }

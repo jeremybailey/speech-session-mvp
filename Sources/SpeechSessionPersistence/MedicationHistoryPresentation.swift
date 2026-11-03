@@ -57,10 +57,23 @@ public enum MedicationHistoryPresentation {
     public static func display(_ fact: HealthFact) -> SummaryEntry {
         var result = fact.latest
         guard fact.category == .medications else { return result }
-        let product = MedicationIdentity.productTitle(result)
-        if product != result.title {
-            result.details = ([result.title, result.details].filter { !$0.isEmpty }).joined(separator: "\n")
-            result.title = product
+        if BClinicalPresentation.applies(result) {
+            var displayed = BClinicalPresentation.medicationDisplay(result)
+            let records = fact.occurrences.filter { BClinicalPresentation.applies($0) }.map(BClinicalPresentation.medication)
+            // A fill's lack of directions does not erase a source prescription.
+            // Conflicting regimens stay explicit; never choose a current regimen.
+            let labels = [("dose","Recorded dose"),("frequency","Recorded frequency"),("route","Route"),
+                          ("duration","Duration"),("instructions","Recorded instructions")]
+            for (key,label) in labels {
+                let values = records.compactMap { $0[key] }
+                let distinct = Dictionary(grouping: values, by: { $0.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ") })
+                guard !distinct.isEmpty else { continue }
+                displayed.fields.removeAll { $0.label == label }
+                displayed.fields.append(.init(label: label, value: distinct.count == 1 ? values[0] : "Varies across records — see history."))
+            }
+            let clinicians = Set(records.compactMap { BClinicalPresentation.namedPractitioner($0["clinician"]) })
+            displayed.evidence?.practitioner = clinicians.count == 1 ? clinicians.first : nil
+            return displayed
         }
         let startLabels = ["start date", "date started", "started", "started on"]
         if let start = fact.occurrences.reversed().compactMap({ entry in
@@ -70,7 +83,7 @@ public enum MedicationHistoryPresentation {
             result.fields.append(.init(label: "First recorded start", value: start.value))
         }
         // Current is a patient state, never inferred from the last dispensing date.
-        if fact.isCurrent {
+        if fact.hasKnownStatus && fact.isCurrent {
             result.fields.removeAll { ["end date", "date stopped", "stopped on"].contains($0.label.lowercased()) }
         }
         return result
@@ -85,6 +98,6 @@ public enum MedicationHistoryPresentation {
                 if let date = formatter.date(from: text) { return date }
             }
         }
-        return entry.relevantDate ?? entry.sourceDate ?? .distantPast
+        return entry.relevantDate ?? .distantPast
     }
 }

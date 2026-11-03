@@ -43,6 +43,8 @@ public struct ClinicalEvidence: Codable, Equatable, Hashable, Sendable {
     public var page: Int?
     public var practitioner: String?
     public var assessmentMethod: String?
+    public var sourceAttribution: String?
+    public var medication: StructuredMedication?
     public var topicNames: [String]?
     /// Exact generated B associations; patient preferences still take precedence.
     public var wholeHistoryTopicIDs: [UUID]?
@@ -111,7 +113,7 @@ public struct HealthFact: Identifiable, Sendable {
     public var preference: HealthFactPreference
     public var topicIDs: [UUID]
     public var latest: SummaryEntry { occurrences[0] }
-    public var displayEntry: SummaryEntry { ContactHistoryPresentation.display(self) }
+    public var displayEntry: SummaryEntry { category == .medications ? MedicationHistoryPresentation.display(self) : BClinicalPresentation.display(ContactHistoryPresentation.display(self)) }
     public var category: SummaryEntryCategory { latest.category }
     public var title: String { category == .medications ? MedicationHistoryPresentation.display(self).title : latest.title }
     public var revision: String {
@@ -124,7 +126,9 @@ public struct HealthFact: Identifiable, Sendable {
         return occurrences.first(where: { $0.origin == .userAdded || $0.evidence?.statusExplicit == true })?.clinicalStatus ?? .current
     }
     public var hasKnownStatus: Bool {
-        preference.clinicalStatus != nil || occurrences.contains { $0.origin == .userAdded || $0.evidence?.statusExplicit == true }
+        if category == .medications, preference.clinicalStatus == nil,
+           occurrences.allSatisfy({ BClinicalPresentation.applies($0) }) { return false }
+        return preference.clinicalStatus != nil || occurrences.contains { $0.origin == .userAdded || $0.evidence?.statusExplicit == true }
     }
     public var statusTitle: String { clinicalStatus == .current ? "Current" : "Non-current" }
     public var isCurrent: Bool { isAction ? actionStatus == .current : clinicalStatus == .current }
