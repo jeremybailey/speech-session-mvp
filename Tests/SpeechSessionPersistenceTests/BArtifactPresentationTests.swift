@@ -19,7 +19,7 @@ final class BArtifactPresentationTests: XCTestCase {
         ] {
             let original = b(text), displayed = fact(original).displayEntry
             XCTAssertEqual(displayed.title,name)
-            XCTAssertTrue(displayed.details.contains(text))
+            XCTAssertTrue(displayed.details.contains(text) || displayed.fields.contains { $0.label == "Role or specialty" || $0.label == "Recorded involvement" })
             XCTAssertNil(displayed.evidence?.eventDate)
             XCTAssertNil(displayed.evidence?.practitioner)
             XCTAssertEqual(original.title,text)
@@ -37,12 +37,12 @@ final class BArtifactPresentationTests: XCTestCase {
         XCTAssertEqual(d.fields.first { $0.label == "Address" }?.value,"1 Main Street")
         XCTAssertFalse(d.fields.contains { $0.value.contains("9999") })
         let signed = fact(b("Report electronically signed by Jay Zelazo MD; phone 403-555-0123. Report identifies Dr. Brett Poulis as ordering clinician.")).displayEntry
-        XCTAssertEqual(signed.title,"Care team contact — check original")
+        XCTAssertEqual(signed.title,"Contacts listed on record")
         XCTAssertFalse(signed.fields.contains { $0.label == "Phone" })
         XCTAssertEqual(fact(b("Pharmacy Example #123 is named as pharmacy on the fill records.")).title,"Pharmacy Example #123")
         XCTAssertEqual(fact(b("Physiotherapist offered a referral to Stephanie, described as knowledgeable.")).title,"Stephanie")
         let ambiguous = fact(b("Dr. Jane Doe and Dr. John Roe; 403-555-0123")).displayEntry
-        XCTAssertEqual(ambiguous.title,"Care team contact — check original")
+        XCTAssertEqual(ambiguous.title,"Contacts listed on record")
         XCTAssertFalse(ambiguous.fields.contains { $0.label == "Phone" })
     }
     func testContactNavigationNormalizesNamesWithoutMergingPeopleOrLocations() {

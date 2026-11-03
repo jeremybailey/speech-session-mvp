@@ -45,6 +45,7 @@ public struct ClinicalEvidence: Codable, Equatable, Hashable, Sendable {
     public var assessmentMethod: String?
     public var sourceAttribution: String?
     public var medication: StructuredMedication?
+    public var artifactSchema: String?
     public var topicNames: [String]?
     /// Exact generated B associations; patient preferences still take precedence.
     public var wholeHistoryTopicIDs: [UUID]?

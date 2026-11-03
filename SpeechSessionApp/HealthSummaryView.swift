@@ -252,6 +252,8 @@ struct HealthSummaryView: View {
                     report["displayGrouping"] = "local-artifact-formatting-v1"
                     let contacts = model.facts.filter { $0.category == .practitionerContact }
                     report["contactCards"] = contacts.count
+                    report["artifactProtocol"] = StructuredArtifact.version
+                    report["contactFieldCounts"] = Dictionary(grouping: contacts.flatMap { HealthDetailPresentation.fields($0.displayEntry) }, by: \.label).mapValues(\.count)
                     report["contactOccurrences"] = Set(contacts.flatMap(\.occurrences).map(\.id)).count
                     report["formattedContactNames"] = contacts.filter { $0.title != $0.latest.title }.count
                     report["emptyDisplayFields"] = model.facts.flatMap { $0.displayEntry.fields }.filter { $0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count

@@ -13,6 +13,7 @@ struct BTrialFact: Identifiable {
     let groups: [String], quotes: [String]
     let plan: [String: String]?
     var medication: StructuredMedication? = nil
+    var fields: [SummaryEntryField]? = nil
 }
 struct BTrialConcern: Identifiable {
     let id: String; let name: String; let systems: [String]
@@ -174,7 +175,7 @@ struct BTrialArea: Identifiable {
                     "sourceSHA256": SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()]
         }
         accessReady = false
-        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "authenticated": true, "contractVersion": "compact-actions-short-overview-v1", "automaticNarrative": true, "serverOverview": true, "structuredMedications": true]
+        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "authenticated": true, "contractVersion": "compact-actions-short-overview-v1", "automaticNarrative": true, "serverOverview": true, "structuredMedications": true, "structuredArtifacts": true]
         state = "queued"
         do { try persist(); await resume() } catch { self.error = error.localizedDescription }
     }
@@ -184,7 +185,7 @@ struct BTrialArea: Identifiable {
         defer { busy = false }
         do {
             if saved["id"] == nil {
-                let result = try await request("prepare", extras: ["records": saved["records"] ?? [], "serverOverview": saved["serverOverview"] as? Bool ?? false, "structuredMedications": saved["structuredMedications"] as? Bool ?? false])
+                let result = try await request("prepare", extras: ["records": saved["records"] ?? [], "serverOverview": saved["serverOverview"] as? Bool ?? false, "structuredMedications": saved["structuredMedications"] as? Bool ?? false, "structuredArtifacts": saved["structuredArtifacts"] as? Bool ?? false])
                 guard let id = result["id"] as? String, let locators = result["locators"] as? [String: Any] else { throw BTrialFailure(message: "The trial submission did not return a recoverable identity.") }
                 saved["id"] = id; saved["locators"] = locators; saved["contractVersion"] = result["version"]; state = result["state"] as? String ?? "queued"; try persist()
             }
@@ -357,7 +358,7 @@ struct BTrialArea: Identifiable {
                   text.range(of: #"r\d+\.p\d+\.\d+"#, options: .regularExpression) == nil,
                   let refs = sentence["factIDs"] as? [String], !refs.isEmpty, refs.allSatisfy({ byID[$0] != nil }) else { throw fail() }
             let evidence = refs.compactMap { byID[$0] }.map { fact in
-                ([fact.text, fact.by, fact.event] + (fact.plan?.values.map { $0 } ?? [])).joined(separator: " ")
+                ([fact.text, fact.by, fact.event] + (fact.plan?.values.map { $0 } ?? []) + (fact.fields?.map(\.value) ?? [])).joined(separator: " ")
             }.joined(separator: " ")
             guard numbers(text).isSubset(of: numbers(evidence)) else { throw fail("numbers") }
             cited.formUnion(refs); texts.append(text)
@@ -427,7 +428,7 @@ struct BTrialArea: Identifiable {
             guard let rows = passages[pid] as? [[String: Any]], !rows.isEmpty, let locator = locators[pid], let rid = locator["recordID"] as? String else { throw fail() }
             clinical.insert(pid)
             for (index, row) in rows.enumerated() {
-                guard (Set(row.keys) == ["k","s","v","c","p","g"] || Set(row.keys) == ["k","s","v","c","p","g","m"]), let k = row["k"] as? String, categories.contains(k), let status = row["s"] as? String, allStates.contains(status),
+                guard (Set(row.keys) == ["k","s","v","c","p","g"] || Set(row.keys) == ["k","s","v","c","p","g","m"] || Set(row.keys) == ["k","s","v","c","p","g","m","f"]), let k = row["k"] as? String, categories.contains(k), let status = row["s"] as? String, allStates.contains(status),
                       let v = row["v"] as? [String], v.count == 3, !v[0].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, v[0].unicodeScalars.count <= 360,
                       let c = row["c"] as? [String], c.count <= 2, c.allSatisfy({ locators[$0]?["recordID"] as? String == rid }),
                       let g = row["g"] as? [String], Set(g).count == g.count, g.allSatisfy({ groupIDs.contains($0) }) else { throw fail() }
@@ -448,8 +449,15 @@ struct BTrialArea: Identifiable {
                     guard k == "medications", Set(fields.keys) == Set(StructuredMedication.keys), fields.values.allSatisfy({ $0 is String || $0 is NSNull }) else { throw fail() }
                     medication = StructuredMedication.grounded(fields.compactMapValues { $0 as? String }, in: refs.compactMap { locators[$0]?["quote"] as? String })
                 } else if let value = row["m"], (!(value is NSNull) || k == "medications") { throw fail() }
+                var artifactFields: [SummaryEntryField]?
+                if let values = row["f"] as? [[String]] {
+                    guard let kind=SummaryEntryCategory(rawValue:k), let allowed=StructuredArtifact.keys[kind], values.count<=12,
+                          values.allSatisfy({$0.count==2 && allowed.contains($0[0]) && !$0[1].trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && $0[1].unicodeScalars.count<=360}),
+                          Set(values.map{$0[0]}).count==values.count else { throw fail() }
+                    artifactFields=StructuredArtifact.grounded(values,category:kind,sources:refs.compactMap {locators[$0]?["quote"] as? String})
+                } else if let value=row["f"], (!(value is NSNull) || StructuredArtifact.keys[SummaryEntryCategory(rawValue:k)!] != nil) { throw fail() }
                 decoded.append(BTrialFact(id: "\(pid).\(index+1)", text: v[0], category: category, status: status, by: v[1], event: v[2], groups: g,
-                    quotes: refs.compactMap { ref in guard let quote = locators[ref]?["quote"] as? String else { return nil }; return ref + "\n" + quote }, plan: plan, medication: medication))
+                    quotes: refs.compactMap { ref in guard let quote = locators[ref]?["quote"] as? String else { return nil }; return ref + "\n" + quote }, plan: plan, medication: medication, fields: artifactFields))
             }
         }
         guard decodedGroups.allSatisfy({ group in decoded.contains { $0.groups.contains(group.id) } }) else { throw fail() }
@@ -537,7 +545,7 @@ extension BTrialModel {
             let identity = stableID(rid + ":" + String(describing: locator["start"] ?? "") + ":" + fact.category + ":" + fact.text + ":" + fact.by + ":" + fact.event)
             var entry = SummaryEntry(id: identity, category: category, title: fact.text,
                 details: (["Recorded status: " + fact.status] + (fact.by.isEmpty ? [] : ["Attribution: " + fact.by]) + (fact.event.isEmpty ? [] : ["Recorded date: " + fact.event]) + (fact.plan?["q"].flatMap { $0.isEmpty ? nil : "Qualifier: " + $0 }.map { [$0] } ?? [])).joined(separator: "\n"),
-                sourceSessionID: record.id, sourceTitle: record.displayTitle, sourceDate: record.date, sourceExcerpt: quote,
+                fields: fact.fields ?? [], sourceSessionID: record.id, sourceTitle: record.displayTitle, sourceDate: record.date, sourceExcerpt: quote,
                 provenance: "Whole-history processing · source linked", needsReview: true,
                 reviewReason: "Source linked; not independently checked.",
                 clinicalStatus: ["historical", "performed", "resolved", "declined"].contains(fact.status) ? .past : .current,
@@ -548,6 +556,7 @@ extension BTrialModel {
             evidence.sourceAttribution = fact.by.isEmpty ? nil : fact.by
             evidence.practitioner = BClinicalPresentation.namedPractitioner(fact.by)
             evidence.medication = fact.medication
+            evidence.artifactSchema = fact.fields == nil ? nil : StructuredArtifact.version
             evidence.topicNames = fact.groups.compactMap { groupByID[$0]?.name }
             evidence.wholeHistoryTopicIDs = fact.groups.compactMap { groupByID[$0] }.flatMap { concern in
                 (concern.systems.isEmpty ? ["unknown"] : concern.systems).map { stableID("b-topic:" + concern.name.lowercased() + ":" + $0) }

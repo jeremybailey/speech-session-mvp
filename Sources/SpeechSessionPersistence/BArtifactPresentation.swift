@@ -20,6 +20,10 @@ public enum BArtifactPresentation {
         }.joined(separator: "\n")
         // Absent values must not produce empty Date/Practitioner rows.
         result.fields = entry.fields.filter { !trim($0.value).isEmpty && !HealthStoryText.isInternalField($0.label) }
+        if entry.evidence?.artifactSchema == StructuredArtifact.version {
+            let typed=StructuredArtifact.display(result)
+            return entry.category == .practitionerContact ? structuredContact(typed) : typed
+        }
         if entry.category == .practitionerContact { return contact(result) }
         // Actions already have their own instruction/schedule/owner renderer.
         guard !CareInstructionPresentation.applies(entry) else { return result }
@@ -100,6 +104,15 @@ public enum BArtifactPresentation {
         return output
     }
 
+    private static func structuredContact(_ entry: SummaryEntry) -> SummaryEntry {
+        var result=entry
+        result.title=entry.fields.first(where:{$0.label=="Name"})?.value ?? "Care team contact — check original"
+        result.evidence?.practitioner=nil
+        // The sparse context field carries the role/uncertainty; the full original
+        // proposal remains in source history. Do not repeat metadata prose here.
+        return result
+    }
+
     /// Recognize labelled syntax only; unlabelled clinical prose stays intact.
     private static func labelled(_ text: String) -> [SummaryEntryField] {
         let labels = ["name":"Name", "organization":"Organization", "org":"Organization", "clinic":"Organization",
@@ -119,6 +132,7 @@ public enum BArtifactPresentation {
     }
     private static func contact(_ entry: SummaryEntry) -> SummaryEntry {
         var result = entry
+        result.details = entry.title == entry.details ? entry.details : [entry.title,entry.details].filter{!trim($0).isEmpty}.joined(separator:"\n")
         let raw = entry.title + "\n" + entry.details
         let allowed: Set<String> = ["Name", "Organization", "Role or specialty", "Phone", "Email", "Address", "Context"]
         var fields = entry.fields + (entry.evidence?.contactFields ?? []) + labelled(raw).filter { allowed.contains($0.label) }
@@ -146,11 +160,46 @@ public enum BArtifactPresentation {
                 fields.append(.init(label:label,value:values.first!))
             }
         }
+        if unique.count > 1 {
+            result.title="Contacts listed on record"
+            fields.append(.init(label:"Names listed",value:unique.joined(separator:"\n")))
+            // No person is selected as prescriber or owner from a printed roster.
+            result.details=entry.title.split(separator:";",maxSplits:1).dropFirst().map(String.init).joined(separator:";")
+        } else if let name {
+            func add(_ label:String,_ value:String?) {
+                guard let value, !trim(value).isEmpty, !fields.contains(where:{$0.label.caseInsensitiveCompare(label) == .orderedSame}) else{return}
+                fields.append(.init(label:label,value:trim(value)))
+            }
+            add("Address",matches(#"(?i)(?:clinic |postal )?address(?: is|:)\s*(.+?)(?:;|$)"#,raw).first)
+            if let range=entry.title.range(of:name) {
+                let tail=String(entry.title[range.upperBound...])
+                let role=matches(#"^\s+as\s+(.+?)(?:;|$)"#,tail).first
+                add("Role or specialty",role?.trimmingCharacters(in:CharacterSet(charactersIn:". ")))
+                // Only directly adjacent, explicitly organization-shaped values.
+                let clauses=tail.components(separatedBy:CharacterSet(charactersIn:",;"))
+                let organizations=clauses.map(trim).filter {
+                    $0.range(of:#"^[\p{Lu}][\p{L}\d '\-’&.]{1,85}(?:Centre|Center|Clinic|Hospital|Pharmacy|Drug Mart)(?:\s*#\d+)?\.?$"#,options:.regularExpression) != nil
+                }
+                if Set(organizations).count==1 {add("Organization",organizations.first?.trimmingCharacters(in:CharacterSet(charactersIn:". ")))}
+                if tail.range(of:#"^\s+(?:was involved|who |performed |treated |provided )"#,options:.regularExpression) != nil {
+                    add("Recorded involvement",trim(tail))
+                }
+            }
+            let reviews=entry.title.split(separator:";",maxSplits:1).dropFirst().map(String.init)
+            if let review=reviews.first, review.localizedCaseInsensitiveContains("unclear") || review.localizedCaseInsensitiveContains("transcribed") {add("Review",trim(review))}
+            // Identifier boilerplate is provenance, not contact details. Full wording
+            // remains in immutable source history. Keep unexplained prose visible.
+            let identifier = entry.title.range(of:#"(?i)^(?:prescription(?: image| label)? (?:identifies|names|lists)|(?:eye )?invoice identifies|(?:patient )?identifies|patient reports|label (?:identifies|names|lists))\s+"#,options:.regularExpression) != nil
+            let recovered = fields.contains { ["Role or specialty","Organization","Address","Recorded involvement"].contains($0.label) }
+            if identifier && recovered {result.details=entry.details}
+        }
         var seen = Set<String>()
         result.fields = fields.filter { !trim($0.value).isEmpty && seen.insert($0.label.lowercased()+"|"+$0.value.lowercased()).inserted }
         // Role/history is clinically meaningful; retain the full statement as
         // body text rather than a multi-line bold contact name.
-        result.details = trim(entry.title) == result.title ? entry.details : [entry.title,entry.details].filter { !trim($0).isEmpty }.joined(separator:"\n")
+        if unique.count<=1 && result.details == entry.details && !fields.contains(where:{["Role or specialty","Organization","Address","Recorded involvement"].contains($0.label)}) {
+            result.details = trim(entry.title) == result.title ? entry.details : [entry.title,entry.details].filter { !trim($0).isEmpty }.joined(separator:"\n")
+        }
         result.evidence?.practitioner = nil // The contact itself is not its own attribution.
         return result
     }

@@ -30,7 +30,7 @@ public enum ContactHistoryPresentation {
     private static func sameContact(_ a: SummaryEntry, _ b: SummaryEntry) -> Bool {
         let a = BClinicalPresentation.display(a), b = BClinicalPresentation.display(b)
         let name = HealthFactMatching.canonical(a.title)
-        guard !name.isEmpty, a.title != "Care team contact — check original", name == HealthFactMatching.canonical(b.title),
+        guard !name.isEmpty, !["Care team contact — check original","Contacts listed on record"].contains(a.title), name == HealthFactMatching.canonical(b.title),
               a.evidence?.combinationExcluded != true, b.evidence?.combinationExcluded != true else { return false }
         // Identical content can share a display card without claiming a stored
         // identity or deleting an occurrence. Compare all fields, including unknown
@@ -134,7 +134,7 @@ public struct ContactPresentationGroup: Identifiable, Sendable {
         func factKey(_ fact: HealthFact) -> String {
             let name = nameKey(fact.title)
             // Respect explicit separation even in the navigation hierarchy.
-            return name.isEmpty || fact.occurrences.contains { $0.evidence?.combinationExcluded == true }
+            return name.isEmpty || fact.displayEntry.fields.contains(where:{$0.label=="Names listed"}) || fact.occurrences.contains { $0.evidence?.combinationExcluded == true }
                 ? "fact:" + fact.id : "name:" + name
         }
         func memberKey(_ member: CareTeamMember) -> String {
