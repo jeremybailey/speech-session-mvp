@@ -48,6 +48,14 @@ public enum HealthStoryPresentation {
 
 /// Repairs display of old flattened extraction objects; the saved source is left intact.
 public enum HealthStoryText {
+    /// Source scenario context belongs in details, not repeated clinical headings.
+    /// Display-only: never use this for identity, grouping or stored source text.
+    public static func displayName(_ name: String) -> String {
+        let display=name.replacingOccurrences(of:#"(?i)^(?:fictional\s+(?:role[- ]play|scenario|case)|role[- ]play(?:\s+scenario)?)\s*:\s*"#,with:"",options:.regularExpression)
+        guard display != name, !display.isEmpty else{return name}
+        return display.prefix(1).uppercased()+display.dropFirst()
+    }
+
     public static func isInternalField(_ label: String) -> Bool {
         let key = label.lowercased().filter(\.isLetter)
         return ["actionkind", "factkey", "clinicalstatus", "statusexplicit", "topicnames", "bodysystem", "eventdate", "reviewreason", "sourceexcerpt", "sourcepage"].contains(key)

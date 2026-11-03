@@ -115,6 +115,16 @@ final class HealthCarePlanTests:XCTestCase {
   b.occurrences[0].evidence?.practitioner="Dr. Jane Doe"
   XCTAssertEqual(HealthCarePlan.project(facts:[a,b,c],conditions:[],sessions:[]).count,2)
  }
+ func testScenarioContextIsRemovedOnlyFromDisplayPrefixes() {
+  let source="Fictional role-play: reported lower-back pain, recurrent"
+  XCTAssertEqual(HealthStoryText.displayName(source),"Reported lower-back pain, recurrent")
+  XCTAssertEqual(HealthStoryText.displayName("Suspected allergy; not confirmed"),"Suspected allergy; not confirmed")
+  XCTAssertEqual(HealthStoryText.displayName("Pain during role-play"),"Pain during role-play")
+  XCTAssertEqual(HealthStoryText.displayName("eGFR concern"),"eGFR concern")
+  let a=fact("Try posture changes",context:"Fictional role-play"),b=fact("Continue heat")
+  XCTAssertEqual(HealthCarePlan.project(facts:[a,b],conditions:[],sessions:[]).count,2)
+  XCTAssertEqual(a.latest.evidence?.careInstruction?.consideration,"Fictional role-play")
+ }
  func testOldCareInstructionDataDecodesWithoutNewPlanMetadata() throws {
   let value=try JSONDecoder().decode(CareInstruction.self,from:Data(#"{"instruction":"Old advice","schedule":"At night"}"#.utf8))
   XCTAssertNil(value.planID);XCTAssertNil(value.isConcise);XCTAssertEqual(value.schedule,"At night")

@@ -70,7 +70,7 @@ public enum HealthAreaKind: String, CaseIterable, Sendable {
 public struct HealthArea: Identifiable, Sendable {
     public let id: HealthAreaKind
     public var conditions: [ConditionSummary]
-    public var preview: String { conditions.map(\.name).joined(separator: " · ") }
+    public var preview: String { conditions.map{HealthStoryText.displayName($0.name)}.joined(separator: " · ") }
 }
 
 public enum HealthAreaProjection {

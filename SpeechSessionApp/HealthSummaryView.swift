@@ -601,8 +601,9 @@ struct HealthSummaryView: View {
         if let plan=model.carePlans.first(where:{$0.id==id}) {
             Form {
                 Section("Plan") {
-                    Text(plan.title)
+                    Text(HealthStoryText.displayName(plan.title))
                     Text(plan.sourceLabel).foregroundStyle(.secondary)
+                    if plan.fictional {LabeledContent("Source context",value:"Role-play / fictional case")}
                     Button {
                         practitionerFactIDs=plan.factIDs
                     } label: {LabeledContent("Practitioner",value:plan.practitioner ?? "Choose or add")}
@@ -940,7 +941,7 @@ private struct HealthAreaDetailView<Content: View>: View {
                     Section {
                         conditionContent(condition)
                     } header: {
-                        Text(condition.name).font(.headline).foregroundStyle(.primary)
+                        Text(HealthStoryText.displayName(condition.name)).font(.headline).foregroundStyle(.primary)
                             .textCase(nil).accessibilityAddTraits(.isHeader)
                     }
                 }
@@ -1303,7 +1304,7 @@ private struct ConditionAssignmentSheet: View {
                 Section {
                     Text("Choose only conditions this detail relates to. Leaving all choices off keeps it Uncategorized.")
                     ForEach(conditions) { condition in
-                        Toggle(condition.name, isOn: Binding(get: { selected.contains(condition.id) }, set: {
+                        Toggle(HealthStoryText.displayName(condition.name), isOn: Binding(get: { selected.contains(condition.id) }, set: {
                             if $0 { selected.insert(condition.id) } else { selected.remove(condition.id) }
                         }))
                     }
@@ -1551,17 +1552,16 @@ private struct HealthCarePlanCardView:View {
             HStack(alignment:.top) {
                 SummaryCategoryIcon(title:SummaryEntryCategory.carePlan.displayTitle)
                 VStack(alignment:.leading,spacing:4) {
-                    Text(plan.title).font(.headline)
+                    Text(HealthStoryText.displayName(plan.title)).font(.headline)
                     Text("\(plan.actions.count) \(plan.actions.count==1 ? "action":"actions")").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Menu {Button("Edit plan",systemImage:"pencil",action:edit)} label:{RecordActionsIcon()}
-                    .accessibilityLabel("Actions for \(plan.title)")
+                    .accessibilityLabel("Actions for \(HealthStoryText.displayName(plan.title))")
             }
             Text(plan.sourceLabel).font(.caption).foregroundStyle(.secondary)
-            if plan.fictional {Text("Fictional role-play").font(.caption.weight(.semibold)).foregroundStyle(.secondary)}
-            if let practitioner=plan.practitioner {Text(practitioner).font(.subheadline).foregroundStyle(.secondary)}
-            if !plan.conditionNames.isEmpty {Text(plan.conditionNames.joined(separator:" · ")).font(.caption).foregroundStyle(.secondary)}
+                        if let practitioner=plan.practitioner {Text(practitioner).font(.subheadline).foregroundStyle(.secondary)}
+            if !plan.conditionNames.isEmpty {Text(plan.conditionNames.map{HealthStoryText.displayName($0)}.joined(separator:" · ")).font(.caption).foregroundStyle(.secondary)}
             ForEach(CarePlanBucket.allCases,id:\.self) {bucket in
                 let actions=plan.actions.filter{$0.bucket==bucket}
                 if !actions.isEmpty {
@@ -1576,6 +1576,7 @@ private struct HealthCarePlanCardView:View {
                 }
             }
             DisclosureGroup("Details and sources") {
+                if plan.fictional {Text("Source context: role-play / fictional case").font(.caption).foregroundStyle(.secondary)}
                 ForEach(plan.entries) {entry in
                     VStack(alignment:.leading,spacing:5) {
                         Text(entry.sourceTitle ?? "Original record").font(.subheadline.weight(.semibold))
