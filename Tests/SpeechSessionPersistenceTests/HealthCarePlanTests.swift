@@ -87,6 +87,34 @@ final class HealthCarePlanTests:XCTestCase {
   XCTAssertFalse(plans[0].actions.flatMap(\.metadata).contains{$0.hasPrefix("Owner:")})
   XCTAssertFalse(plans[0].exportText.contains("Owner:"))
  }
+ func testFollowUpTimingIsASectionOfTheSameEncounterNotAnotherPlan() {
+  for timing in ["one week","2026-05-19","unknown"," "] {
+   var a=fact("Adjust posture",plan:nil),b=fact("Return in one week",plan:nil,category:.followUp,timing:timing)
+   a.occurrences[0].evidence?.eventDate=" "
+   b.occurrences[0].evidence?.eventDate=timing
+   let plans=HealthCarePlan.project(facts:[a,b],conditions:[],sessions:[])
+   XCTAssertEqual(plans.count,1,timing)
+   XCTAssertEqual(plans[0].actions.count,2)
+   XCTAssertEqual(plans[0].actions.filter{$0.bucket == .followUp}.count,1)
+   XCTAssertEqual(plans[0].actions.first{$0.bucket == .followUp}?.timing,timing.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty ? nil:timing)
+  }
+ }
+ func testExplicitActionDateAndFutureFollowUpDateStayWithinOnePlan() {
+  var a=fact("Adjust posture"),b=fact("Return next week",category:.followUp)
+  a.occurrences[0].evidence?.eventDate="2026-05-12";b.occurrences[0].evidence?.eventDate="2026-05-19"
+  XCTAssertEqual(HealthCarePlan.project(facts:[a,b],conditions:[],sessions:[]).count,1)
+ }
+ func testFollowUpDoesNotGuessBetweenTwoDatedEncountersOrProviders() {
+  var a=fact("First encounter"),b=fact("Second encounter"),c=fact("Return later",category:.followUp)
+  a.occurrences[0].evidence?.eventDate="2026-05-12";b.occurrences[0].evidence?.eventDate="2026-06-12"
+  c.occurrences[0].evidence?.eventDate="one week"
+  let plans=HealthCarePlan.project(facts:[a,b,c],conditions:[],sessions:[])
+  XCTAssertEqual(plans.count,3)
+  XCTAssertEqual(plans.first{$0.actions.contains{$0.bucket == .followUp}}?.actions.count,1)
+  b.occurrences[0].evidence?.eventDate="2026-05-12"
+  b.occurrences[0].evidence?.practitioner="Dr. Jane Doe"
+  XCTAssertEqual(HealthCarePlan.project(facts:[a,b,c],conditions:[],sessions:[]).count,2)
+ }
  func testOldCareInstructionDataDecodesWithoutNewPlanMetadata() throws {
   let value=try JSONDecoder().decode(CareInstruction.self,from:Data(#"{"instruction":"Old advice","schedule":"At night"}"#.utf8))
   XCTAssertNil(value.planID);XCTAssertNil(value.isConcise);XCTAssertEqual(value.schedule,"At night")

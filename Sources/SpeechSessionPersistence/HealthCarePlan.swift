@@ -47,7 +47,7 @@ public struct HealthCarePlan: Identifiable, Sendable {
     public static func project(facts: [HealthFact], conditions: [ConditionSummary], sessions: [Session], practitionerNames: [String:String] = [:]) -> [Self] {
         var memberships:[String:[ConditionSummary]]=[:]
         for condition in conditions {for fact in condition.facts {memberships[fact.id,default:[]].append(condition)}}
-        var groups:[String:[Member]]=[:]
+        var encounters:[String:[Member]]=[:]
         for fact in facts where !fact.preference.hidden && CareInstructionPresentation.applies(fact.latest) {
             for entry in fact.occurrences where !entry.isDeleted {
                 let linked=memberships[fact.id] ?? []
@@ -58,8 +58,22 @@ public struct HealthCarePlan: Identifiable, Sendable {
                 let source=entry.sourceSessionID?.uuidString ?? "unsourced:"+entry.id.uuidString
                 let provider=fact.preference.practitionerContactID?.uuidString ?? practitioner?.lowercased() ?? "unknown"
                 let group=entry.evidence?.careInstruction?.planID ?? "record-advice"
-                let key=[source,provider,entry.evidence?.eventDate ?? "",group,fictional ? "fictional":"recorded"].joined(separator:"|")
-                groups[key,default:[]].append(.init(fact:fact,entry:entry,practitioner:practitioner,conditions:linked,fictional:fictional))
+                let key=[source,provider,group,fictional ? "fictional":"recorded"].joined(separator:"|")
+                encounters[key,default:[]].append(.init(fact:fact,entry:entry,practitioner:practitioner,conditions:linked,fictional:fictional))
+            }
+        }
+        var groups:[String:[Member]]=[:]
+        for (encounter,members) in encounters {
+            let actionDates=Set(members.filter{!isFollowUp($0.entry)}.map{encounterDate($0.entry)})
+            for member in members {
+                var date=encounterDate(member.entry)
+                if isFollowUp(member.entry) {
+                    // Follow-up dates describe when to act, not a second encounter.
+                    // Join only one compatible action plan; never choose among visits.
+                    if actionDates.count==1 {date=actionDates.first!}
+                    else if actionDates.count>1 {date="unassigned-follow-up:"+(date.isEmpty ? member.entry.id.uuidString:date)}
+                }
+                groups[encounter+"|"+date,default:[]].append(member)
             }
         }
         return groups.map { key,members in
@@ -109,6 +123,21 @@ public struct HealthCarePlan: Identifiable, Sendable {
         ([title]+actions.map { action in
             ([action.bucket == .followUp ? "Follow-up: "+action.text:action.bucket == .considerations ? "Consideration: "+action.text:action.text]+action.metadata+(action.status == "Current" ? []:[action.status])).joined(separator:" · ")
         }).joined(separator:"\n")
+    }
+    private static func isFollowUp(_ entry:SummaryEntry)->Bool {
+        entry.category == .followUp || entry.evidence?.careInstruction?.bucket == .followUp
+    }
+    /// Relative action timing and missing-date prose do not identify an encounter.
+    /// Retain explicit absolute clinical dates so distinct encounters stay separate.
+    private static func encounterDate(_ entry:SummaryEntry)->String {
+        let text=(entry.evidence?.eventDate ?? "").trimmingCharacters(in:.whitespacesAndNewlines)
+        if text.range(of:#"^\d{4}(?:-\d{2})?(?:-\d{2})?$"#,options:.regularExpression) != nil {return text}
+        if let date=entry.relevantDate, !entry.dateNeedsReview,
+           text.range(of:#"\b(?:19|20)\d{2}\b"#,options:.regularExpression) != nil {
+            let formatter=ISO8601DateFormatter();formatter.formatOptions=[.withFullDate];formatter.timeZone=TimeZone(secondsFromGMT:0)
+            return formatter.string(from:date)
+        }
+        return ""
     }
     private static func recordedStatus(_ fact:HealthFact,entry:SummaryEntry)->String {
         if fact.preference.actionStatus != nil || fact.preference.clinicalStatus != nil {return CareInstructionPresentation.status(fact)}

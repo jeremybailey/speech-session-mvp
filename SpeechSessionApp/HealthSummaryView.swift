@@ -1570,7 +1570,6 @@ private struct HealthCarePlanCardView:View {
                         VStack(alignment:.leading,spacing:4) {
                             Text("• "+action.text).font(.subheadline)
                             ForEach(action.metadata.filter{!$0.hasPrefix("When:") && !$0.hasPrefix("Context:")},id:\.self){Text($0).font(.caption).foregroundStyle(.secondary)}
-                            if action.patientWritten {Text("Your wording").font(.caption).foregroundStyle(.secondary)}
                             if action.status != "Current" {Text(action.status).font(.caption).foregroundStyle(.secondary)}
                         }
                     }
