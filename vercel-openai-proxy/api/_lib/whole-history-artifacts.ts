@@ -10,11 +10,19 @@ export const artifactFields:Record<string,string[]>={
  allergies:['name','reaction','severity','recordStatus','context'],
  vaccinations:['name','dose','route','site','lot','recordStatus','context'],
  biopsychosocialContext:['name','context'],otherNotes:['name','context']};
-export function validArtifact(value:any,category:string):boolean {
+/** v7 uses category-scoped objects; earlier persisted pair arrays remain valid. */
+export function artifactPairs(value:any,category:string):string[][]|null|undefined {
  const allowed=artifactFields[category];
- if(!allowed)return value===null;
- return Array.isArray(value)&&value.length<=12&&value.every(p=>Array.isArray(p)&&p.length===2&&typeof p[0]==='string'&&allowed.includes(p[0])&&typeof p[1]==='string'&&p[1].trim()&&Array.from(p[1]).length<=360)&&new Set(value.map(p=>p[0])).size===value.length;
+ if(!allowed)return value===null?null:undefined;
+ let pairs:any=value;
+ if(value&&typeof value==='object'&&!Array.isArray(value)) {
+  if(Object.keys(value).sort().join('|')!==[...allowed].sort().join('|')||!Object.values(value).every(v=>v===null||typeof v==='string'))return undefined;
+  pairs=allowed.filter(k=>value[k]!==null).map(k=>[k,value[k]]);
+ }
+ if(!Array.isArray(pairs)||pairs.length>12||!pairs.every(p=>Array.isArray(p)&&p.length===2&&typeof p[0]==='string'&&allowed.includes(p[0])&&typeof p[1]==='string'&&p[1].trim()&&Array.from(p[1]).length<=360)||new Set(pairs.map(p=>p[0])).size!==pairs.length)return undefined;
+ return pairs;
 }
+export function validArtifact(value:any,category:string):boolean {return artifactPairs(value,category)!==undefined;}
 export function groundedArtifact(values:string[][],sources:string[]):string[][] {
  const norm=(s:string)=>s.normalize('NFKC').toLowerCase().trim().replace(/\s+/g,' ');
  return values.filter(p=>sources.some(s=>norm(s).includes(norm(p[1]))));

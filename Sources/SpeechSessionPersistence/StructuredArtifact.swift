@@ -12,6 +12,14 @@ public enum StructuredArtifact {
         .allergies:["name","reaction","severity","recordStatus","context"],
         .vaccinations:["name","dose","route","site","lot","recordStatus","context"],
         .biopsychosocialContext:["name","context"], .otherNotes:["name","context"]]
+    /// Decode the v7 category-scoped wire object; null fields mean absent.
+    public static func pairsFromObject(_ object:[String:Any], category:SummaryEntryCategory) -> [[String]]? {
+        guard let allowed=keys[category],Set(object.keys)==Set(allowed),
+              object.values.allSatisfy({$0 is String || $0 is NSNull}) else {return nil}
+        let pairs=allowed.compactMap {key in (object[key] as? String).map{[key,$0]}}
+        guard pairs.allSatisfy({!$0[1].trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && $0[1].unicodeScalars.count<=360}) else {return nil}
+        return pairs
+    }
     public static func label(_ key: String, category: SummaryEntryCategory) -> String {
         if key == "name" { return "Name" }
         return ["organization":"Organization","role":"Role or specialty","phone":"Phone","email":"Email","address":"Address",

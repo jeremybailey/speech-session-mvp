@@ -1,5 +1,5 @@
 /** Exact port of compact-actions-v1 source partitioning. Source-only input. */
-import {structuredPlanTemplate,briefPlanTemplate,careTitleTemplate} from './whole-history-plans';
+import {structuredPlanTemplate,briefPlanTemplate,careTitleTemplate,strictCareTemplate} from './whole-history-plans';
 import {structuredArtifactTemplate} from './whole-history-artifacts';
 import {structuredMedicationTemplate} from './whole-history-medications';
 import { createHash } from 'node:crypto';
@@ -25,8 +25,9 @@ export function makeBundle(values:unknown,template:any){
  if(Object.keys(table).length>700)throw Error('too_many_passages');
  return {source,table};
 }
-export function makePayload(records:unknown,template:any,structuredMedications=false,structuredArtifacts=false,aggregatePlans=false,briefPlans=false,careTitles=false){
- if(careTitles)template=careTitleTemplate(template);
+export function makePayload(records:unknown,template:any,structuredMedications=false,structuredArtifacts=false,aggregatePlans=false,briefPlans=false,careTitles=false,strictArtifacts=false){
+ if(strictArtifacts)template=strictCareTemplate(template);
+ else if(careTitles)template=careTitleTemplate(template);
  else if(briefPlans)template=briefPlanTemplate(template);
  else if(aggregatePlans)template=structuredPlanTemplate(template);
  else if(structuredArtifacts)template=structuredArtifactTemplate(template);

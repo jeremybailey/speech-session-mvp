@@ -175,17 +175,17 @@ struct BTrialArea: Identifiable {
                     "sourceSHA256": SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()]
         }
         accessReady = false
-        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "authenticated": true, "contractVersion": "compact-actions-short-overview-v1", "automaticNarrative": true, "serverOverview": true, "structuredMedications": true, "structuredArtifacts": true, "aggregatePlans": true, "briefPlans": true, "careTitles": true]
+        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "authenticated": true, "contractVersion": "compact-actions-short-overview-v1", "automaticNarrative": true, "serverOverview": true, "structuredMedications": true, "structuredArtifacts": true, "aggregatePlans": true, "briefPlans": true, "careTitles": true, "strictArtifacts": true]
         state = "queued"
         do { try persist(); await resume() } catch { self.error = error.localizedDescription }
     }
-    func resume() async {
-        guard hasRun, !busy, !terminal else { return }
+    func resume(recheckFailure: Bool = false) async {
+        guard hasRun, !busy, (!terminal || (recheckFailure && state == "failed")) else { return }
         busy = true; error = nil
         defer { busy = false }
         do {
             if saved["id"] == nil {
-                let result = try await request("prepare", extras: ["records": saved["records"] ?? [], "serverOverview": saved["serverOverview"] as? Bool ?? false, "structuredMedications": saved["structuredMedications"] as? Bool ?? false, "structuredArtifacts": saved["structuredArtifacts"] as? Bool ?? false, "aggregatePlans": saved["aggregatePlans"] as? Bool ?? false, "briefPlans": saved["briefPlans"] as? Bool ?? false, "careTitles": saved["careTitles"] as? Bool ?? false])
+                let result = try await request("prepare", extras: ["records": saved["records"] ?? [], "serverOverview": saved["serverOverview"] as? Bool ?? false, "structuredMedications": saved["structuredMedications"] as? Bool ?? false, "structuredArtifacts": saved["structuredArtifacts"] as? Bool ?? false, "aggregatePlans": saved["aggregatePlans"] as? Bool ?? false, "briefPlans": saved["briefPlans"] as? Bool ?? false, "careTitles": saved["careTitles"] as? Bool ?? false, "strictArtifacts": saved["strictArtifacts"] as? Bool ?? false])
                 guard let id = result["id"] as? String, let locators = result["locators"] as? [String: Any] else { throw BTrialFailure(message: "The trial submission did not return a recoverable identity.") }
                 saved["id"] = id; saved["locators"] = locators; saved["contractVersion"] = result["version"]; state = result["state"] as? String ?? "queued"; try persist()
             }
@@ -213,7 +213,7 @@ struct BTrialArea: Identifiable {
                 }
                 saved["output"] = raw
                 if let childID = result["overviewJobID"] as? String, !hasNarrativeJob {
-                    saved["narrativeJob"] = ["run": childID, "id": childID, "authenticated": true, "state": "queued", "writerVersion": ["structured-plans-brief-v5","structured-care-titles-v6"].contains(saved["contractVersion"] as? String ?? "") ? "b-narrative-brief-v7":"b-narrative-compact-v6"]
+                    saved["narrativeJob"] = ["run": childID, "id": childID, "authenticated": true, "state": "queued", "writerVersion": ["structured-plans-brief-v5","structured-care-titles-v6","structured-artifact-objects-v7"].contains(saved["contractVersion"] as? String ?? "") ? "b-narrative-brief-v7":"b-narrative-compact-v6"]
                     narrativeState = "queued"
                 }
                 try persist()
@@ -225,7 +225,13 @@ struct BTrialArea: Identifiable {
                 }
             } else {
                 try persist()
-                error = state == "uncertain" ? "The provider outcome is uncertain. Its reservation remains held. No automatic paid retry was made." : "Processing stopped (\(state)). Saved records are unchanged."
+                let failureCode=(response["result"] as? [String:Any])?["overview_error"] as? String
+                saved["failureCode"]=failureCode;try persist()
+                if failureCode == "invalid_proposal" {
+                    error="The generated details failed category-format checks before the overview could start. Your saved records are unchanged. Start a new update to try again; checking this failed request does not run it again."
+                } else if failureCode == "budget_exhausted" {
+                    error="The details finished, but the overview could not reserve its budget. Your saved story is unchanged. No automatic paid retry was made."
+                } else { error = state == "uncertain" ? "The provider outcome is uncertain. Its reservation remains held. No automatic paid retry was made." : "Processing stopped (\(state)). Saved records are unchanged." }
             }
         } catch {
             if saved["id"] == nil, let failure = error as? BTrialFailure,
@@ -450,7 +456,12 @@ struct BTrialArea: Identifiable {
                     medication = StructuredMedication.grounded(fields.compactMapValues { $0 as? String }, in: refs.compactMap { locators[$0]?["quote"] as? String })
                 } else if let value = row["m"], (!(value is NSNull) || k == "medications") { throw fail() }
                 var artifactFields: [SummaryEntryField]?
-                if let values = row["f"] as? [[String]] {
+                var decodedFields=row["f"] as? [[String]]
+                if let object=row["f"] as? [String:Any] {
+                    guard let kind=SummaryEntryCategory(rawValue:k),let pairs=StructuredArtifact.pairsFromObject(object,category:kind) else {throw fail()}
+                    decodedFields=pairs
+                }
+                if let values = decodedFields {
                     guard let kind=SummaryEntryCategory(rawValue:k), let allowed=StructuredArtifact.keys[kind], values.count<=12,
                           values.allSatisfy({$0.count==2 && allowed.contains($0[0]) && !$0[1].trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && $0[1].unicodeScalars.count<=360}),
                           Set(values.map{$0[0]}).count==values.count else { throw fail() }
@@ -501,7 +512,7 @@ extension BTrialModel {
             selected = Set(records.map(\.id))
         }
         if !hasRun { await start() }
-        else if !terminal { await resume() }
+        else if !terminal || state == "failed" { await resume(recheckFailure: true) }
         else if state == "completed", overviewOnly {
             if narrativeTerminal, narrativeState != "completed" || saved["publishedNarrativeRun"] as? String == narrativeJob["run"] as? String { await rewriteOverview(force: true) }
             else if !narrativeTerminal { await writeOverview() }

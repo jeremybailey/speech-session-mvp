@@ -1,5 +1,5 @@
 /** Plan identity and concise action wording in the existing generation call. */
-import {structuredArtifactTemplate} from './whole-history-artifacts';
+import {structuredArtifactTemplate,artifactFields} from './whole-history-artifacts';
 export const planVersion='structured-plans-v4';
 export function validPlan(p:any,category:string):boolean {
  if(p===null)return true;
@@ -41,5 +41,19 @@ export function careTitleTemplate(base:any){
  template.instructions+=`
 CARE-FOCUSED TITLES v6: h names the care this plan recommends, not the patient's diagnosis, symptom, condition label or source narrative. Use 3–6 plain words describing the main source-backed interventions or care activities. Do not copy a condition name, add 'reported' history wording, repeat provenance/scenario labels or merely append 'care plan' to a diagnosis. Select care activities from the actions themselves; do not invent a treatment, outcome or priority. Keep related conditions in g, not the title. If the record supports only a follow-up, use a review/next-steps title; if care is exploratory or declined, preserve that meaning rather than implying a definite treatment. All earlier action, timing, clinical qualifier and source-reference rules remain unchanged. This is the same h field in the same response, not an extra pass.
 `;
+ return template;
+}
+
+/** Opt-in contract for new app builds; no changes to older pending payloads. */
+export const strictArtifactVersion='structured-artifact-objects-v7';
+export function strictCareTemplate(base:any){
+ const template=careTitleTemplate(base);template.version=strictArtifactVersion;
+ template.schema.$defs.fact.anyOf=template.schema.$defs.fact.anyOf.flatMap((variant:any)=>variant.properties.k.enum.map((category:string)=>{
+  const v=structuredClone(variant);v.properties.k.enum=[category];
+  const keys=artifactFields[category];
+  v.properties.f=keys?{type:'object',additionalProperties:false,required:keys,properties:Object.fromEntries(keys.map(k=>[k,{type:['string','null'],minLength:1,maxLength:360}]))}:{type:'null'};
+  return v;
+ }));
+ template.instructions+='\nCATEGORY FIELD OBJECTS v7: This replaces the earlier f pair-array encoding only. f now uses the exact category-specific object in the response schema. Use null for absent field values, and null for the entire f on medications/carePlan/followUp. Never move a field from another category into this object. Keep clinically material information that has no corresponding field in the concise v[0] fact statement (or the existing m/p fields where applicable); do not omit it or misclassify the fact to fit a field. Every non-null f value must still be copied literally from its cited source. All source, attribution, qualifiers and plan rules remain in force. No additional processing pass.';
  return template;
 }

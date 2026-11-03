@@ -1,6 +1,18 @@
 import XCTest
 @testable import SpeechSessionPersistence
 final class StructuredArtifactTests:XCTestCase {
+ func testCategoryScopedWireObjectsRejectWrongFieldsWithoutLosingAbsentValues() {
+  for (category,keys) in StructuredArtifact.keys {
+   var object=Dictionary(uniqueKeysWithValues:keys.map{($0,NSNull() as Any)})
+   object["name"]="Synthetic entity"
+   XCTAssertEqual(StructuredArtifact.pairsFromObject(object,category:category),[["name","Synthetic entity"]])
+   object["unsupported"]="value"
+   XCTAssertNil(StructuredArtifact.pairsFromObject(object,category:category))
+   object.removeValue(forKey:"unsupported");object["name"]=" "
+   XCTAssertNil(StructuredArtifact.pairsFromObject(object,category:category))
+  }
+  XCTAssertNil(StructuredArtifact.pairsFromObject(["name":"Synthetic"],category:.medications))
+ }
  private func b(_ text:String, _ category:SummaryEntryCategory = .practitionerContact)->SummaryEntry {
   var e=SummaryEntry(category:category,title:text)
   var evidence=ClinicalEvidence();evidence.assessmentMethod=WholeHistoryPublication.version;e.evidence=evidence;return e
