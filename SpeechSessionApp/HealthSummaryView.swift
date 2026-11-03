@@ -249,7 +249,12 @@ struct HealthSummaryView: View {
                     report["build"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
                     report["medicationCards"] = model.facts.filter { $0.category == .medications }.count
                     report["medicationOccurrences"] = Set(model.facts.filter { $0.category == .medications }.flatMap(\.occurrences).map(\.id)).count
-                    report["displayGrouping"] = "structured-medications-v2"
+                    report["displayGrouping"] = "local-artifact-formatting-v1"
+                    let contacts = model.facts.filter { $0.category == .practitionerContact }
+                    report["contactCards"] = contacts.count
+                    report["contactOccurrences"] = Set(contacts.flatMap(\.occurrences).map(\.id)).count
+                    report["formattedContactNames"] = contacts.filter { $0.title != $0.latest.title }.count
+                    report["emptyDisplayFields"] = model.facts.flatMap { $0.displayEntry.fields }.filter { $0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
                     let medications = model.facts.filter { $0.category == .medications }
                     report["maxMedicationHeadingLength"] = medications.map { $0.title.count }.max() ?? 0
                     report["unknownMedicationUse"] = medications.filter { !($0.hasKnownStatus) }.count
@@ -869,7 +874,7 @@ struct HealthSummaryView: View {
 
     private func contact(from fact: HealthFact) -> CareTeamMember {
         func field(_ labels: [String]) -> String {
-            fact.latest.fields.first { field in labels.contains { field.label.localizedCaseInsensitiveContains($0) } }?.value ?? ""
+            fact.displayEntry.fields.first { field in labels.contains { field.label.localizedCaseInsensitiveContains($0) } }?.value ?? ""
         }
         return CareTeamMember(name: field(["name"]).isEmpty ? fact.title : field(["name"]),
             role: field(["role", "specialty"]), organization: field(["organization", "clinic"]),
@@ -1082,7 +1087,7 @@ struct HealthFactRow: View {
     private var isCare: Bool { CareInstructionPresentation.applies(fact.latest) }
     private var title: String {
         if fact.category == .practitionerContact { return PractitionerContactsFormatting.namesOnly(fact.title) ?? HealthStoryText.clean(fact.title) }
-        return isCare ? CareInstructionPresentation.instruction(fact.latest) : HealthStoryText.clean(fact.title)
+        return isCare ? CareInstructionPresentation.instruction(fact.latest) : HealthStoryText.clean(fact.displayEntry.title)
     }
     private var fields: [SummaryEntryField] {
         HealthDetailPresentation.fields(fact.displayEntry).filter {
@@ -1119,7 +1124,7 @@ struct HealthFactRow: View {
                 ForEach(HealthDetailPresentation.remainingDetails(fact.displayEntry), id: \.self) { RecordFieldLine(text: $0) }
                 ForEach(fields) { field in RecordFieldLine(label: field.label, value: field.value) }
             }
-            if !isCare, showBodySystem, let body = fact.latest.evidence?.bodySystem ?? fact.latest.fields.first(where: { $0.label.lowercased().contains("body system") })?.value,
+            if !isCare, fact.category != .practitionerContact, showBodySystem, let body = fact.latest.evidence?.bodySystem ?? fact.latest.fields.first(where: { $0.label.lowercased().contains("body system") })?.value,
                !body.isEmpty, !fields.contains(where: { $0.value == body }) { RecordFieldLine(label: "Body area", value: body, secondary: true) }
             if !isCare, let practitioner = practitionerName ?? fact.displayEntry.evidence?.practitioner, !practitioner.isEmpty,
                !fields.contains(where: { $0.value == practitioner }) {

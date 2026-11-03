@@ -34,12 +34,7 @@ public enum BClinicalPresentation {
     public static func display(_ entry: SummaryEntry) -> SummaryEntry {
         guard applies(entry) else { return entry }
         if entry.category == .medications { return medicationDisplay(entry) }
-        var result = entry
-        result.evidence?.practitioner = namedPractitioner(entry.evidence?.practitioner)
-        result.details = entry.details.components(separatedBy: .newlines).filter {
-            !$0.hasPrefix("Recorded status:") && !$0.hasPrefix("Attribution:") && !$0.hasPrefix("Recorded date:")
-        }.joined(separator: "\n")
-        return result
+        return BArtifactPresentation.display(entry)
     }
     public static func medication(_ entry: SummaryEntry) -> StructuredMedication {
         guard applies(entry) else { return StructuredMedication(values: [:]) }

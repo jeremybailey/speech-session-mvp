@@ -72,7 +72,7 @@ public enum CareInstructionPresentation {
         let main = canonical(instruction(entry))
         var seen = Set([main])
         let care = entry.evidence?.careInstruction
-        var texts = [care?.directions ?? HealthStoryText.clean(entry.details)]
+        var texts = [care?.directions ?? HealthStoryText.clean(BClinicalPresentation.display(entry).details)]
         if let value = care?.schedule, !value.isEmpty { texts.append("When: " + value) }
         if let value = care?.goal, !value.isEmpty { texts.append("Goal: " + value) }
         if let value = care?.reviewTiming, !value.isEmpty { texts.append("Review: " + value) }

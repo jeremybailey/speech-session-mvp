@@ -118,7 +118,7 @@ struct HealthShareView: View {
                     let sections = SummaryEntryCategory.allCases.compactMap { category -> SummaryPDFCategorySection? in
                         let matches = facts.filter { $0.category == category }
                         guard !matches.isEmpty else { return nil }
-                        let groups = ["Current", "Completed", "Paused", "Non-current"].compactMap { status -> SummaryPDFStatusGroup? in
+                        let groups = HealthFactExportPresentation.statuses(matches).compactMap { status -> SummaryPDFStatusGroup? in
                             let selected = matches.filter { CareInstructionPresentation.status($0) == status }
                             guard !selected.isEmpty else { return nil }
                             let rows = selected.map { fact -> SummaryPDFEntryRow in

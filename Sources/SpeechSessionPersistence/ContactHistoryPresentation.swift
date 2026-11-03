@@ -6,7 +6,7 @@ public enum ContactHistoryPresentation {
     }
     public static func group(_ facts: [HealthFact]) -> [HealthFact] {
         let buckets = Dictionary(grouping: facts.filter { $0.category == .practitionerContact }) {
-            HealthFactMatching.canonical($0.latest.title)
+            HealthFactMatching.canonical(BClinicalPresentation.display($0.latest).title)
         }
         var result = facts.filter { $0.category != .practitionerContact }
         for bucket in buckets.values {
@@ -28,8 +28,9 @@ public enum ContactHistoryPresentation {
     }
 
     private static func sameContact(_ a: SummaryEntry, _ b: SummaryEntry) -> Bool {
+        let a = BClinicalPresentation.display(a), b = BClinicalPresentation.display(b)
         let name = HealthFactMatching.canonical(a.title)
-        guard !name.isEmpty, name == HealthFactMatching.canonical(b.title),
+        guard !name.isEmpty, a.title != "Care team contact — check original", name == HealthFactMatching.canonical(b.title),
               a.evidence?.combinationExcluded != true, b.evidence?.combinationExcluded != true else { return false }
         // Identical content can share a display card without claiming a stored
         // identity or deleting an occurrence. Compare all fields, including unknown
@@ -88,13 +89,14 @@ public enum ContactHistoryPresentation {
 
     /// An enriched display copy only. Editing still targets an original occurrence.
     public static func display(_ fact: HealthFact) -> SummaryEntry {
-        var result = fact.latest
+        var result = BClinicalPresentation.display(fact.latest)
         guard fact.category == .practitionerContact else { return MedicationHistoryPresentation.display(fact) }
         let aliases = ["org": "Organization", "clinic": "Organization", "organization": "Organization",
                        "role": "Role or specialty", "specialty": "Role or specialty", "role or specialty": "Role or specialty",
                        "address": "Address", "phone": "Phone", "email": "Email", "name": "Name"]
         var selected: [String: SummaryEntryField] = [:]
-        for entry in fact.occurrences {
+        for original in fact.occurrences {
+            let entry = BClinicalPresentation.display(original)
             for field in entry.fields where !field.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 let label = aliases[field.label.lowercased()] ?? field.label
                 var value = field.value

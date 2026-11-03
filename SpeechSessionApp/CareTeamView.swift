@@ -127,7 +127,7 @@ struct PractitionerPicker: View {
         let linked = Set(model.snapshot.careTeam.flatMap(\.sourceEntryIDs))
         let extracted = model.facts.filter { $0.category == .practitionerContact && !$0.occurrences.contains(where: { linked.contains($0.id) }) }.map { fact in
             func field(_ labels: [String]) -> String {
-                fact.latest.fields.first { field in labels.contains { field.label.localizedCaseInsensitiveContains($0) } }?.value ?? ""
+                fact.displayEntry.fields.first { field in labels.contains { field.label.localizedCaseInsensitiveContains($0) } }?.value ?? ""
             }
             return CareTeamMember(id: fact.latest.id, name: field(["name"]).isEmpty ? fact.title : field(["name"]),
                 role: field(["role", "specialty"]), organization: field(["organization", "clinic"]),

@@ -113,9 +113,9 @@ public struct HealthFact: Identifiable, Sendable {
     public var preference: HealthFactPreference
     public var topicIDs: [UUID]
     public var latest: SummaryEntry { occurrences[0] }
-    public var displayEntry: SummaryEntry { category == .medications ? MedicationHistoryPresentation.display(self) : BClinicalPresentation.display(ContactHistoryPresentation.display(self)) }
+    public var displayEntry: SummaryEntry { category == .medications ? MedicationHistoryPresentation.display(self) : (category == .practitionerContact ? ContactHistoryPresentation.display(self) : BClinicalPresentation.display(latest)) }
     public var category: SummaryEntryCategory { latest.category }
-    public var title: String { category == .medications ? MedicationHistoryPresentation.display(self).title : latest.title }
+    public var title: String { [.medications, .practitionerContact].contains(category) ? displayEntry.title : latest.title }
     public var revision: String {
         occurrences.sorted { $0.id.uuidString < $1.id.uuidString }
             .map { "\($0.id):\($0.updatedAt.timeIntervalSince1970)" }.joined(separator: "|")

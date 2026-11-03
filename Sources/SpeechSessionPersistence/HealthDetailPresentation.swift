@@ -23,7 +23,7 @@ public enum HealthDetailPresentation {
         let values = structured.map { normalize($0.value) }
         let text = HealthStoryText.cleanForDisplay(entry.details).replacingOccurrences(of: "\\n", with: "\n")
             .replacingOccurrences(of: #"(?i)<br\s*/?>"#, with: "\n", options: .regularExpression)
-            .replacingOccurrences(of: #"[;|]\s*(?=(?i:phone|email|address|clinic|organization|role|specialty|dose|frequency|notes):)"#, with: "\n", options: .regularExpression)
+            .replacingOccurrences(of: #"[;|]\s*(?=(?i:phone|email|address|clinic|organization|role|specialty|dose|frequency|notes|test|result|units|reference range|specimen|interpretation|vaccine|route|site|lot|record date|allergen|reaction|severity|record status|symptom|onset|duration|location|finding|topic|context):)"#, with: "\n", options: .regularExpression)
         var seen = Set<String>()
         return text.components(separatedBy: .newlines).compactMap { raw in
             let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -34,7 +34,7 @@ public enum HealthDetailPresentation {
                 let aliases = ["org": "organization", "clinic": "organization", "role": "role or specialty", "specialty": "role or specialty"]
                 if structured.contains(where: { normalize($0.label) == (aliases[label] ?? label) }) { return nil }
             }
-            if let colon = line.firstIndex(of: ":"), structured.contains(where: { normalize($0.label) == normalize(String(line[..<colon])) }) {
+            if let colon = line.firstIndex(of: ":"), entry.fields.contains(where: { normalize($0.label) == normalize(String(line[..<colon])) }) {
                 value = String(line[line.index(after: colon)...])
             }
             let normalized = normalize(value)

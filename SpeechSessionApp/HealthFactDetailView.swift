@@ -61,7 +61,7 @@ private struct HealthFactEditor: View {
         displayEntry.details = HealthStoryText.clean(displayEntry.details)
         if CareInstructionPresentation.applies(displayEntry) {
             displayEntry.title = CareInstructionPresentation.instruction(sourceEntry)
-            let directions = sourceEntry.evidence?.careInstruction?.directions ?? HealthStoryText.clean(sourceEntry.details)
+            let directions = sourceEntry.evidence?.careInstruction?.directions ?? HealthStoryText.clean(displayEntry.details)
             displayEntry.details = CareInstructionPresentation.canonical(directions) == CareInstructionPresentation.canonical(displayEntry.title) ? "" : directions
         }
         _careGoal = State(initialValue: sourceEntry.evidence?.careInstruction?.goal ?? "")
