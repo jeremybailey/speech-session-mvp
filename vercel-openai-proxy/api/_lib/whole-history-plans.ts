@@ -34,3 +34,12 @@ BRIEF CARE WORDING v5: Prefer 4–9 words per action, rather than the earlier 6�
 `;
  return template;
 }
+
+export const careTitleVersion='structured-care-titles-v6';
+export function careTitleTemplate(base:any){
+ const template=briefPlanTemplate(base);template.version=careTitleVersion;
+ template.instructions+=`
+CARE-FOCUSED TITLES v6: h names the care this plan recommends, not the patient's diagnosis, symptom, condition label or source narrative. Use 3–6 plain words describing the main source-backed interventions or care activities. Do not copy a condition name, add 'reported' history wording, repeat provenance/scenario labels or merely append 'care plan' to a diagnosis. Select care activities from the actions themselves; do not invent a treatment, outcome or priority. Keep related conditions in g, not the title. If the record supports only a follow-up, use a review/next-steps title; if care is exploratory or declined, preserve that meaning rather than implying a definite treatment. All earlier action, timing, clinical qualifier and source-reference rules remain unchanged. This is the same h field in the same response, not an extra pass.
+`;
+ return template;
+}

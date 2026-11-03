@@ -107,7 +107,7 @@ public struct HealthCarePlan: Identifiable, Sendable {
             }
             let related=Dictionary(grouping:ordered.flatMap(\.conditions),by:\.id).values.compactMap(\.first).sorted{$0.id<$1.id}
             let headings=Set(ordered.compactMap{nonempty($0.entry.evidence?.careInstruction?.planTitle)})
-            let title=headings.count==1 ? headings.first! : (related.count==1 && related[0].name.count<=60 ? related[0].name+" · Care plan":"Care plan")
+            let title=careTitle(headings:Array(headings),conditionNames:related.map(\.name),actions:actions)
             let labels=Set(ordered.map{CareInstructionPresentation.dateLabel($0.entry,sessions:sessions)})
             let providers=Set(ordered.compactMap(\.practitioner))
             return Self(id:id,title:title,sourceSessionID:ordered[0].entry.sourceSessionID,sourceLabel:labels.count==1 ? labels.first!:"Multiple recorded dates",
@@ -120,9 +120,48 @@ public struct HealthCarePlan: Identifiable, Sendable {
         }
     }
     public var exportText: String {
-        ([title]+actions.map { action in
+        ([title]+(conditionNames.isEmpty ? []:["Related conditions: "+conditionNames.map{HealthStoryText.displayName($0)}.joined(separator:" · ")])+actions.map { action in
             ([action.bucket == .followUp ? "Follow-up: "+action.text:action.bucket == .considerations ? "Consideration: "+action.text:action.text]+action.metadata+(action.status == "Current" ? []:[action.status])).joined(separator:" · ")
         }).joined(separator:"\n")
+    }
+    /// Old results have no intervention heading. Summarise only explicit care
+    /// activities; never infer a diagnosis, intended outcome, dose or priority.
+    private static func careTitle(headings:[String],conditionNames:[String],actions:[Action])->String {
+        func key(_ s:String)->String {
+            HealthFactMatching.canonical(HealthStoryText.displayName(s)).split(separator:" ").filter{!["care","plan"].contains($0)}.joined(separator:" ")
+        }
+        if headings.count==1, let heading=headings.first,
+           !conditionNames.contains(where:{key($0)==key(heading)}) {return heading}
+        let main=actions.filter{$0.bucket == .carePlan}
+        let candidates=main.isEmpty ? actions:main
+        let themes:[(String,Set<String>)]=[
+            ("Positioning",["posture","position","positioning","pelvis","pelvic","core"]),
+            ("Movement",["walk","walking","movement","motion","activity","activities","rocking"]),
+            ("Exercise",["exercise","exercises","stretch","stretches","stretching"]),
+            ("Heat",["heat","heating"]),("Ice",["ice","icing"]),
+            ("Eye drops",["drops"]),("Medication",["medication","medications","tablets","tablet","capsules","capsule"]),
+            ("Rest",["rest","sleep","sleeping"]),("Nutrition",["nutrition","diet","dietary","eating"]),
+            ("Hydration",["hydration"]),("Monitoring",["monitor","monitoring","track","tracking","log","measure"]),
+            ("Wound care",["wound","wounds"]),("Backpack adjustments",["backpack","knapsack"])]
+        var counts=[String:Int]()
+        for action in candidates {
+            let words=Set(action.text.lowercased().split(whereSeparator:{!$0.isLetter}).map(String.init))
+            for (name,cues) in themes where !words.isDisjoint(with:cues) {
+                if name=="Eye drops", !words.contains("eye") && !words.contains("eyes") {continue}
+                counts[name,default:0]+=1
+            }
+        }
+        let ranked=themes.enumerated().filter{counts[$0.element.0,default:0]>0}.sorted{
+            let a=counts[$0.element.0,default:0],b=counts[$1.element.0,default:0]
+            return a==b ? $0.offset<$1.offset:a>b
+        }.prefix(2).map{$0.element.0}
+        if ranked.count==2 {return ranked[0]+" and "+ranked[1].lowercased()}
+        if let only=ranked.first {
+            return ["Heat":"Heat application","Ice":"Ice application","Eye drops":"Eye-drop use","Medication":"Medication use","Wound care":"Wound care","Backpack adjustments":"Backpack adjustments"][only] ?? only+" guidance"
+        }
+        if actions.allSatisfy({$0.bucket == .followUp}) {return "Review and next steps"}
+        if actions.allSatisfy({$0.bucket == .considerations}) {return "Care options to discuss"}
+        return "Care recommendations"
     }
     private static func isFollowUp(_ entry:SummaryEntry)->Bool {
         entry.category == .followUp || entry.evidence?.careInstruction?.bucket == .followUp

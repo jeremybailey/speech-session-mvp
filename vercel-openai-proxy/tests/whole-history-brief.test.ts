@@ -9,15 +9,22 @@ test('brief generation is opt-in and leaves the old plan request and validation 
  assert.deepEqual(old,explicit);
  assert.equal(JSON.parse(old.payload.input).version,'structured-plans-v4');assert.equal(JSON.parse(brief.payload.input).version,'structured-plans-brief-v5');
  assert.deepEqual(old.payload.response_format,brief.payload.response_format);
+ const care=makePayload(records,template,true,true,true,true,true);
+ assert.equal(JSON.parse(care.payload.input).version,'structured-care-titles-v6');
+ assert.deepEqual(care.payload.response_format,brief.payload.response_format);
+ assert.match(care.payload.instructions,/h names the care this plan recommends/);
  assert.equal(brief.payload.stage,old.payload.stage);
  assert.match(brief.payload.instructions,/4–9 words/);assert.match(brief.payload.instructions,/short target never permits dropping/);
 });
 test('durable continuation routes each saved generation version to its corresponding writer with identical coverage and evidence',()=>{
  const legacy=makePayload(records,template,true,true,true).payload,fresh=makePayload(records,template,true,true,true,true).payload;
  for(const payload of [legacy,fresh])payload.input=JSON.stringify({...JSON.parse(payload.input),serverOverview:true});
+ const care=makePayload(records,template,true,true,true,true,true).payload;
+ care.input=JSON.stringify({...JSON.parse(care.input),serverOverview:true});
  const old=chainedOverview(legacy,JSON.stringify(proposal),'parent-id'),brief=chainedOverview(fresh,JSON.stringify(proposal),'parent-id');
  const oldDirect=makeOverviewPayload(records,proposal,template),briefDirect=makeOverviewPayload(records,proposal,template,true);
  assert.equal(oldDirect.version,overviewVersion);assert.equal(briefDirect.version,briefOverviewVersion);
+ assert.equal(chainedOverview(care,JSON.stringify(proposal),'parent-id').instructions,briefDirect.payload.instructions);
  assert.equal(old.instructions,oldDirect.payload.instructions);assert.equal(brief.instructions,briefDirect.payload.instructions);
  assert.deepEqual(JSON.parse(old.input),JSON.parse(brief.input));
  assert.deepEqual(old.response_format.json_schema.schema,brief.response_format.json_schema.schema);

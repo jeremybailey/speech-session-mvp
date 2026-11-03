@@ -603,6 +603,7 @@ struct HealthSummaryView: View {
                 Section("Plan") {
                     Text(HealthStoryText.displayName(plan.title))
                     Text(plan.sourceLabel).foregroundStyle(.secondary)
+                    if !plan.conditionNames.isEmpty {LabeledContent("Conditions",value:plan.conditionNames.map{HealthStoryText.displayName($0)}.joined(separator:" · "))}
                     if plan.fictional {LabeledContent("Source context",value:"Role-play / fictional case")}
                     Button {
                         practitionerFactIDs=plan.factIDs
@@ -1561,7 +1562,6 @@ private struct HealthCarePlanCardView:View {
             }
             Text(plan.sourceLabel).font(.caption).foregroundStyle(.secondary)
                         if let practitioner=plan.practitioner {Text(practitioner).font(.subheadline).foregroundStyle(.secondary)}
-            if !plan.conditionNames.isEmpty {Text(plan.conditionNames.map{HealthStoryText.displayName($0)}.joined(separator:" · ")).font(.caption).foregroundStyle(.secondary)}
             ForEach(CarePlanBucket.allCases,id:\.self) {bucket in
                 let actions=plan.actions.filter{$0.bucket==bucket}
                 if !actions.isEmpty {

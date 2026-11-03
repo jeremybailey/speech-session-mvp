@@ -125,6 +125,26 @@ final class HealthCarePlanTests:XCTestCase {
   XCTAssertEqual(HealthCarePlan.project(facts:[a,b],conditions:[],sessions:[]).count,2)
   XCTAssertEqual(a.latest.evidence?.careInstruction?.consideration,"Fictional role-play")
  }
+ func testLegacyTitleDescribesCareRatherThanRepeatingCondition() {
+  let a=fact("Keep feet grounded and find a neutral pelvis"),b=fact("Walk regularly"),c=fact("Try pelvic rocking motion"),d=fact("Continue heat")
+  let condition=ConditionSummary(id:"back",name:"Reported lower-back pain, recurrent",bodySystem:"musculoskeletal",facts:[a,b,c,d])
+  let plans=HealthCarePlan.project(facts:[a,b,c,d],conditions:[condition],sessions:[])
+  XCTAssertEqual(plans[0].title,"Positioning and movement")
+  XCTAssertEqual(plans[0].conditionNames,[condition.name])
+  XCTAssertEqual(plans[0].entries.count,4)
+ }
+ func testCopiedConditionTitleIsReplacedButExplicitCareTitleIsKept() {
+  let name="Reported back pain"
+  let a=fact("Do posture exercises",title:name+" · Care plan")
+  let condition=ConditionSummary(id:"back",name:name,bodySystem:"musculoskeletal",facts:[a])
+  XCTAssertEqual(HealthCarePlan.project(facts:[a],conditions:[condition],sessions:[])[0].title,"Positioning and exercise")
+  let b=fact("Use prescribed eye drops",title:"Eye drops and review")
+  XCTAssertEqual(HealthCarePlan.project(facts:[b],conditions:[],sessions:[])[0].title,"Eye drops and review")
+ }
+ func testSingleActivityAndUnknownCareUsePlainTitlesWithoutInventingOutcomes() {
+  XCTAssertEqual(HealthCarePlan.project(facts:[fact("Continue heat")],conditions:[],sessions:[])[0].title,"Heat application")
+  XCTAssertEqual(HealthCarePlan.project(facts:[fact("Discuss the recorded choices")],conditions:[],sessions:[])[0].title,"Care recommendations")
+ }
  func testOldCareInstructionDataDecodesWithoutNewPlanMetadata() throws {
   let value=try JSONDecoder().decode(CareInstruction.self,from:Data(#"{"instruction":"Old advice","schedule":"At night"}"#.utf8))
   XCTAssertNil(value.planID);XCTAssertNil(value.isConcise);XCTAssertEqual(value.schedule,"At night")
