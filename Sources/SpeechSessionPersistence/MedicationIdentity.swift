@@ -40,7 +40,7 @@ public enum MedicationIdentity {
         let text = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let patterns = [
             #"(?i)^fill:\s*([^;\n]+);"#,
-            #"(?i)^medication (?:report|list) lists\s+(.+?)\s+as (?:active|discontinued|inactive|stopped)(?:[ ,;.]|$)"#
+            #"(?i)^medications? (?:report|list|record|history) lists\s+(.+?)\s+as (?:active|discontinued|inactive|stopped)(?:[ ,;.]|$)"#
         ]
         for pattern in patterns {
             guard let regex = try? NSRegularExpression(pattern: pattern),

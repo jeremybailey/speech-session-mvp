@@ -29,7 +29,7 @@ struct HealthSummaryView: View {
     #endif
     private var connectionCheckOnly: Bool {
         #if DEBUG
-        ProcessInfo.processInfo.arguments.contains("--ai-connection-check")
+        ProcessInfo.processInfo.arguments.contains("--ai-connection-check") || ProcessInfo.processInfo.arguments.contains("--health-presentation-check")
         #else
         false
         #endif
@@ -244,6 +244,16 @@ struct HealthSummaryView: View {
                 var report: [String: Any] = ["durableEnabled": false, "authenticated": false,
                     "recordCount": model.snapshot.sessions.count, "factCount": model.facts.count,
                     "needsConditionOrganization": model.needsConditionOrganization]
+                if ProcessInfo.processInfo.arguments.contains("--health-presentation-check") {
+                    // Local counts only; this mode must never contact the inference service.
+                    report["build"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+                    report["medicationCards"] = model.facts.filter { $0.category == .medications }.count
+                    report["medicationOccurrences"] = Set(model.facts.filter { $0.category == .medications }.flatMap(\.occurrences).map(\.id)).count
+                    report["displayGrouping"] = "medication-products-v2"
+                    let path = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("health-presentation-check.json")
+                    if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) { try? data.write(to: path, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) }
+                    return
+                }
                 if let transport = await auth.openAIChatTransport(byokFallback: ""),
                    let jobs = transport.durableJobsURL, transport.durableConditionWorkflowsURL != nil {
                     report["durableEnabled"] = true

@@ -65,4 +65,15 @@ final class BHistoryGroupingTests: XCTestCase {
         labB.occurrences[0].evidence?.eventDate = "2026-01-01"
         XCTAssertEqual(BFactHistoryPresentation.group([labA,labB]).count, 2)
     }
+    func testReportRecordAndHistoryWordingShareTheSameProduct() {
+        for prefix in ["Medication report lists", "Medication record lists", "Medication history lists", "Medication list lists"] {
+            let rows = [fact(prefix + " EXAMPLE 0.5% GEL EYE DROPS as active; started Jan 9, 2026.", id: "active"),
+                        fact(prefix + " EXAMPLE 0.5% GEL EYE DROPS as discontinued; started Oct 18, 2025.", id: "past"),
+                        fact("Fill: EXAMPLE 0.5% GEL EYE DROPS; Pharmacy; filled Jan 9, 2026.", id: "fill")]
+            let grouped = MedicationHistoryPresentation.group(rows)
+            XCTAssertEqual(grouped.count, 1, prefix)
+            XCTAssertEqual(grouped[0].occurrences.count, 3)
+        }
+    }
+
 }
