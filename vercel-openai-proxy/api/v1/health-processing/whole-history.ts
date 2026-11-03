@@ -20,14 +20,14 @@ export default async function handler(req:VercelRequest,res:VercelResponse){
   if(b.action==='prepare'||b.action==='prepareOverview'){
    if(process.env.AI_MOCK_INFERENCE==='true')throw Error('pilot_unavailable');
    const narrative=b.action==='prepareOverview';
-   const built=narrative?makeOverviewPayload(b.records,b.proposal,template):makePayload(b.records,template,b.structuredMedications===true,b.structuredArtifacts===true);
+   const built=narrative?makeOverviewPayload(b.records,b.proposal,template):makePayload(b.records,template,b.structuredMedications===true,b.structuredArtifacts===true,b.aggregatePlans===true);
    const payload={...built.payload,stage:narrative?'whole-history-overview':'whole-history-generation'};
    // A durable client run distinguishes explicit new work. Repeated submissions of
    // this exact run remain idempotent, including after an unknown network outcome.
    payload.input=JSON.stringify({...JSON.parse(payload.input),requestIdentity:b.run,...(!narrative&&b.serverOverview===true?{serverOverview:true}:{})});
    const submitted=await transaction(db=>submitWithinTransaction(db,owner,validatePayload({...payload,workload_type:'incremental'}),undefined,'gpt-6-luna','medium'));
    if((narrative||b.serverOverview===true)&&submitted.state==='queued')await enqueueWholeHistory(submitted.id);
-   return res.json({...submitted,...('table' in built?{locators:built.table}:{}),version:narrative?'b-narrative-compact-v6':(b.structuredArtifacts===true?'structured-artifacts-v3':(b.structuredMedications===true?'structured-medications-v2':template.version))});
+   return res.json({...submitted,...('table' in built?{locators:built.table}:{}),version:narrative?'b-narrative-compact-v6':(b.aggregatePlans===true?'structured-plans-v4':(b.structuredArtifacts===true?'structured-artifacts-v3':(b.structuredMedications===true?'structured-medications-v2':template.version)))});
   }
   if(!['job','run','cancel','forget'].includes(b.action)||!uuid(b.id)||!await job(b.id))return res.status(404).json({error:'not_found'});
   if(b.action==='cancel'){

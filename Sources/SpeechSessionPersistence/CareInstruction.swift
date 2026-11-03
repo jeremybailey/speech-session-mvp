@@ -2,6 +2,10 @@ import Foundation
 
 /// Optional source-derived fields. Absence is not an invitation to invent a schedule or goal.
 public struct CareInstruction: Codable, Equatable, Hashable, Sendable {
+    public var recordStatus: String?
+    public var planID: String?
+    public var planTitle: String?
+    public var isConcise: Bool?
     public var bucket: CarePlanBucket?
     public var owner: String?
     public var consideration: String?

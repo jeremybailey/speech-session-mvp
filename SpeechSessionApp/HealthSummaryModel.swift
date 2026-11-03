@@ -63,7 +63,7 @@ final class HealthSummaryModel: ObservableObject {
         refreshRevision += 1
         hasLoaded = false
         conditionGroups = []; healthAreas = []
-        snapshot = HealthMemorySnapshot(); facts = []; conditionFacts = []
+        snapshot = HealthMemorySnapshot(); facts = []; conditionFacts = []; carePlans = []
         overview = nil; displayedOverview = nil; overviewIsCurrent = false
         updateStates = [:]
         automaticPolicy = SummaryAutomaticUpdatePolicy()
@@ -78,6 +78,7 @@ final class HealthSummaryModel: ObservableObject {
     }
     @Published private(set) var snapshot = HealthMemorySnapshot()
     @Published private(set) var facts: [HealthFact] = []
+    @Published private(set) var carePlans: [HealthCarePlan] = []
     @Published private(set) var needsConditionOrganization = false
     @Published private(set) var conditionFacts: [HealthFact] = []
     @Published private(set) var conditionNotice: String?
@@ -453,6 +454,8 @@ final class HealthSummaryModel: ObservableObject {
             snapshot = saved
             facts = projected
             conditionFacts = displayed
+            let named=Dictionary(uniqueKeysWithValues:projected.compactMap { fact in practitionerName(for:fact).map{(fact.id,$0)} })
+            carePlans=HealthCarePlan.project(facts:projected,conditions:presentation.conditions,sessions:saved.sessions,practitionerNames:named)
             // The store reuses prior condition groups only for unchanged surviving
             // source entries while a replacement is being prepared.
             needsConditionOrganization = !wholeHistoryCurrent && !projected.isEmpty && synthesized == nil

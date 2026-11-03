@@ -109,6 +109,9 @@ struct HealthShareView: View {
         preparing = true; error = nil
         defer { preparing = false }
         let facts = selectedFacts
+        let planSessions=model.snapshot.sessions
+        let planConditions=model.conditionGroups
+        let planPractitioners=Dictionary(uniqueKeysWithValues:facts.compactMap { fact in model.practitionerName(for:fact).map{(fact.id,$0)} })
         let healthNumber = includeHealthNumber ? model.snapshot.profile.personalHealthNumber : ""
         do {
             let result = try await Task.detached(priority: .userInitiated) { () -> (URL, [URL]) in
@@ -116,6 +119,15 @@ struct HealthShareView: View {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 do {
                     let sections = SummaryEntryCategory.allCases.compactMap { category -> SummaryPDFCategorySection? in
+                        if category == .followUp { return nil }
+                        if category == .carePlan {
+                            let plans=HealthCarePlan.project(facts:facts,conditions:planConditions,sessions:planSessions,practitionerNames:planPractitioners)
+                            guard !plans.isEmpty else{return nil}
+                            let rows=plans.map { plan in
+                                SummaryPDFEntryRow(sentence:plan.exportText,dateText:plan.sourceLabel,practitionerText:plan.practitioner ?? "Practitioner not identified",sourceCaption:(plan.fictional ? "Fictional role-play · ":"")+(plan.unverified ? "Unverified":"Recorded plan"),nestedSources:[])
+                            }
+                            return SummaryPDFCategorySection(title:category.displayTitle,entryCount:plans.count,statusGroups:[SummaryPDFStatusGroup(title:"Recorded plans",rows:rows)])
+                        }
                         let matches = facts.filter { $0.category == category }
                         guard !matches.isEmpty else { return nil }
                         let groups = HealthFactExportPresentation.statuses(matches).compactMap { status -> SummaryPDFStatusGroup? in

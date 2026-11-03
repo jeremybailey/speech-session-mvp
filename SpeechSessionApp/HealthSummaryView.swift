@@ -65,7 +65,7 @@ struct HealthSummaryView: View {
 
     var body: some View {
         let categoryFacts = Dictionary(grouping: unlinkedFacts, by: \.category)
-        let categories = SummaryEntryCategory.allCases
+        let categories = SummaryEntryCategory.allCases.filter { $0 != .followUp }
         ScrollViewReader { proxy in
         List {
             if model.hasLoaded && model.snapshot.sessions.isEmpty && model.snapshot.careTeam.isEmpty {
@@ -108,21 +108,23 @@ struct HealthSummaryView: View {
                             get: { expanded.contains(category.rawValue) },
                             set: { if $0 { expanded.insert(category.rawValue) } else { expanded.remove(category.rawValue) } }
                         )) {
-                            if category == .practitionerContact {
+                            if category == .carePlan {
+                                ForEach(model.carePlans) { plan in sharedPlanRow(plan) }
+                            } else if category == .practitionerContact {
                                 ForEach(contactGroups) { group in
                                     contactGroupRow(group)
                                 }
                             } else {
                                 ForEach(facts) { fact in factRow(fact) }
                             }
-                            if facts.isEmpty && members.isEmpty {
+                            if facts.isEmpty && members.isEmpty && (category != .carePlan || model.carePlans.isEmpty) {
                                 Text("No details yet").foregroundStyle(.secondary)
                             }
                             Button(category == .practitionerContact ? "Add contact" : "Add detail", systemImage: "plus") {
                                 taskSheet = category == .practitionerContact ? .contact(.init()) : .add(category)
                             }.frame(minHeight: 44)
                         } label: {
-                            categoryLabel(category.displayTitle, count: category == .practitionerContact ? contactGroups.count : facts.count)
+                            categoryLabel(category.displayTitle, count: category == .carePlan ? model.carePlans.count : (category == .practitionerContact ? contactGroups.count : facts.count))
                         }.id(category.rawValue)
                     }
                     } label: {
@@ -253,6 +255,13 @@ struct HealthSummaryView: View {
                     let contacts = model.facts.filter { $0.category == .practitionerContact }
                     report["contactCards"] = contacts.count
                     report["artifactProtocol"] = StructuredArtifact.version
+                    report["carePlanCards"] = model.carePlans.count
+                    let originalCareEntries=model.facts.filter{!$0.preference.hidden && CareInstructionPresentation.applies($0.latest)}.flatMap(\.occurrences).filter{!$0.isDeleted}
+                    report["carePlanSourceCoverageValid"] = Set(originalCareEntries.map(\.id)) == Set(model.carePlans.flatMap(\.entries).map(\.id))
+                    report["carePlanConciseEntries"] = model.carePlans.flatMap(\.entries).filter{$0.evidence?.careInstruction?.isConcise==true}.count
+                    report["carePlanActions"] = model.carePlans.reduce(0){$0+$1.actions.count}
+                    report["carePlanSourceOccurrences"] = Set(model.carePlans.flatMap(\.entries).map(\.id)).count
+                    report["carePlansLinkedToConditions"] = model.carePlans.filter{!$0.conditionIDs.isEmpty}.count
                     report["contactFieldCounts"] = Dictionary(grouping: contacts.flatMap { HealthDetailPresentation.fields($0.displayEntry) }, by: \.label).mapValues(\.count)
                     report["contactOccurrences"] = Set(contacts.flatMap(\.occurrences).map(\.id)).count
                     report["formattedContactNames"] = contacts.filter { $0.title != $0.latest.title }.count
@@ -404,10 +413,8 @@ struct HealthSummaryView: View {
         }
         .sheet(item: $taskSheet) { sheet in
             switch sheet {
-            case .carePlan(let conditionID, let inputID):
-                NavigationStack {
-                    carePlanEditor(conditionID: conditionID, inputID: inputID)
-                }
+            case .plan(let id):
+                NavigationStack { sharedPlanEditor(id) }
             case .fact(let id):
                 NavigationStack { HealthFactDetailView(factID: id, model: model, home: home, store: store) }
             case .record(let session):
@@ -583,160 +590,43 @@ struct HealthSummaryView: View {
         } header: { regionHeader("Conditions", region: .conditions) }
     }
 
-    private func carePlanBullet(_ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("•").foregroundStyle(.secondary).accessibilityHidden(true)
-            Text(text)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.leading, 22)
-        .accessibilityElement(children: .combine)
-    }
-
     @ViewBuilder private func carePlanCards(_ condition: ConditionSummary) -> some View {
-        ForEach(model.careCardInputs(for: condition), id: \.id) { input in
-            let card = model.careCard(for: input)
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 12) {
-                    SummaryCategoryIcon(title: SummaryEntryCategory.carePlan.displayTitle)
-                        .accessibilityHidden(true)
-                    Text("Care plan").font(.headline)
-                    Spacer()
-                    Menu {
-                        Button("Edit", systemImage: "pencil") {
-                            taskSheet = .carePlan(condition.id, input.id)
-                        }
-                    } label: { RecordActionsIcon() }
-                    .accessibilityLabel("Care plan actions")
-                }
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(Set(input.entries.map { CareInstructionPresentation.dateLabel($0, sessions: model.snapshot.sessions) }).count == 1
-                         ? CareInstructionPresentation.dateLabel(input.entries[0], sessions: model.snapshot.sessions) : "Multiple source dates")
-                    Text("·")
-                    Text("Not reviewed")
-                }.font(.subheadline).foregroundStyle(.secondary)
-                let linkedNames = Array(Set(condition.facts.filter { fact in
-                    fact.occurrences.contains { occurrence in input.entries.contains { $0.id == occurrence.id } }
-                }.compactMap { model.practitionerName(for: $0) })).sorted()
-                Text(linkedNames.isEmpty ? (card?.practitioner ?? "Practitioner not identified for this plan") : linkedNames.joined(separator: ", "))
-                    .font(.subheadline).foregroundStyle(.secondary)
-                ForEach(CarePlanBucket.allCases, id: \.self) { bucket in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 6) {
-                            Image(systemName: bucket == .carePlan ? "checkmark.circle" : bucket == .followUp ? "calendar" : "text.bubble")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 16)
-                                .accessibilityHidden(true)
-                            Text(bucket == .carePlan ? "Action" : bucket == .followUp ? "Follow-up" : "Considerations")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                        if let card {
-                            let lines = card.lines.filter { $0.bucket == bucket }
-                            let patientEntries = input.patientWrittenEntries.filter {
-                                ($0.evidence?.careInstruction?.bucket ?? ($0.category == .followUp ? .followUp : .carePlan)) == bucket
-                            }
-                            if lines.isEmpty && patientEntries.isEmpty { Text("None recorded").foregroundStyle(.secondary).padding(.leading, 22) }
-                            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                                carePlanBullet(bucket == .followUp ? "\(line.owner ?? "Owner not specified"): \(line.text)" : line.text)
-                            }
-                            ForEach(patientEntries, id: \.id) { entry in
-                                VStack(alignment: .leading, spacing: 2) {
-                                    carePlanBullet(entry.origin == .userEdited || entry.origin == .userAdded
-                                        ? CarePlanCardInput.patientWording(entry) : CareInstructionPresentation.instruction(entry))
-                                    Text("Your wording").font(.caption).foregroundStyle(.secondary).padding(.leading, 22)
-                                }
-                            }
-                        } else {
-                            let entries = input.entries.filter {
-                                ($0.evidence?.careInstruction?.bucket ?? ($0.category == .followUp ? .followUp : .carePlan)) == bucket
-                            }
-                            if entries.isEmpty { Text("None recorded").foregroundStyle(.secondary).padding(.leading, 22) }
-                            ForEach(entries, id: \.id) { entry in
-                                carePlanBullet(entry.origin == .userEdited || entry.origin == .userAdded
-                                        ? CarePlanCardInput.patientWording(entry) : CareInstructionPresentation.instruction(entry))
-                            }
-                        }
-                    }
-                }
-                if card == nil && !input.generatedEntries.isEmpty {
-                    Text("Original wording shown until a combined plan is checked.")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                }
-
-            }
-            .font(.subheadline)
-            .foregroundStyle(.primary)
-            .tint(.primary)
-            .padding(.vertical, 12)
-        }
+        ForEach(model.carePlans.filter{$0.conditionIDs.contains(condition.id)}) { plan in sharedPlanRow(plan) }
     }
 
-    @ViewBuilder private func carePlanEditor(conditionID: String, inputID: String) -> some View {
-        Group {
-            if let condition = model.conditionGroups.first(where: { $0.id == conditionID }),
-               let input = model.careCardInputs(for: condition).first(where: { $0.id == inputID }) {
-                Form {
-                    Section("Practitioner") {
-                        let facts = condition.facts.filter { fact in
-                            fact.occurrences.contains { occurrence in input.entries.contains { $0.id == occurrence.id } }
-                        }
-                        let names = Array(Set(facts.compactMap { model.practitionerName(for: $0) })).sorted()
-                        Button { practitionerFactIDs = facts.map(\.id) } label: {
-                            LabeledContent("Contact", value: names.isEmpty ? "Choose or add" : names.joined(separator: ", "))
-                        }
-                        Text("Applies to the details in this plan. Original source attribution is kept.")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    Section("Original details") {
-                        ForEach(input.entries, id: \.id) { entry in
-                            if let fact = condition.facts.first(where: { $0.occurrences.contains(where: { $0.id == entry.id }) }) {
+    private func sharedPlanRow(_ plan:HealthCarePlan) -> some View {
+        HealthCarePlanCardView(plan:plan) {taskSheet = .plan(plan.id)}
+    }
+    @ViewBuilder private func sharedPlanEditor(_ id:String) -> some View {
+        if let plan=model.carePlans.first(where:{$0.id==id}) {
+            Form {
+                Section("Plan") {
+                    Text(plan.title)
+                    Text(plan.sourceLabel).foregroundStyle(.secondary)
+                    Button {
+                        practitionerFactIDs=plan.factIDs
+                    } label: {LabeledContent("Practitioner",value:plan.practitioner ?? "Choose or add")}
+                    Text("Applies to all actions in this plan. Original attribution is preserved.").font(.caption).foregroundStyle(.secondary)
+                }
+                Section("Actions and original records") {
+                    ForEach(plan.actions) { action in
+                        ForEach(action.entries) { entry in
+                            if let fact=model.facts.first(where:{$0.occurrences.contains(where:{$0.id==entry.id})}) {
                                 NavigationLink {
-                                    HealthFactDetailView(factID: fact.id, preferredEntryID: entry.id,
-                                                         model: model, home: home, store: store)
-                                } label: {
-                                    carePlanOriginalDetail(entry)
-                                }
-                            } else {
-                                carePlanOriginalDetail(entry)
+                                    HealthFactDetailView(factID:fact.id,preferredEntryID:entry.id,model:model,home:home,store:store)
+                                } label: {Text(action.text)}
                             }
                         }
                     }
-                    Section("Sources") {
-                        NavigationLink {
-                            SessionDetailView(session: input.session, store: store, home: home, initialTab: .source)
-                        } label: {
-                            Label(input.session.displayTitle, systemImage: "doc.text")
-                        }
-                    }
                 }
-            } else {
-                ContentUnavailableView("Care plan unavailable", systemImage: "doc.text")
             }
-        }
-        .sheet(isPresented: Binding(get: { practitionerFactIDs != nil }, set: { if !$0 { practitionerFactIDs = nil } })) {
-            let ids = practitionerFactIDs ?? []
-            PractitionerPicker(model: model) { contactID in
-                Task { _ = await model.assignPractitioner(contactID, factIDs: ids) }
+            .navigationTitle("Edit care plan")
+            .toolbar {ToolbarItem(placement:.confirmationAction){Button("Done"){taskSheet=nil}}}
+            .sheet(isPresented:Binding(get:{practitionerFactIDs != nil},set:{if !$0 {practitionerFactIDs=nil}})) {
+                let ids=practitionerFactIDs ?? []
+                PractitionerPicker(model:model) {contactID in Task{_ = await model.assignPractitioner(contactID,factIDs:ids)}}
             }
-        }
-        .alert("Could not save", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
-            Button("OK") { model.error = nil }
-        } message: { Text(model.error ?? "") }
-        .navigationTitle("Edit care plan")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { taskSheet = nil } } }
-    }
-
-    private func carePlanOriginalDetail(_ entry: SummaryEntry) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(entry.title).font(.body)
-            if !entry.details.isEmpty { Text(entry.details).font(.subheadline).foregroundStyle(.secondary) }
-            Text(CareInstructionPresentation.dateLabel(entry, sessions: model.snapshot.sessions))
-                .font(.subheadline).foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 4)
+        } else {ContentUnavailableView("Care plan unavailable",systemImage:"doc.text")}
     }
 
     @ViewBuilder private func conditionCategories(_ condition: ConditionSummary) -> some View {
@@ -1058,11 +948,11 @@ private struct HealthAreaDetailView<Content: View>: View {
 }
 
 private enum HealthSheet: Identifiable {
-    case carePlan(String, String)
+    case plan(String)
     case progress, condition(String), fact(String), record(Session), add(SummaryEntryCategory), contact(CareTeamMember), combine(String), combineContact(UUID), share
     var id: String {
         switch self {
-        case .carePlan(let conditionID, let inputID): "care-plan-\(conditionID)-\(inputID)"
+        case .plan(let id): "plan-\(id)"
         case .progress: "progress"
         case .condition(let id): "condition-\(id)"
         case .fact(let id): "fact-\(id)"
@@ -1639,5 +1529,55 @@ private struct SummaryUpdateProgressSheet: View {
         case .needsAttention: "Couldn’t finish updating"
         default: "Waiting"
         }
+    }
+}
+
+
+/// The identical plan object and renderer are used in All and Conditions.
+private struct HealthCarePlanCardView:View {
+    let plan:HealthCarePlan
+    let edit:()->Void
+    var body:some View {
+        VStack(alignment:.leading,spacing:12) {
+            HStack(alignment:.top) {
+                SummaryCategoryIcon(title:SummaryEntryCategory.carePlan.displayTitle)
+                VStack(alignment:.leading,spacing:4) {
+                    Text(plan.title).font(.headline)
+                    Text("\(plan.actions.count) \(plan.actions.count==1 ? "action":"actions")").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Menu {Button("Edit plan",systemImage:"pencil",action:edit)} label:{RecordActionsIcon()}
+                    .accessibilityLabel("Actions for \(plan.title)")
+            }
+            Text(plan.sourceLabel).font(.caption).foregroundStyle(.secondary)
+            if plan.fictional {Text("Fictional role-play").font(.caption.weight(.semibold)).foregroundStyle(.secondary)}
+            if let practitioner=plan.practitioner {Text(practitioner).font(.subheadline).foregroundStyle(.secondary)}
+            if !plan.conditionNames.isEmpty {Text(plan.conditionNames.joined(separator:" · ")).font(.caption).foregroundStyle(.secondary)}
+            ForEach(CarePlanBucket.allCases,id:\.self) {bucket in
+                let actions=plan.actions.filter{$0.bucket==bucket}
+                if !actions.isEmpty {
+                    Text(bucket == .carePlan ? "Actions":bucket == .followUp ? "Follow-up":"Considerations").font(.subheadline.weight(.semibold))
+                    ForEach(actions) {action in
+                        VStack(alignment:.leading,spacing:4) {
+                            Text("• "+action.text).font(.subheadline)
+                            ForEach(action.metadata,id:\.self){Text($0).font(.caption).foregroundStyle(.secondary)}
+                            if action.patientWritten {Text("Your wording").font(.caption).foregroundStyle(.secondary)}
+                            if action.status != "Current" {Text(action.status).font(.caption).foregroundStyle(.secondary)}
+                        }
+                    }
+                }
+            }
+            DisclosureGroup("Details and sources") {
+                ForEach(plan.entries) {entry in
+                    VStack(alignment:.leading,spacing:5) {
+                        Text(entry.sourceTitle ?? "Original record").font(.subheadline.weight(.semibold))
+                        Text(entry.title).font(.subheadline).textSelection(.enabled)
+                        if let context=entry.evidence?.careInstruction?.consideration {Text(context).font(.caption).foregroundStyle(.secondary)}
+                        if let quote=entry.supportingExcerpt {Text(quote).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)}
+                    }.padding(.vertical,4)
+                }
+            }.font(.subheadline)
+            Text(plan.unverified ? "Source linked · Unverified":(plan.reviewed ? "Reviewed by you":"Not reviewed")).font(.caption).foregroundStyle(.secondary)
+        }.padding(.vertical,10)
     }
 }

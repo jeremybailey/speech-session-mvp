@@ -1,4 +1,5 @@
 /** Display-only narrative pass. Never promotes B proposals to checked patient data. */
+import {validPlan} from './whole-history-plans';
 import {validArtifact,groundedArtifact} from './whole-history-artifacts';
 import {validMedication} from './whole-history-medications';
 import {makeBundle} from './whole-history-source';
@@ -28,7 +29,7 @@ export function makeOverviewPayload(records:unknown,proposal:any,template:any){
   if(!Array.isArray(rows)||!rows.length)bad();
   rows.forEach((r:any,i:number)=>{
    if((!exact(r,['k','s','v','c','p','g'])&&!exact(r,['k','s','v','c','p','g','m'])&&!exact(r,['k','s','v','c','p','g','m','f']))||('m' in r&&!validMedication(r.m,r.k))||('f' in r&&!validArtifact(r.f,r.k))||!categories.has(r.k)||!states.has(r.s)||!Array.isArray(r.v)||r.v.length!==3||!r.v.every((v:any)=>str(v))||!str(r.v[0],360)||!r.v[0].trim()||!Array.isArray(r.c)||r.c.length>2||!r.c.every((p:any)=>typeof p==='string'&&table[p]?.recordID===table[pid].recordID)||!Array.isArray(r.g)||new Set(r.g).size!==r.g.length||!r.g.every((g:any)=>groupIDs.has(g)))bad();
-   if(r.p!==null&&(!exact(r.p,['a','t','q'])||!Object.values(r.p).every(v=>str(v))))bad();
+   if(!validPlan(r.p,r.k)|| (r.p?.i&&Array.from(r.v[0]).length>160))bad();
    facts.push({id:`${pid}.${i+1}`,category:r.k,status:r.s,text:r.v[0],attribution:r.v[1],clinicalDate:r.v[2],conditionIDs:r.g,care:r.p,...(Array.isArray(r.f)?{fields:groundedArtifact(r.f,[pid,...r.c].map(p=>table[p].quote))}:{})});
   });
  }

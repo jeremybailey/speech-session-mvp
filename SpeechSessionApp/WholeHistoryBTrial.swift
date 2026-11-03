@@ -175,7 +175,7 @@ struct BTrialArea: Identifiable {
                     "sourceSHA256": SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()]
         }
         accessReady = false
-        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "authenticated": true, "contractVersion": "compact-actions-short-overview-v1", "automaticNarrative": true, "serverOverview": true, "structuredMedications": true, "structuredArtifacts": true]
+        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "authenticated": true, "contractVersion": "compact-actions-short-overview-v1", "automaticNarrative": true, "serverOverview": true, "structuredMedications": true, "structuredArtifacts": true, "aggregatePlans": true]
         state = "queued"
         do { try persist(); await resume() } catch { self.error = error.localizedDescription }
     }
@@ -185,7 +185,7 @@ struct BTrialArea: Identifiable {
         defer { busy = false }
         do {
             if saved["id"] == nil {
-                let result = try await request("prepare", extras: ["records": saved["records"] ?? [], "serverOverview": saved["serverOverview"] as? Bool ?? false, "structuredMedications": saved["structuredMedications"] as? Bool ?? false, "structuredArtifacts": saved["structuredArtifacts"] as? Bool ?? false])
+                let result = try await request("prepare", extras: ["records": saved["records"] ?? [], "serverOverview": saved["serverOverview"] as? Bool ?? false, "structuredMedications": saved["structuredMedications"] as? Bool ?? false, "structuredArtifacts": saved["structuredArtifacts"] as? Bool ?? false, "aggregatePlans": saved["aggregatePlans"] as? Bool ?? false])
                 guard let id = result["id"] as? String, let locators = result["locators"] as? [String: Any] else { throw BTrialFailure(message: "The trial submission did not return a recoverable identity.") }
                 saved["id"] = id; saved["locators"] = locators; saved["contractVersion"] = result["version"]; state = result["state"] as? String ?? "queued"; try persist()
             }
@@ -358,7 +358,7 @@ struct BTrialArea: Identifiable {
                   text.range(of: #"r\d+\.p\d+\.\d+"#, options: .regularExpression) == nil,
                   let refs = sentence["factIDs"] as? [String], !refs.isEmpty, refs.allSatisfy({ byID[$0] != nil }) else { throw fail() }
             let evidence = refs.compactMap { byID[$0] }.map { fact in
-                ([fact.text, fact.by, fact.event] + (fact.plan?.values.map { $0 } ?? []) + (fact.fields?.map(\.value) ?? [])).joined(separator: " ")
+                ([fact.text, fact.by, fact.event] + (["a","t","q","h"].compactMap {fact.plan?[$0]}) + (fact.fields?.map(\.value) ?? [])).joined(separator: " ")
             }.joined(separator: " ")
             guard numbers(text).isSubset(of: numbers(evidence)) else { throw fail("numbers") }
             cited.formUnion(refs); texts.append(text)
@@ -435,7 +435,7 @@ struct BTrialArea: Identifiable {
                 let plan = row["p"] as? [String: String]
                 var category = k
                 if let plan {
-                    guard Set(plan.keys) == ["a","t","q"], (plan["a"] ?? "").range(of: #"^r\d+\.p\d+(\.\d+)?$"#, options: .regularExpression) == nil else { throw fail() }
+                    guard (Set(plan.keys) == ["a","t","q"] || (Set(plan.keys) == ["a","t","q","i","h"] && ["carePlan","followUp"].contains(k) && (plan["i"] ?? "").range(of:#"^p[1-9]\d{0,3}$"#,options:.regularExpression) != nil && (plan["h"] ?? "").unicodeScalars.count<=80 && v[0].unicodeScalars.count<=160)), (plan["a"] ?? "").range(of: #"^r\d+\.p\d+(\.\d+)?$"#, options: .regularExpression) == nil else { throw fail() }
                     if ["planned","recommended","conditional","prescribed"].contains(status) {
                         if k == "testsAndLabs" { category = "carePlan" }
                         if k == "practitionerContact" { category = "followUp" }
@@ -568,6 +568,10 @@ extension BTrialModel {
             evidence.reviewReason = "Source linked; not independently checked. Recorded status: " + fact.status
             if let plan = fact.plan {
                 var instruction = CareInstruction(instruction: fact.text, schedule: plan["t"].flatMap { $0.isEmpty ? nil : $0 })
+                instruction.recordStatus = fact.status
+                instruction.planID = plan["i"]
+                instruction.planTitle = plan["h"].flatMap{$0.isEmpty ? nil:$0}
+                instruction.isConcise = plan["i"] == nil ? nil:true
                 instruction.owner = plan["a"].flatMap { $0.isEmpty ? nil : $0 }
                 instruction.consideration = plan["q"].flatMap { $0.isEmpty ? nil : $0 }
                 instruction.bucket = ["conditional", "unclear", "declined", "performed", "historical", "resolved", "reported"].contains(fact.status) ? .considerations : (category == .followUp ? .followUp : .carePlan)
