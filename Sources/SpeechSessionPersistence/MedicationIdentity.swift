@@ -8,7 +8,7 @@ public enum MedicationIdentity {
     private static let number = try! NSRegularExpression(pattern: #"\d*\.\d+|\d+"#)
 
     public static func key(_ entry: SummaryEntry) -> String {
-        let title = normalized(entry.title)
+        let title = normalized(productTitle(entry))
         let titleStrengths = strengths(title)
         let name = strength.stringByReplacingMatches(in: title, range: NSRange(title.startIndex..., in: title), withTemplate: " ")
             .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
@@ -29,6 +29,30 @@ public enum MedicationIdentity {
             values = doses.isEmpty ? strengths(normalized(entry.details)) : doses
         }
         return "medication|" + name + "|" + Set(values).sorted().joined(separator: ",")
+    }
+
+    /// Remove only explicit report scaffolding. Never guess a drug name from
+    /// arbitrary prose, infer brand/generic equivalence, or discard dose/form text.
+    /// Original statements remain untouched in the saved source occurrences.
+    public static func productTitle(_ entry: SummaryEntry) -> String {
+        guard entry.category == .medications, entry.origin == .generated,
+              entry.evidence?.assessmentMethod == WholeHistoryPublication.version else { return entry.title }
+        let text = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let patterns = [
+            #"(?i)^fill:\s*([^;\n]+);"#,
+            #"(?i)^medication (?:report|list) lists\s+(.+?)\s+as (?:active|discontinued|inactive|stopped)(?:[ ,;.]|$)"#
+        ]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                  let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+                  let range = Range(match.range(at: 1), in: text) else { continue }
+            let name = String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, name.contains(where: { $0.isLetter }),
+                  !name.contains("?"), !name.localizedCaseInsensitiveContains("unclear"),
+                  !name.localizedCaseInsensitiveContains("unknown") else { return entry.title }
+            return name
+        }
+        return entry.title
     }
 
     private static func normalized(_ text: String) -> String {

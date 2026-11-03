@@ -57,6 +57,11 @@ public enum MedicationHistoryPresentation {
     public static func display(_ fact: HealthFact) -> SummaryEntry {
         var result = fact.latest
         guard fact.category == .medications else { return result }
+        let product = MedicationIdentity.productTitle(result)
+        if product != result.title {
+            result.details = ([result.title, result.details].filter { !$0.isEmpty }).joined(separator: "\n")
+            result.title = product
+        }
         let startLabels = ["start date", "date started", "started", "started on"]
         if let start = fact.occurrences.reversed().compactMap({ entry in
             entry.fields.first { startLabels.contains($0.label.lowercased()) && !$0.value.isEmpty }

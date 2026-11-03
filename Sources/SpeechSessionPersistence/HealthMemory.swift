@@ -113,7 +113,7 @@ public struct HealthFact: Identifiable, Sendable {
     public var latest: SummaryEntry { occurrences[0] }
     public var displayEntry: SummaryEntry { ContactHistoryPresentation.display(self) }
     public var category: SummaryEntryCategory { latest.category }
-    public var title: String { latest.title }
+    public var title: String { category == .medications ? MedicationHistoryPresentation.display(self).title : latest.title }
     public var revision: String {
         occurrences.sorted { $0.id.uuidString < $1.id.uuidString }
             .map { "\($0.id):\($0.updatedAt.timeIntervalSince1970)" }.joined(separator: "|")
@@ -214,7 +214,7 @@ public enum HealthMemoryProjection {
             let topicIDs = preference.topicIDs ?? (proposedIDs.isEmpty ? snapshot.topics.filter { topicNames.contains(normalize($0.name)) }.map(\.id) : proposedIDs.sorted { $0.uuidString < $1.uuidString })
             return HealthFact(id: key, occurrences: sorted, preference: preference, topicIDs: topicIDs)
         }
-        let presented = groupHistoryForDisplay ? ContactHistoryPresentation.group(MedicationHistoryPresentation.group(facts)) : facts
+        let presented = groupHistoryForDisplay ? BFactHistoryPresentation.group(ContactHistoryPresentation.group(MedicationHistoryPresentation.group(facts))) : facts
         return presented.filter { includingHidden || !$0.preference.hidden }.sorted {
             if $0.clinicalStatus != $1.clinicalStatus { return $0.clinicalStatus == .current }
             return $0.title.localizedStandardCompare($1.title) == .orderedAscending
