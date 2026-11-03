@@ -406,6 +406,7 @@ final class HealthSummaryModel: ObservableObject {
             isImportedHistory = await store.isImportedHistory
             importedRecordIDs = try await store.importedRecordIDs()
             await wholeHistory.load(store: store)
+            if wholeHistory.usesCategoryObjectV7 { _ = try await store.recoverWholeHistoryCategories() }
             // Migrate a complete matching on-phone B result without another paid call.
             // Source hashes and exact quotations must still validate before admission.
             if !(try await store.wholeHistoryIsCurrent()), let publication = try? wholeHistory.publication(allowMissingOverview: true) {

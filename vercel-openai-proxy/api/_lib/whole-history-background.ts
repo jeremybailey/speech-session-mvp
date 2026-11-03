@@ -14,7 +14,7 @@ export function chainedOverview(payload:any,output:string,parentID:string) {
  if(source.serverOverview!==true||!Array.isArray(source.originalRecords))throw Error('invalid_request');
  const records=source.originalRecords.map((r:any)=>({id:r.originalID,text:r.passages.map((p:any)=>p.text).join(''),date:r.savedDate,title:r.title,sourceReference:r.sourceReference,sourceSHA256:r.sourceSHA256}));
  let proposal:unknown;try{proposal=JSON.parse(output);}catch{throw Error('invalid_proposal');}
- const built=makeOverviewPayload(records,proposal,template,['structured-plans-brief-v5','structured-care-titles-v6','structured-artifact-objects-v7'].includes(source.version)).payload;
+ const built=makeOverviewPayload(records,proposal,template,['structured-plans-brief-v5','structured-care-titles-v6','structured-artifact-objects-v7','category-semantics-v8'].includes(source.version)).payload;
  return validatePayload({...built,stage:'whole-history-overview',workload_type:'incremental',input:JSON.stringify({...JSON.parse(built.input),requestIdentity:parentID})});
 }
 export function backgroundState(job:any) {

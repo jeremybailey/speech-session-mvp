@@ -249,6 +249,7 @@ struct HealthSummaryView: View {
                 if ProcessInfo.processInfo.arguments.contains("--health-presentation-check") {
                     // Local counts only; this mode must never contact the inference service.
                     report["build"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+                    report["categoryCounts"] = Dictionary(grouping:model.facts,by:{$0.category.rawValue}).mapValues(\.count)
                     report["medicationCards"] = model.facts.filter { $0.category == .medications }.count
                     report["medicationOccurrences"] = Set(model.facts.filter { $0.category == .medications }.flatMap(\.occurrences).map(\.id)).count
                     report["displayGrouping"] = "local-artifact-formatting-v1"

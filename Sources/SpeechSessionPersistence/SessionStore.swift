@@ -768,6 +768,26 @@ public actor SessionStore {
         return env.wholeHistoryOverview != nil && env.wholeHistoryOverviewSourceFingerprint == WholeHistoryPublication.fingerprint(env.sessions)
     }
 
+    /// Narrow recovery for the v7 category-collapse regression. Caller gates protocol version.
+    /// Full backup and revisions make this reversible; transcripts and the new record stay intact.
+    public func recoverWholeHistoryCategories() throws -> Int {
+        var env=try loadEnvelope();var changed=0
+        for index in env.sessions.indices {
+            let session=env.sessions[index]
+            guard let recovered=WholeHistoryPublication.categoryRecovery(for:session) else {continue}
+            if changed==0 {
+                let backup=directoryURL.appendingPathComponent("pre-category-recovery-v7.json")
+                if !fileManager.fileExists(atPath:backup.path) {try encoder.encode(env).write(to:backup,options:[.atomic,.completeFileProtectionUntilFirstUserAuthentication])}
+            }
+            env.sessions[index].summaryRevisions=(session.summaryRevisions ?? []) + [SummaryRevision(runID:UUID(),entries:session.summaryEntries ?? [])]
+            env.sessions[index].summaryEntries=SummaryEntryMerge.merging(generated:recovered,existing:session.summaryEntries,supersedeUnmatchedGenerated:true)
+            env.sessions[index].summary=(env.sessions[index].summaryEntries ?? []).filter{!$0.isDeleted && $0.evidence?.assessment?.admission != .superseded}.map{"- "+$0.title+($0.details.isEmpty ? "":": "+$0.details)}.joined(separator:"\n")
+            invalidateFolderSummary(&env,folderID:session.folderID);changed+=1
+        }
+        if changed>0 {try saveEnvelope(env)}
+        return changed
+    }
+
     /// Commit the full source snapshot atomically. Preserve edits, preferences and
     /// original transcripts, and retain a local pre-B backup and per-record revisions.
     public func publishWholeHistory(_ publication: WholeHistoryPublication, expected: [Session]) throws {
@@ -778,6 +798,9 @@ public actor SessionStore {
               WholeHistoryPublication.fingerprint(ready) == WholeHistoryPublication.fingerprint(expected),
               Set(publication.entries.keys) == Set(expected.map(\.id)) else { throw SummaryCommitError.sourceChanged }
         let fingerprint = WholeHistoryPublication.fingerprint(expected)
+        for session in ready {
+            guard WholeHistoryPublication.missingCategories(previous:session.summaryEntries ?? [],generated:publication.entries[session.id] ?? [],session:session).isEmpty else {throw SummaryCommitError.categoryCoverageChanged}
+        }
         for session in ready {
             for entry in publication.entries[session.id] ?? [] {
                 guard entry.sourceSessionID == session.id,
@@ -907,9 +930,10 @@ public actor SessionStore {
 }
 
 public enum SummaryCommitError: LocalizedError {
-    case sourceChanged, patientChanged
+    case sourceChanged, patientChanged, categoryCoverageChanged
     public var errorDescription: String? {
         switch self {
+        case .categoryCoverageChanged: return "This update left out a previously saved category from unchanged records. Your saved details have been kept. The new result needs review before replacing them."
         case .sourceChanged: return "The original changed while its summary was being checked. Please retry."
         case .patientChanged: return "Your edits were saved. Please retry the summary so it includes those changes."
         }

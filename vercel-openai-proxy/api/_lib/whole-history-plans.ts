@@ -57,3 +57,13 @@ export function strictCareTemplate(base:any){
  template.instructions+='\nCATEGORY FIELD OBJECTS v7: This replaces the earlier f pair-array encoding only. f now uses the exact category-specific object in the response schema. Use null for absent field values, and null for the entire f on medications/carePlan/followUp. Never move a field from another category into this object. Keep clinically material information that has no corresponding field in the concise v[0] fact statement (or the existing m/p fields where applicable); do not omit it or misclassify the fact to fit a field. Every non-null f value must still be copied literally from its cited source. All source, attribution, qualifiers and plan rules remain in force. No additional processing pass.';
  return template;
 }
+
+/** Keep category semantics explicit alongside the strict field shape. */
+export function categoryCareTemplate(base:any){
+ const template=strictCareTemplate(base);template.version='category-semantics-v8';
+ const rules=base.appCategoryPolicy;
+ for(const v of template.schema.$defs.fact.anyOf){const k=v.properties.k.enum[0];v.description=rules[k];v.properties.k.description=rules[k];}
+ template.instructions+='\nCATEGORY COMPLETENESS v8: Classify the meaning of each assertion BEFORE filling its category-specific fields. Never choose a category because its object is shorter or easier to populate. Category definitions below are mandatory, not background data: '+JSON.stringify(rules)+
+ '\nBefore returning, audit EVERY original passage for diagnostic-test results (normal and abnormal), vaccine events, and explicit life context. Keep reported test values/results in testsAndLabs, not findings; reserve findings for diagnoses, clinical impressions and examination findings. Vaccine administration/history/dispensing events belong in vaccinations with their actual status, not findings or a generic medication inventory. Explicit sleep/substance/work/environment/social context belongs in biopsychosocialContext, even when it appears next to a symptom; split distinct symptom and context assertions into grounded rows instead of burying all context in the symptom. Care advice about changing a habit remains carePlan; a documented existing habit is context. No obligation to populate a category absent from the source, no invented facts, and no duplicate assertion merely to fill categories. Preserve all material details and uncertainty. This audit happens inside this same response; do not add output sections or calls.';
+ return template;
+}

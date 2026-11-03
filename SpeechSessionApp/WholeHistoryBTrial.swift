@@ -86,6 +86,7 @@ struct BTrialArea: Identifiable {
     private var storageRoot: URL?
     private var loaded = false
     private var accessReady = false
+    var usesCategoryObjectV7: Bool { state == "completed" && saved["contractVersion"] as? String == "structured-artifact-objects-v7" }
     var hasRun: Bool { saved["run"] != nil }
     var terminal: Bool { ["completed", "incomplete", "uncertain", "cancelled", "failed", "invalid"].contains(state) }
     var configured: Bool { transport?.durableJobsURL != nil || (config["url"] is String && config["token"] is String) }
@@ -175,7 +176,7 @@ struct BTrialArea: Identifiable {
                     "sourceSHA256": SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()]
         }
         accessReady = false
-        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "authenticated": true, "contractVersion": "compact-actions-short-overview-v1", "automaticNarrative": true, "serverOverview": true, "structuredMedications": true, "structuredArtifacts": true, "aggregatePlans": true, "briefPlans": true, "careTitles": true, "strictArtifacts": true]
+        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "authenticated": true, "contractVersion": "compact-actions-short-overview-v1", "automaticNarrative": true, "serverOverview": true, "structuredMedications": true, "structuredArtifacts": true, "aggregatePlans": true, "briefPlans": true, "careTitles": true, "strictArtifacts": true, "categorySemantics": true]
         state = "queued"
         do { try persist(); await resume() } catch { self.error = error.localizedDescription }
     }
@@ -185,7 +186,7 @@ struct BTrialArea: Identifiable {
         defer { busy = false }
         do {
             if saved["id"] == nil {
-                let result = try await request("prepare", extras: ["records": saved["records"] ?? [], "serverOverview": saved["serverOverview"] as? Bool ?? false, "structuredMedications": saved["structuredMedications"] as? Bool ?? false, "structuredArtifacts": saved["structuredArtifacts"] as? Bool ?? false, "aggregatePlans": saved["aggregatePlans"] as? Bool ?? false, "briefPlans": saved["briefPlans"] as? Bool ?? false, "careTitles": saved["careTitles"] as? Bool ?? false, "strictArtifacts": saved["strictArtifacts"] as? Bool ?? false])
+                let result = try await request("prepare", extras: ["records": saved["records"] ?? [], "serverOverview": saved["serverOverview"] as? Bool ?? false, "structuredMedications": saved["structuredMedications"] as? Bool ?? false, "structuredArtifacts": saved["structuredArtifacts"] as? Bool ?? false, "aggregatePlans": saved["aggregatePlans"] as? Bool ?? false, "briefPlans": saved["briefPlans"] as? Bool ?? false, "careTitles": saved["careTitles"] as? Bool ?? false, "strictArtifacts": saved["strictArtifacts"] as? Bool ?? false, "categorySemantics": saved["categorySemantics"] as? Bool ?? false])
                 guard let id = result["id"] as? String, let locators = result["locators"] as? [String: Any] else { throw BTrialFailure(message: "The trial submission did not return a recoverable identity.") }
                 saved["id"] = id; saved["locators"] = locators; saved["contractVersion"] = result["version"]; state = result["state"] as? String ?? "queued"; try persist()
             }
@@ -213,7 +214,7 @@ struct BTrialArea: Identifiable {
                 }
                 saved["output"] = raw
                 if let childID = result["overviewJobID"] as? String, !hasNarrativeJob {
-                    saved["narrativeJob"] = ["run": childID, "id": childID, "authenticated": true, "state": "queued", "writerVersion": ["structured-plans-brief-v5","structured-care-titles-v6","structured-artifact-objects-v7"].contains(saved["contractVersion"] as? String ?? "") ? "b-narrative-brief-v7":"b-narrative-compact-v6"]
+                    saved["narrativeJob"] = ["run": childID, "id": childID, "authenticated": true, "state": "queued", "writerVersion": ["structured-plans-brief-v5","structured-care-titles-v6","structured-artifact-objects-v7","category-semantics-v8"].contains(saved["contractVersion"] as? String ?? "") ? "b-narrative-brief-v7":"b-narrative-compact-v6"]
                     narrativeState = "queued"
                 }
                 try persist()

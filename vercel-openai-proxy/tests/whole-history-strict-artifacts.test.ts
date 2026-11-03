@@ -30,3 +30,18 @@ test('object wire encoding and old pairs produce identical grounded overview inp
  for(const k of ['medications','carePlan','followUp'])assert.equal(validArtifact([['name','Synthetic'] ],k),false);
  assert.throws(()=>chainedOverview(payload,JSON.stringify(proposal([['result','Synthetic']])),'parent'),/invalid_proposal/);
 });
+test('v8 preserves strict field schemas but puts category semantics in system instructions and each variant',()=>{
+ const old=makePayload(records,template,true,true,true,true,true,true);
+ assert.deepEqual(old,makePayload(records,template,true,true,true,true,true,true,false));
+ const fresh=makePayload(records,template,true,true,true,true,true,true,true);
+ assert.equal(JSON.parse(fresh.payload.input).version,'category-semantics-v8');
+ for(const v of fresh.payload.response_format.json_schema.schema.$defs.fact.anyOf){
+  const k=v.properties.k.enum[0];assert.equal(v.description,template.appCategoryPolicy[k]);
+  assert.equal(v.properties.k.description,template.appCategoryPolicy[k]);
+ }
+ assert.match(fresh.payload.instructions,/Never choose a category because its object is shorter/);
+ assert.match(fresh.payload.instructions,/split distinct symptom and context assertions/);
+ fresh.payload.input=JSON.stringify({...JSON.parse(fresh.payload.input),serverOverview:true});
+ const proposal={concerns:[{id:'c1',name:'Synthetic',systems:['other'],evidence:['r1.p1']}],overview:[],passages:{'r1.p1':[{k:'symptoms',s:'reported',v:['Synthetic','',''],c:[],p:null,g:['c1'],m:null,f:[['name','Synthetic']]}]}};
+ assert.match(chainedOverview(fresh.payload,JSON.stringify(proposal),'parent').instructions,/45–65 words/);
+});
