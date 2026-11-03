@@ -610,11 +610,20 @@ struct HealthSummaryView: View {
                 }
                 Section("Actions and original records") {
                     ForEach(plan.actions) { action in
-                        ForEach(action.entries) { entry in
-                            if let fact=model.facts.first(where:{$0.occurrences.contains(where:{$0.id==entry.id})}) {
-                                NavigationLink {
-                                    HealthFactDetailView(factID:fact.id,preferredEntryID:entry.id,model:model,home:home,store:store)
-                                } label: {Text(action.text)}
+                        VStack(alignment:.leading,spacing:8) {
+                            Text(action.text).font(.headline)
+                            if let timing=action.timing, !timing.isEmpty {
+                                LabeledContent("When",value:timing)
+                            }
+                            if let context=action.context, !context.isEmpty {
+                                LabeledContent("Context",value:context)
+                            }
+                            ForEach(action.entries) { entry in
+                                if let fact=model.facts.first(where:{$0.occurrences.contains(where:{$0.id==entry.id})}) {
+                                    NavigationLink {
+                                        HealthFactDetailView(factID:fact.id,preferredEntryID:entry.id,model:model,home:home,store:store)
+                                    } label: {Text("Edit action · "+(entry.sourceTitle ?? "Original record"))}
+                                }
                             }
                         }
                     }
@@ -1560,7 +1569,7 @@ private struct HealthCarePlanCardView:View {
                     ForEach(actions) {action in
                         VStack(alignment:.leading,spacing:4) {
                             Text("• "+action.text).font(.subheadline)
-                            ForEach(action.metadata,id:\.self){Text($0).font(.caption).foregroundStyle(.secondary)}
+                            ForEach(action.metadata.filter{!$0.hasPrefix("When:") && !$0.hasPrefix("Context:")},id:\.self){Text($0).font(.caption).foregroundStyle(.secondary)}
                             if action.patientWritten {Text("Your wording").font(.caption).foregroundStyle(.secondary)}
                             if action.status != "Current" {Text(action.status).font(.caption).foregroundStyle(.secondary)}
                         }
@@ -1572,7 +1581,6 @@ private struct HealthCarePlanCardView:View {
                     VStack(alignment:.leading,spacing:5) {
                         Text(entry.sourceTitle ?? "Original record").font(.subheadline.weight(.semibold))
                         Text(entry.title).font(.subheadline).textSelection(.enabled)
-                        if let context=entry.evidence?.careInstruction?.consideration {Text(context).font(.caption).foregroundStyle(.secondary)}
                         if let quote=entry.supportingExcerpt {Text(quote).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)}
                     }.padding(.vertical,4)
                 }
