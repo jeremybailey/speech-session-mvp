@@ -1,0 +1,47 @@
+{
+  "appCommit": "3179c5ae043e3139fa0d84917c6c70fa8e9bd648",
+  "appBuild": "59",
+  "branch": "codex/option-b-development",
+  "native": {
+    "executed": 513,
+    "skipped": 4,
+    "failed": 0
+  },
+  "backend": {
+    "passedAcrossRuns": 225,
+    "failed": 0,
+    "databaseIntegration": true
+  },
+  "releaseGateTests": 3,
+  "consumerQualityGatesEstablished": false,
+  "physicalDeviceFeedback": "User confirmed record update and phone-lock return completed without failure on build 57; build 58 installed with local archive replay; latest display change not independently visually verified.",
+  "backendBaseURL": "https://collectivecare-fork-b-recovery-test.vercel.app/api",
+  "sqliteEnabled": false,
+  "distributionPending": [
+    "backend selection",
+    "durable API key and allowance",
+    "App Store Connect processing and tester availability"
+  ],
+  "archiveManifest": {
+    "appBuild": "59",
+    "backendBaseURL": "https://collectivecare-fork-b-recovery-test.vercel.app/api",
+    "contract": "incremental-records-v1",
+    "features": {
+      "incremental": true,
+      "sqlite": false
+    },
+    "format": 1,
+    "gitCommit": "3179c5ae043e3139fa0d84917c6c70fa8e9bd648",
+    "localMigration": 1,
+    "model": "gpt-6-luna",
+    "reasoning": "medium",
+    "serverMigration": 10,
+    "sourceDigest": "829a590c269b7a419733362a4961d6eebfd9b283b6bfa5f5485faaa822aae59f",
+    "validator": "incremental-validator-v2"
+  },
+  "githubChecks": "all passed",
+  "archiveSucceeded": true,
+  "appStoreExportSucceeded": true,
+  "uploadedToApple": false,
+  "distributedToTesters": false
+}

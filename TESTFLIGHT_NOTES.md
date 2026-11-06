@@ -2,7 +2,7 @@
 
 ## Version 1.0993 (59) — Incremental updates and recovery
 
-Release candidate prepared November 6, 2026, following successful device testing of builds 57 and 58. Upload and tester availability are pending verification.
+Signed archive and App Store IPA export prepared November 6, 2026 from commit `3179c5ae043e3139fa0d84917c6c70fa8e9bd648`, following successful device testing of builds 57 and 58. All GitHub checks passed. Upload and tester distribution are pending the backend decision: the currently embedded separate backend has a temporary seven-day key and $1 evaluation allowance. The existing pilot backend is unchanged.
 
 Updates process changed records, preserve existing useful details, and recover interrupted work automatically. Medication cards require supported identities. Saved condition organization survives imports; isolated mild tiredness remains in All. SQLite migration remains disabled.
 
