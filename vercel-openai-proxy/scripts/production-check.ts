@@ -17,6 +17,14 @@ async function main() {
   try {
     checkpoint = 'chunked-upload-table';
     assert.ok((await db.query("SELECT to_regclass('public.ai_condition_upload_parts') AS name")).rows[0].name,'Chunked-upload migration missing');
+    if(process.env.AI_INCREMENTAL_RECORDS_ENABLED==='true') {
+      checkpoint = 'incremental-background';
+      assert.equal(process.env.AI_WHOLE_HISTORY_PROVIDER_BACKGROUND,'true');
+      for(const [table,column] of [['ai_record_units','validator_version'],['ai_record_units','next_attempt_at'],['ai_record_updates','last_woken_at']]) {
+        checkpoint='incremental:'+table+'.'+column;
+        assert.equal((await db.query('SELECT 1 FROM information_schema.columns WHERE table_schema=$1 AND table_name=$2 AND column_name=$3',['public',table,column])).rows.length,1,'Incremental migration missing');
+      }
+    }
     checkpoint = 'shared-budget';
     const budget=(await db.query('SELECT limit_nusd,used_nusd,reserved_nusd FROM ai_budgets WHERE id=$1',[process.env.AI_BUDGET_ID])).rows[0];
     assert.ok(budget&&BigInt(budget.limit_nusd)<=20000000000n,'Shared pilot ceiling must not exceed approved $20');

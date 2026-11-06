@@ -18,8 +18,13 @@ export async function transaction<T>(work: (client: PoolClient) => Promise<T>): 
   catch (error) { await client.query("ROLLBACK"); throw error; }
   finally { client.release(); }
 }
+/** PostgreSQL JSONB rejects NUL and unpaired UTF-16 surrogates in text. */
+export function jsonbPayload(value: unknown): string {
+  return JSON.stringify(value, (_, field) =>
+    typeof field === "string" ? field.replace(/[\u0000\uD800-\uDFFF]/gu, " ") : field);
+}
 export const stages = new Set(["extraction", "classification", "checking", "duplicates",
-  "overview_condense", "overview", "condition-synthesis", "condition-context-recovery", "condition-verification", "whole-history-generation", "whole-history-overview"]);
+  "overview_condense", "overview", "condition-synthesis", "condition-context-recovery", "condition-verification", "whole-history-generation", "whole-history-overview", "whole-history-unit-extraction", "whole-history-unit-verification"]);
 export type WorkloadType='initial'|'incremental'|'retry'|'development'|'unknown';
 export function workloadType(value:unknown):WorkloadType {
   return ['initial','incremental','retry','development'].includes(String(value))?value as WorkloadType:'unknown';
@@ -103,14 +108,15 @@ export async function submitWithinTransaction(db: PoolClient, owner: string, pay
     await db.query("UPDATE ai_budgets SET reserved_nusd=reserved_nusd+$2 WHERE id=$1", [budgetID, reserve]);
     await db.query(`INSERT INTO ai_jobs(id,owner,request_hash,stage,model,pricing_version,budget_id,state,reserve_nusd,workload_type,reasoning_effort)
       VALUES($1,$2,$3,$4,$9,$5,$6,'queued',$7,$8,$10)`, [id,owner,hash,payload.stage,pricingVersion,budgetID,reserve,workloadType(payload.workload_type),model,effort]);
-    await db.query("INSERT INTO ai_payloads(job_id,payload) VALUES($1,$2)", [id,payload]);
+    // Keep the original request hash so polling, retries and cancellation agree.
+    await db.query("INSERT INTO ai_payloads(job_id,payload) VALUES($1,$2)", [id,jsonbPayload(payload)]);
     return { id, state: "queued",reused:false };
 }
 export async function claim(id?: string) {
   return transaction(async db => {
     const job = (await db.query(`SELECT j.* FROM ai_jobs j JOIN ai_payloads p ON p.job_id=j.id
       WHERE j.state='queued' AND p.expires_at>now() AND ($1::uuid IS NULL OR j.id=$1::uuid)
-      AND ($1::uuid IS NOT NULL OR j.stage NOT IN ('whole-history-generation','whole-history-overview'))
+      AND ($1::uuid IS NOT NULL OR j.stage NOT IN ('whole-history-generation','whole-history-overview','whole-history-unit-extraction','whole-history-unit-verification'))
       ORDER BY j.created_at FOR UPDATE OF j SKIP LOCKED LIMIT 1`,[id ?? null])).rows[0];
     if (!job) return null;
     await db.query("UPDATE ai_jobs SET state='running',started_at=now() WHERE id=$1", [job.id]);
@@ -162,7 +168,7 @@ export async function cancelPayload(owner:string,payload:Payload) {
 export async function cleanup() {
   await transaction(async db => {
     // Interrupted workers are NEVER automatically redispatched.
-    await db.query("UPDATE ai_jobs SET state='uncertain',finished_at=now() WHERE state='running' AND started_at<now()-interval '5 minutes'");
+    await db.query("UPDATE ai_jobs SET state='uncertain',finished_at=now() WHERE state='running' AND started_at<now()-interval '5 minutes' AND (stage NOT IN ('whole-history-generation','whole-history-overview','whole-history-unit-extraction','whole-history-unit-verification') OR provider_id IS NULL OR NOT EXISTS (SELECT 1 FROM ai_payloads p WHERE p.job_id=ai_jobs.id AND p.expires_at>now()))");
     const expired = (await db.query(`SELECT j.* FROM ai_jobs j JOIN ai_payloads p ON p.job_id=j.id
       WHERE p.expires_at<=now() AND j.state='queued' FOR UPDATE OF j`)).rows;
     for (const job of expired) {

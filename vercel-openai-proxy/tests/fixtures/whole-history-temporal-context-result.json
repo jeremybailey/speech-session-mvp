@@ -1,0 +1,298 @@
+{
+  "records": [
+    {
+      "id": "11111111-2222-4333-8444-555555555551",
+      "text": "I previously used massage and physiotherapy but had no time to continue. I have now stopped working and have more time for appointments.",
+      "sourceSHA256": "a9abd4a77dc957a1e89bd2b0e2b0c59424a3a16d4865cf96ec3a70f431ef77c8"
+    },
+    {
+      "id": "11111111-2222-4333-8444-555555555552",
+      "text": "The clinician discussed gentle exercises if comfortable. The patient says transport was previously unaffordable, but a relative now provides rides, making clinic attendance possible.",
+      "sourceSHA256": "cefa99b219975a522fe413237642bb9bc4bd7459609760c3d24df991a4f1e84b"
+    },
+    {
+      "id": "11111111-2222-4333-8444-555555555553",
+      "text": "The patient is considering a sleep clinic referral. They used to work nights, now work daytime shifts, and still sleep only five hours. The record does not establish a causal diagnosis.",
+      "sourceSHA256": "1374e6c987256ebd327ca8983a134487c4d64bc70e16e77d2fb9f97a53858465"
+    },
+    {
+      "id": "11111111-2222-4333-8444-555555555554",
+      "text": "The clinician explained newborn heel-prick screening. A glucose test is planned at 26 weeks; no glucose result is recorded. The patient now has childcare help, unlike the previous month.",
+      "sourceSHA256": "5a53d329dcb9952d3a319dbf6fbee650fc14d4a4da57992d72b35d1506325723"
+    }
+  ],
+  "proposal": {
+    "concerns": [
+      {
+        "evidence": [
+          "r3.p1"
+        ],
+        "id": "c1",
+        "systems": [
+          "unknown"
+        ],
+        "name": "Patient-reported five-hour sleep duration"
+      }
+    ],
+    "overview": [
+      {
+        "text": "The records describe prior use of massage and physiotherapy, with more time for appointments after stopping work. Transport was previously unaffordable, but a relative now provides rides; gentle exercises were discussed if comfortable. The patient is considering a sleep clinic referral and reports sleeping five hours despite moving from night to daytime work shifts. Newborn heel-prick screening was explained, and a glucose test is planned at 26 weeks; no result is recorded. The patient also reports now having childcare help, unlike the previous month.",
+        "cite": [
+          "r1.p1",
+          "r2.p1",
+          "r3.p1",
+          "r4.p1"
+        ]
+      }
+    ],
+    "passages": {
+      "r3.p1": [
+        {
+          "s": "conditional",
+          "v": [
+            "Consider a sleep clinic referral",
+            "Patient",
+            ""
+          ],
+          "g": [
+            "c1"
+          ],
+          "p": {
+            "a": "Patient",
+            "h": "Sleep clinic referral",
+            "t": "",
+            "i": "p1",
+            "q": ""
+          },
+          "f": null,
+          "c": [],
+          "m": null,
+          "k": "carePlan"
+        },
+        {
+          "s": "reported",
+          "v": [
+            "Previously worked nights; now works daytime shifts.",
+            "Patient",
+            ""
+          ],
+          "g": [],
+          "p": null,
+          "f": [
+            {
+              "value": "work nights",
+              "key": "name"
+            },
+            {
+              "value": "They used to work nights, now work daytime shifts",
+              "key": "context"
+            }
+          ],
+          "c": [],
+          "m": null,
+          "k": "biopsychosocialContext"
+        },
+        {
+          "s": "reported",
+          "v": [
+            "Still sleeps only five hours.",
+            "Patient",
+            ""
+          ],
+          "g": [
+            "c1"
+          ],
+          "p": null,
+          "f": [
+            {
+              "value": "five hours",
+              "key": "name"
+            },
+            {
+              "value": "still sleep only five hours",
+              "key": "context"
+            }
+          ],
+          "c": [],
+          "m": null,
+          "k": "biopsychosocialContext"
+        }
+      ],
+      "r2.p1": [
+        {
+          "s": "conditional",
+          "v": [
+            "Do gentle exercises if comfortable.",
+            "Clinician",
+            ""
+          ],
+          "g": [],
+          "p": {
+            "a": "Patient",
+            "h": "Gentle exercises",
+            "t": "",
+            "i": "p1",
+            "q": "If comfortable"
+          },
+          "f": null,
+          "c": [],
+          "m": null,
+          "k": "carePlan"
+        },
+        {
+          "s": "reported",
+          "v": [
+            "Transport was previously unaffordable; a relative now provides rides, making clinic attendance possible.",
+            "Patient",
+            ""
+          ],
+          "g": [],
+          "p": null,
+          "f": [
+            {
+              "value": "transport",
+              "key": "name"
+            },
+            {
+              "value": "transport was previously unaffordable, but a relative now provides rides, making clinic attendance possible",
+              "key": "context"
+            }
+          ],
+          "c": [],
+          "m": null,
+          "k": "biopsychosocialContext"
+        }
+      ],
+      "r4.p1": [
+        {
+          "s": "performed",
+          "v": [
+            "Explained newborn heel-prick screening.",
+            "Clinician",
+            ""
+          ],
+          "g": [],
+          "p": {
+            "a": "Clinician",
+            "h": "Newborn screening education",
+            "t": "",
+            "i": "p1",
+            "q": ""
+          },
+          "f": null,
+          "c": [],
+          "m": null,
+          "k": "carePlan"
+        },
+        {
+          "s": "planned",
+          "v": [
+            "Plan glucose testing.",
+            "",
+            ""
+          ],
+          "g": [],
+          "p": {
+            "a": "",
+            "h": "Glucose testing",
+            "t": "At 26 weeks",
+            "i": "p2",
+            "q": ""
+          },
+          "f": null,
+          "c": [],
+          "m": null,
+          "k": "carePlan"
+        },
+        {
+          "s": "reported",
+          "v": [
+            "Now has childcare help, unlike the previous month.",
+            "Patient",
+            ""
+          ],
+          "g": [],
+          "p": null,
+          "f": [
+            {
+              "value": "childcare help",
+              "key": "name"
+            },
+            {
+              "value": "The patient now has childcare help, unlike the previous month.",
+              "key": "context"
+            }
+          ],
+          "c": [],
+          "m": null,
+          "k": "biopsychosocialContext"
+        }
+      ],
+      "r1.p1": [
+        {
+          "s": "historical",
+          "v": [
+            "Previously used massage.",
+            "Patient",
+            ""
+          ],
+          "g": [],
+          "p": {
+            "a": "",
+            "h": "Previous treatment attempts",
+            "t": "Previously",
+            "i": "p1",
+            "q": ""
+          },
+          "f": null,
+          "c": [],
+          "m": null,
+          "k": "carePlan"
+        },
+        {
+          "s": "historical",
+          "v": [
+            "Previously used physiotherapy.",
+            "Patient",
+            ""
+          ],
+          "g": [],
+          "p": {
+            "a": "",
+            "h": "",
+            "t": "Previously",
+            "i": "p1",
+            "q": ""
+          },
+          "f": null,
+          "c": [],
+          "m": null,
+          "k": "carePlan"
+        },
+        {
+          "s": "reported",
+          "v": [
+            "Now has more time for appointments after stopping work.",
+            "Patient",
+            ""
+          ],
+          "g": [],
+          "p": null,
+          "f": [
+            {
+              "value": "stopped working",
+              "key": "name"
+            },
+            {
+              "value": "I previously used massage and physiotherapy but had no time to continue. I have now stopped working and have more time for appointments.",
+              "key": "context"
+            }
+          ],
+          "c": [],
+          "m": null,
+          "k": "biopsychosocialContext"
+        }
+      ]
+    }
+  }
+}

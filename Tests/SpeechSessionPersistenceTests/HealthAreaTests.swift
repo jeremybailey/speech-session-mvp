@@ -10,6 +10,41 @@ final class HealthAreaTests: XCTestCase {
         return ConditionSummary(id: id ?? name, name: name, bodySystem: system, facts: [fact])
     }
 
+    func testIsolatedSymptomsStayInAllWithoutChangingStoredFacts() {
+        let source = UUID()
+        var first = SummaryEntry(category: .symptoms, title: "Tiredness")
+        first.sourceSessionID = source
+        first.sourceExcerpt = "I feel a little bit tired today."
+        var duplicate = SummaryEntry(category: .symptoms, title: "Fatigue")
+        duplicate.sourceSessionID = source
+        duplicate.sourceExcerpt = first.sourceExcerpt
+        let fact = HealthFact(id: "symptom", occurrences: [first, duplicate],
+                              preference: .init(id: "symptom"), topicIDs: [])
+        let group = ConditionSummary(id: "tiredness", name: "Tiredness", bodySystem: "unknown", facts: [fact])
+        XCTAssertFalse(ConditionSummaryProjection.isNavigationEligible(group))
+        // Body area and duplicate row count cannot promote an isolated symptom.
+        XCTAssertFalse(ConditionSummaryProjection.isNavigationEligible(
+            ConditionSummary(id: group.id, name: group.name, bodySystem: "neurological", facts: group.facts)))
+        XCTAssertEqual(group.facts.flatMap(\.occurrences).map(\.id), [first.id, duplicate.id])
+        for excerpt in ["I have mild tiredness every day for months.", "I have back pain.", ""] {
+            var preserved = first
+            preserved.sourceExcerpt = excerpt
+            let retained = HealthFact(id: "retained", occurrences: [preserved], preference: .init(id: "retained"), topicIDs: [])
+            XCTAssertTrue(ConditionSummaryProjection.isNavigationEligible(
+                ConditionSummary(id: "retained", name: "Tiredness", bodySystem: "unknown", facts: [retained])))
+        }
+        var preference = fact.preference
+        preference.topicIDs = [UUID()]
+        let chosen = HealthFact(id: fact.id, occurrences: fact.occurrences, preference: preference, topicIDs: [])
+        XCTAssertTrue(ConditionSummaryProjection.isNavigationEligible(
+            ConditionSummary(id: group.id, name: group.name, bodySystem: "unknown", facts: [chosen])))
+        var finding = first
+        finding.category = .findings
+        let established = HealthFact(id: "finding", occurrences: [finding], preference: .init(id: "finding"), topicIDs: [])
+        XCTAssertTrue(ConditionSummaryProjection.isNavigationEligible(
+            ConditionSummary(id: "condition", name: "Documented condition", bodySystem: "unknown", facts: [established])))
+    }
+
     func testLargeHistoryPreservesConditionsSourcesAndPriorityOrder() {
         let input = [condition("Pregnancy", "reproductive"),
                      condition("Low mood stress and overwhelm", "mental"),
@@ -86,4 +121,10 @@ final class HealthAreaTests: XCTestCase {
         XCTAssertEqual(HealthAreaProjection.groups([updated]).map(\.id), [.eye])
         XCTAssertTrue(HealthAreaProjection.groups([]).isEmpty)
     }
+    func testUnknownAreasKeepDistinctNamedConcernsVisible() {
+        let input=[condition("Concern A","unknown"),condition("Concern B",""),condition("Eye concern","eye"),condition("Unassigned","unknown",id:"uncategorized")]
+        XCTAssertEqual(HealthAreaProjection.standaloneConcerns(input).map(\.name),["Concern A","Concern B"])
+        XCTAssertEqual(HealthAreaProjection.standaloneConcerns(input).flatMap(\.facts).map(\.id),[input[0].facts[0].id,input[1].facts[0].id])
+    }
+
 }

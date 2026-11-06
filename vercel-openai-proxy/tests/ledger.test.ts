@@ -69,10 +69,12 @@ test("PostgreSQL concurrency, completed reuse, uncertain charges, cancellation, 
     // This suite intentionally omits workflow tables to exercise staged deployment compatibility.
     await db.query("ALTER TABLE ai_jobs ADD COLUMN workload_type text NOT NULL DEFAULT 'unknown'");
     await db.query("ALTER TABLE ai_jobs ADD COLUMN reasoning_effort text NOT NULL DEFAULT 'low'");
-    const jobs=await Promise.all(Array.from({length:12},()=>submit("user-a",payload)));
+    const pdfPayload = {...payload, input:"Synthetic\u0000PDF\uD800 text 🧪"};
+    const jobs=await Promise.all(Array.from({length:12},()=>submit("user-a",pdfPayload)));
     assert.equal(new Set(jobs.map(x=>x.id)).size,1);
     const claims=await Promise.all([claim(),claim(),claim()]);
     assert.equal(claims.filter(Boolean).length,1);
+    assert.equal(claims.find(Boolean)?.payload.input,"Synthetic PDF  text 🧪");
     await settle(jobs[0].id,"completed",{input_tokens:100,output_tokens:20},"synthetic-result");
     const firstUsage = await readUsage("user-a","America/New_York");
     assert.equal(firstUsage.lifetime_nusd,String(estimate("gpt-4o-mini",{input_tokens:100,output_tokens:20})));
@@ -93,7 +95,7 @@ test("PostgreSQL concurrency, completed reuse, uncertain charges, cancellation, 
     await db.query("UPDATE ai_jobs SET created_at=now()-interval '49 hours' WHERE id=$1",[jobs[0].id]);
     await db.query("UPDATE ai_jobs SET started_at=created_at WHERE id=$1",[jobs[0].id]);
     assert.equal((await readUsage("user-a","UTC")).last48_nusd,"0");
-    assert.equal((await submit("user-a",payload)).state,"completed");
+    assert.equal((await submit("user-a",pdfPayload)).state,"completed");
     assert.equal(await claim(),null);
     const uncertain=await submit("user-a",{...payload,input:"network interrupted"});
     await claim(); await settle(uncertain.id,"uncertain");

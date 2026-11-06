@@ -14,7 +14,7 @@ export function chainedOverview(payload:any,output:string,parentID:string) {
  if(source.serverOverview!==true||!Array.isArray(source.originalRecords))throw Error('invalid_request');
  const records=source.originalRecords.map((r:any)=>({id:r.originalID,text:r.passages.map((p:any)=>p.text).join(''),date:r.savedDate,title:r.title,sourceReference:r.sourceReference,sourceSHA256:r.sourceSHA256}));
  let proposal:unknown;try{proposal=JSON.parse(output);}catch{throw Error('invalid_proposal');}
- const built=makeOverviewPayload(records,proposal,template,['structured-plans-brief-v5','structured-care-titles-v6','structured-artifact-objects-v7','category-semantics-v8'].includes(source.version)).payload;
+ const built=makeOverviewPayload(records,proposal,template,['structured-plans-brief-v5','structured-care-titles-v6','structured-artifact-objects-v7','category-semantics-v8','category-contract-v9','category-balanced-v14','category-uniform-fields-v18','category-uniform-fields-scoped-v19'].includes(source.version),source.eligibleFacts===true).payload;
  return validatePayload({...built,stage:'whole-history-overview',workload_type:'incremental',input:JSON.stringify({...JSON.parse(built.input),requestIdentity:parentID})});
 }
 export function backgroundState(job:any) {
@@ -22,24 +22,26 @@ export function backgroundState(job:any) {
  if(job.result?.overview_error)return 'failed';
  return job.stage==='whole-history-generation'&&job.state==='completed'&&JSON.parse(job.payload?.input??'{}').serverOverview===true&&!job.result?.overviewJobID ? 'running' : job.state;
 }
-export async function runWholeHistory(id:string, runtime={database,transaction,runJob,submitWithinTransaction,enqueueWholeHistory}) {
- const initial=(await runtime.database().query('SELECT j.stage,p.payload FROM ai_jobs j JOIN ai_payloads p ON p.job_id=j.id WHERE j.id=$1',[id])).rows[0];
+export async function runWholeHistory(id:string, runtime={database,transaction,runJob,submitWithinTransaction,enqueueWholeHistory},revalidateSavedDetails=false) {
+ const initial=(await runtime.database().query('SELECT j.stage,p.payload FROM ai_jobs j JOIN ai_payloads p ON p.job_id=j.id WHERE j.id=$1 AND (NOT $2::boolean OR p.expires_at>now())',[id,revalidateSavedDetails])).rows[0];
  if(!initial||!['whole-history-generation','whole-history-overview'].includes(initial.stage))return false;
- await runtime.runJob(id); // Atomic claim prevents queue redelivery from repeating inference.
+ // Explicit revalidation uses the settled result only; never redispatch generation.
+ if(!revalidateSavedDetails)await runtime.runJob(id); // Atomic claim prevents queue redelivery from repeating inference.
  if(initial.stage!=='whole-history-generation'||JSON.parse(initial.payload.input).serverOverview!==true)return true;
  const child=await runtime.transaction(async db=>{
   const parent=(await db.query('SELECT j.owner,j.state,p.payload,p.result FROM ai_jobs j JOIN ai_payloads p ON p.job_id=j.id WHERE j.id=$1 FOR UPDATE OF j',[id])).rows[0];
-  if(!parent||parent.state!=='completed'||parent.payload.whole_history_stop===true||parent.result?.overview_error)return;
+  if(!parent||parent.state!=='completed'||parent.payload.whole_history_stop===true)return;
+  if(parent.result?.overview_error && !(revalidateSavedDetails && parent.result.overview_error==='invalid_proposal' && parent.result.overview_revalidation!=='sole-evidence-link-v2'))return;
   if(parent.result?.overviewJobID)return parent.result.overviewJobID as string;
   try {
    const payload=chainedOverview(parent.payload,parent.result.output,id);
    const receipt=await runtime.submitWithinTransaction(db,parent.owner,payload,undefined,'gpt-6-luna','medium');
-   await db.query("UPDATE ai_payloads SET result=result||$2::jsonb WHERE job_id=$1",[id,JSON.stringify({overviewJobID:receipt.id})]);
+   await db.query("UPDATE ai_payloads SET result=(result-'overview_error')||$2::jsonb WHERE job_id=$1",[id,JSON.stringify({overviewJobID:receipt.id,...(revalidateSavedDetails?{overview_revalidation:'sole-evidence-link-v2'}:{})})]);
    return receipt.id as string;
   }catch(error){
    const code=(error as Error).message;
-   if(!['invalid_proposal','invalid_records','source_hash_mismatch','overview_context_limit','budget_exhausted'].includes(code))throw error;
-   await db.query("UPDATE ai_payloads SET result=result||$2::jsonb WHERE job_id=$1",[id,JSON.stringify({overview_error:code})]);
+   if(!['invalid_proposal','invalid_records','source_hash_mismatch','overview_context_limit','no_usable_facts','budget_exhausted'].includes(code))throw error;
+   await db.query("UPDATE ai_payloads SET result=result||$2::jsonb WHERE job_id=$1",[id,JSON.stringify({overview_error:code,...(revalidateSavedDetails?{overview_revalidation:'sole-evidence-link-v2'}:{})})]);
   }
  });
  // Publication can be retried independently after the child identity is durable.

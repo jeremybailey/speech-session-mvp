@@ -35,6 +35,9 @@ public enum CareActionStatus: String, Codable, CaseIterable, Sendable {
 
 /// Structured provenance. Dates remain source text so a year is never silently converted to a day.
 public struct ClinicalEvidence: Codable, Equatable, Hashable, Sendable {
+    public var sourceAssertion: SourceAssertion?
+    public var medicationProductID: UUID?
+    public var medicationEventKind: String?
     public var omittedFields: [String]?
     public var assessment: SummaryAssessment?
     public var contactFields: [SummaryEntryField]?
@@ -194,7 +197,7 @@ public enum HealthMemoryProjection {
         let preferences = Dictionary(snapshot.preferences.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         let entries = snapshot.sessions.flatMap { session in
             let sourceHash = verifiedOnly ? SummaryVerification.hash(session.transcript) : ""
-            return (session.summaryEntries ?? []).filter { !$0.isDeleted && (!verifiedOnly || SummaryVerification.isPortraitEligible($0, sourceHash: sourceHash)) }
+            return (session.summaryEntries ?? []).filter { HealthStoryEligibility.includes($0) && (!verifiedOnly || SummaryVerification.isPortraitEligible($0, sourceHash: sourceHash)) }
         }
         var keys = HealthFactKeyCache()
         let facts = Dictionary(grouping: entries, by: { keys.key($0) }).compactMap { key, entries -> HealthFact? in

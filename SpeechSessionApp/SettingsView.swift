@@ -355,6 +355,25 @@ struct SettingsView: View {
                 }
 
                 #if DEBUG
+                Section("Debug") {
+                    if !health.categoryReviews.isEmpty {
+                        NavigationLink("Review category changes") {WholeHistoryUpdateReviewView(health:health)}
+                    }
+                    NavigationLink("Update diagnostics") {
+                        List {
+                            Section("Health story") {
+                                LabeledContent("Overview", value: health.overviewIsCurrent ? "Current" : (health.displayedOverview == nil ? "Unavailable" : "Previous version"))
+                                if let notice = health.retainedRecordNotice {
+                                    Text(notice)
+                                }
+                                if let error = health.updateError { Text(error) }
+                                if let error = health.conditionNotice { Text(error) }
+                                if let error = health.overviewNotice { Text(error) }
+                            }
+                        }
+                        .navigationTitle("Update diagnostics")
+                    }
+                }
                 #endif
 
                 Section {
@@ -807,5 +826,95 @@ private struct AIUsageSnapshot: Decodable {
          entries.map { "Job \($0.id): \($0.stage), \($0.model), \($0.state), \(usd($0.cost_nusd)), workload \($0.workload_type ?? "unknown"), retries \($0.retry_count)" } +
          budgets.map { "Shared budget \($0.id): limit \(usd($0.limit_nusd)), used \(usd($0.used_nusd)), reserved \(usd($0.reserved_nusd)), remaining \(usd($0.remaining_nusd))" })
             .joined(separator: "\n")
+    }
+}
+
+
+/// Compares a retained original with its validated candidate; no model call is made.
+struct WholeHistoryUpdateReviewView: View {
+    @ObservedObject var health:HealthSummaryModel
+    var body:some View {
+        List {
+            Section {
+                Text("Compare the previous details with the new version before changing how a record is organized. This does not mark its contents as clinically verified.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            if health.categoryReviews.isEmpty {
+                Text("There are no retained category changes to review.").foregroundStyle(.secondary)
+            }
+            ForEach(health.categoryReviews) {review in
+                NavigationLink {
+                    WholeHistoryRecordReviewView(health:health,review:review)
+                } label: {
+                    VStack(alignment:.leading,spacing:4) {
+                        Text(review.session.title ?? "Original record")
+                        Text(review.missingCategories.map(\.displayTitle).sorted().joined(separator:", "))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Review category changes")
+    }
+}
+
+private struct WholeHistoryRecordReviewView: View {
+    @ObservedObject var health:HealthSummaryModel
+    let review:WholeHistoryCategoryReview
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirm=false
+    @State private var busy=false
+    @State private var errorMessage:String?
+    var body:some View {
+        List {
+            Section {
+                Text("These categories appeared in the previous version but are absent from the new one: "+review.missingCategories.map(\.displayTitle).sorted().joined(separator:", ")+". Check that their information is still represented correctly before using the new details.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                DisclosureGroup("Original record") {Text(review.session.transcript).textSelection(.enabled)}
+            }
+            Section("Previous details in those categories") {
+                ForEach(review.previous) {entry in reviewRow(entry)}
+            }
+            Section("New details for this record") {
+                ForEach(review.generated.filter{!$0.isDeleted}) {entry in reviewRow(entry)}
+            }
+            Section {
+                Button("Use new details for this record") {confirm=true}
+                    .disabled(busy || health.isProcessing)
+            } footer: {
+                Text("Your original record and the previous version stay saved. This action does not use your AI allowance. Go back to keep the previous details.")
+            }
+        }
+        .navigationTitle("Compare details")
+        .confirmationDialog("Use the new organization for this record?",isPresented:$confirm,titleVisibility:.visible) {
+            Button("Use new details") {
+                busy=true
+                Task {
+                    do {try await health.acceptCategoryReview(review);dismiss()}
+                    catch {errorMessage=error.localizedDescription}
+                    busy=false
+                }
+            }
+            Button("Cancel",role:.cancel) {}
+        } message: {
+            Text("Confirm that the new version preserves the information you want to keep. It remains unverified; previous details stay in this record’s history.")
+        }
+        .alert("Couldn’t apply this review",isPresented:Binding(get:{errorMessage != nil},set:{if !$0 {errorMessage=nil}})) {
+            Button("OK",role:.cancel) {errorMessage=nil}
+        } message: {Text(errorMessage ?? "")}
+    }
+    private func reviewRow(_ entry:SummaryEntry)->some View {
+        DisclosureGroup {
+            if !entry.details.isEmpty {Text(entry.details).textSelection(.enabled)}
+            ForEach(entry.fields.filter{!$0.isMissing && !$0.value.isEmpty}) {field in
+                LabeledContent(field.label,value:field.value)
+            }
+            if let quote=entry.sourceExcerpt,!quote.isEmpty {Text(quote).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)}
+        } label: {
+            VStack(alignment:.leading,spacing:4) {
+                Text(entry.title)
+                Text(entry.category.displayTitle).font(.caption).foregroundStyle(.secondary)
+            }
+        }
     }
 }

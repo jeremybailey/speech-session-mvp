@@ -15,12 +15,33 @@ export function artifactPairs(value:any,category:string):string[][]|null|undefin
  const allowed=artifactFields[category];
  if(!allowed)return value===null?null:undefined;
  let pairs:any=value;
+ if(Array.isArray(value)&&value.some(p=>p&&typeof p==='object'&&!Array.isArray(p))){
+  if(!value.every(p=>p&&typeof p==='object'&&!Array.isArray(p)&&Object.keys(p).sort().join('|')==='key|value'))return undefined;
+  pairs=value.map(p=>[p.key,p.value]);
+ }
  if(value&&typeof value==='object'&&!Array.isArray(value)) {
+  if(Object.keys(value).some(key=>key.startsWith('_pad'))){
+   const padding=Array.from({length:7-allowed.length},(_,i)=>'_pad'+(i+1));
+   if(Object.keys(value).sort().join('|')!==[...allowed,...padding].sort().join('|')||!padding.every(key=>value[key]===null))return undefined;
+   value=Object.fromEntries(allowed.map(key=>[key,value[key]]));
+  }
   if(Object.keys(value).sort().join('|')!==[...allowed].sort().join('|')||!Object.values(value).every(v=>v===null||typeof v==='string'))return undefined;
   pairs=allowed.filter(k=>value[k]!==null).map(k=>[k,value[k]]);
  }
- if(!Array.isArray(pairs)||pairs.length>12||!pairs.every(p=>Array.isArray(p)&&p.length===2&&typeof p[0]==='string'&&allowed.includes(p[0])&&typeof p[1]==='string'&&p[1].trim()&&Array.from(p[1]).length<=360)||new Set(pairs.map(p=>p[0])).size!==pairs.length)return undefined;
+ if(!Array.isArray(pairs)||pairs.length>12||!pairs.every(p=>Array.isArray(p)&&p.length===2&&typeof p[0]==='string'&&allowed.includes(p[0])&&typeof p[1]==='string'&&p[1].trim()&&Array.from(p[1]).length<=360)||!validFieldMultiplicity(pairs,category))return undefined;
  return pairs;
+}
+/** Context annotations are repeatable source fragments, never scalar result/dose pairs.
+ * An aggregate finding may also name several distinct observations. */
+export function validFieldMultiplicity(pairs:string[][],category:string):boolean {
+ const seen=new Set<string>();const repeated=new Set<string>();
+ for(const [key,value] of pairs){
+  const repeatable=key==='context'||(category==='findings'&&key==='name');
+  const identity=JSON.stringify([key,value]);
+  if(seen.has(key)&&!(repeatable&&!repeated.has(identity)))return false;
+  seen.add(key);repeated.add(identity);
+ }
+ return true;
 }
 export function validArtifact(value:any,category:string):boolean {return artifactPairs(value,category)!==undefined;}
 export function groundedArtifact(values:string[][],sources:string[]):string[][] {

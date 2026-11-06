@@ -8,15 +8,9 @@ struct BTrialFailure: LocalizedError {
     var code: String? = nil
     var errorDescription: String? { message }
 }
-struct BTrialFact: Identifiable {
-    let id: String, text: String, category: String, status: String, by: String, event: String
-    let groups: [String], quotes: [String]
-    let plan: [String: String]?
-    var medication: StructuredMedication? = nil
-    var fields: [SummaryEntryField]? = nil
-}
-struct BTrialConcern: Identifiable {
-    let id: String; let name: String; let systems: [String]
+typealias BTrialFact = WholeHistoryDecodedFact
+typealias BTrialConcern = WholeHistoryDecodedConcern
+extension WholeHistoryDecodedConcern {
     var areas: [HealthAreaKind] {
         let mapped = systems.compactMap { code -> HealthAreaKind? in
             switch code {
@@ -81,6 +75,7 @@ struct BTrialArea: Identifiable {
     var canReviseOverview: Bool { !busy && (!hasNarrativeJob || narrativeTerminal) && narrativeJob["writerVersion"] as? String != "b-narrative-brief-v7" }
     var hasNarrativeJob: Bool { narrativeJob["run"] != nil }
     private var saved: [String: Any] = [:]
+    private var onOverviewStarted: (() -> Void)?
     private var config: [String: Any] = [:]
     private var transport: OpenAIChatTransport?
     private var storageRoot: URL?
@@ -119,7 +114,14 @@ struct BTrialArea: Identifiable {
                 elapsed = saved["elapsed"] as? Double; cost = saved["cost"] as? Double
                 narrativeState = narrativeJob["state"] as? String ?? "Not started"
                 narrativeCost = narrativeJob["cost"] as? Double; narrativeElapsed = narrativeJob["elapsed"] as? Double
-                if let raw = narrativeJob["output"] as? String { try decodeNarrative(raw) }
+                if let raw = narrativeJob["output"] as? String {
+                    try decodeNarrative(raw)
+                    // Re-run all current reference, number and coverage checks before recovering a saved rejection.
+                    if narrativeState == "invalid", ["overview_validation_word_limit","overview_validation_format_or_reference"].contains(narrativeJob["validationIssue"] as? String ?? "") {
+                        var job = narrativeJob; job["state"] = "completed"; job.removeValue(forKey: "validationIssue")
+                        saved["narrativeJob"] = job; narrativeState = "completed"; try persist()
+                    }
+                }
             }
         } catch { self.error = error.localizedDescription }
     }
@@ -176,21 +178,28 @@ struct BTrialArea: Identifiable {
                     "sourceSHA256": SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()]
         }
         accessReady = false
-        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "authenticated": true, "contractVersion": "compact-actions-short-overview-v1", "automaticNarrative": true, "serverOverview": true, "structuredMedications": true, "structuredArtifacts": true, "aggregatePlans": true, "briefPlans": true, "careTitles": true, "strictArtifacts": true, "categorySemantics": true]
+        saved = ["run": UUID().uuidString.lowercased(), "records": originals, "started": Date().timeIntervalSince1970, "authenticated": true, "contractVersion": "compact-actions-short-overview-v1", "automaticNarrative": true, "serverOverview": true, "structuredMedications": true, "structuredArtifacts": true, "aggregatePlans": true, "briefPlans": true, "careTitles": true, "strictArtifacts": true, "categorySemantics": true, "balancedCategories": true, "uniformFields": true, "eligibleFacts": true]
         state = "queued"
         do { try persist(); await resume() } catch { self.error = error.localizedDescription }
     }
-    func resume(recheckFailure: Bool = false) async {
+    func resume(recheckFailure: Bool = false, revalidateSavedDetails: Bool = false) async {
         guard hasRun, !busy, (!terminal || (recheckFailure && state == "failed")) else { return }
         busy = true; error = nil
         defer { busy = false }
         do {
             if saved["id"] == nil {
-                let result = try await request("prepare", extras: ["records": saved["records"] ?? [], "serverOverview": saved["serverOverview"] as? Bool ?? false, "structuredMedications": saved["structuredMedications"] as? Bool ?? false, "structuredArtifacts": saved["structuredArtifacts"] as? Bool ?? false, "aggregatePlans": saved["aggregatePlans"] as? Bool ?? false, "briefPlans": saved["briefPlans"] as? Bool ?? false, "careTitles": saved["careTitles"] as? Bool ?? false, "strictArtifacts": saved["strictArtifacts"] as? Bool ?? false, "categorySemantics": saved["categorySemantics"] as? Bool ?? false])
+                let result = try await request("prepare", extras: ["records": saved["records"] ?? [], "eligibleFacts": saved["eligibleFacts"] as? Bool ?? false, "serverOverview": saved["serverOverview"] as? Bool ?? false, "structuredMedications": saved["structuredMedications"] as? Bool ?? false, "structuredArtifacts": saved["structuredArtifacts"] as? Bool ?? false, "aggregatePlans": saved["aggregatePlans"] as? Bool ?? false, "briefPlans": saved["briefPlans"] as? Bool ?? false, "careTitles": saved["careTitles"] as? Bool ?? false, "strictArtifacts": saved["strictArtifacts"] as? Bool ?? false, "categorySemantics": saved["categorySemantics"] as? Bool ?? false, "balancedCategories": saved["balancedCategories"] as? Bool ?? false, "uniformFields": saved["uniformFields"] as? Bool ?? false])
                 guard let id = result["id"] as? String, let locators = result["locators"] as? [String: Any] else { throw BTrialFailure(message: "The trial submission did not return a recoverable identity.") }
                 saved["id"] = id; saved["locators"] = locators; saved["contractVersion"] = result["version"]; state = result["state"] as? String ?? "queued"; try persist()
             }
             var response = try await request(saved["stopRequested"] as? Bool == true ? "cancel" : "job")
+            if revalidateSavedDetails, response["state"] as? String == "failed",
+               (response["result"] as? [String:Any])?["overview_error"] as? String == "invalid_proposal" {
+                response = try await request("run", extras:["revalidateSavedDetails":true])
+                saved["revalidationRejected"] = response["state"] as? String == "failed"
+                saved["revalidationRevision"] = "sole-evidence-link-v2"
+                try persist()
+            }
             if response["state"] as? String == "queued" {
                 // This always operates on the persisted job ID; never submits another model job.
                 do { response = try await request("run") }
@@ -210,11 +219,15 @@ struct BTrialArea: Identifiable {
             if let nanos = response["cost_nusd"] as? String, let value = Double(nanos) { cost = value / 1e9; saved["cost"] = cost }
             if state == "completed", let result = response["result"] as? [String: Any], let raw = result["output"] as? String {
                 do { try decode(raw) } catch {
-                    state = "invalid"; try persist(); _ = try? await request("forget"); throw error
+                    state = "invalid"
+                    saved["validationFailure"] = (error as? BTrialFailure)?.code ?? "details_validation"
+                    try persist()
+                    throw error
                 }
+                saved.removeValue(forKey:"failureCode")
                 saved["output"] = raw
                 if let childID = result["overviewJobID"] as? String, !hasNarrativeJob {
-                    saved["narrativeJob"] = ["run": childID, "id": childID, "authenticated": true, "state": "queued", "writerVersion": ["structured-plans-brief-v5","structured-care-titles-v6","structured-artifact-objects-v7","category-semantics-v8"].contains(saved["contractVersion"] as? String ?? "") ? "b-narrative-brief-v7":"b-narrative-compact-v6"]
+                    saved["narrativeJob"] = ["run": childID, "id": childID, "authenticated": true, "state": "queued", "writerVersion": saved["eligibleFacts"] as? Bool == true ? "b-narrative-visible-v8" : ["structured-plans-brief-v5","structured-care-titles-v6","structured-artifact-objects-v7","category-semantics-v8","category-contract-v9","category-balanced-v14","category-uniform-fields-v18","category-uniform-fields-scoped-v19"].contains(saved["contractVersion"] as? String ?? "") ? "b-narrative-brief-v7":"b-narrative-compact-v6"]
                     narrativeState = "queued"
                 }
                 try persist()
@@ -229,7 +242,7 @@ struct BTrialArea: Identifiable {
                 let failureCode=(response["result"] as? [String:Any])?["overview_error"] as? String
                 saved["failureCode"]=failureCode;try persist()
                 if failureCode == "invalid_proposal" {
-                    error="The generated details failed category-format checks before the overview could start. Your saved records are unchanged. Start a new update to try again; checking this failed request does not run it again."
+                    error = canRevalidateSavedDetails ? "The generated details need a format check before the overview can start. Recheck saved result checks the existing response without repeating the full update. Your saved records are unchanged." : "The generated details still do not meet the required format. Your saved records are unchanged. Start a new update to generate a replacement."
                 } else if failureCode == "budget_exhausted" {
                     error="The details finished, but the overview could not reserve its budget. Your saved story is unchanged. No automatic paid retry was made."
                 } else { error = state == "uncertain" ? "The provider outcome is uncertain. Its reservation remains held. No automatic paid retry was made." : "Processing stopped (\(state)). Saved records are unchanged." }
@@ -271,11 +284,12 @@ struct BTrialArea: Identifiable {
     // Separate identity and connection preserve existing B jobs and survive app interruption.
     func writeOverview() async {
         guard !busy, state == "completed", !facts.isEmpty, !narrativeTerminal else { return }
+        onOverviewStarted?()
         busy = true; error = nil; accessReady = false
         defer { busy = false }
         do {
             if !hasNarrativeJob {
-                saved["narrativeJob"] = ["run": UUID().uuidString.lowercased(), "authenticated": true, "state": "queued", "writerVersion": "b-narrative-brief-v7", "briefOverview": true]
+                saved["narrativeJob"] = ["run": UUID().uuidString.lowercased(), "authenticated": true, "state": "queued", "writerVersion": "b-narrative-visible-v8", "briefOverview": true, "eligibleFacts": true]
                 narrativeState = "queued"; try persist()
             }
             var job = narrativeJob
@@ -284,7 +298,7 @@ struct BTrialArea: Identifiable {
                       let proposal = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else {
                     throw BTrialFailure(message: "No saved B result is available for this writing pass.")
                 }
-                let receipt = try await request("prepareOverview", extras: ["records": saved["records"] ?? [], "proposal": proposal, "briefOverview": narrativeJob["briefOverview"] as? Bool ?? false], narrativePass: true)
+                let receipt = try await request("prepareOverview", extras: ["records": saved["records"] ?? [], "proposal": proposal, "eligibleFacts": narrativeJob["eligibleFacts"] as? Bool ?? false, "briefOverview": narrativeJob["briefOverview"] as? Bool ?? false], narrativePass: true)
                 guard let id = receipt["id"] as? String else { throw BTrialFailure(message: "The overview receipt was unreadable. Resume this same request.") }
                 job = narrativeJob; job["id"] = id; saved["narrativeJob"] = job; try persist()
             }
@@ -343,143 +357,26 @@ struct BTrialArea: Identifiable {
     }
     private func decodeNarrative(_ raw: String) throws {
         func fail(_ reason: String = "format_or_reference") -> BTrialFailure {
-            let messages = ["numbers": "The overview included a number that could not be matched to its cited details.", "coverage": "The overview did not consistently account for the conditions in your records.", "sentence_length": "The overview contained a sentence longer than the allowed limit.", "word_limit": "The overview exceeded its 100-word limit.", "character_limit": "The overview exceeded its length limit."]
+            let messages = ["numbers": "The overview included a number that could not be matched to its cited details.", "coverage": "The overview did not consistently account for the conditions in your records.", "sentence_length": "The overview contained a sentence longer than the allowed limit.", "word_limit": "The overview exceeded its display length limit.", "character_limit": "The overview exceeded its length limit."]
             return BTrialFailure(message: (messages[reason] ?? "The overview could not be saved because its format or source references were invalid.") + " Your completed details are available. No automatic paid retry was made.", code: "overview_validation_" + reason)
         }
-        let compact = ["b-narrative-compact-v6","b-narrative-brief-v7"].contains(narrativeJob["writerVersion"] as? String ?? "")
-        let balanced = ["b-narrative-balanced-v3", "b-narrative-balanced-luna-v4", "b-narrative-balanced-v5", "b-narrative-compact-v6", "b-narrative-brief-v7"].contains(narrativeJob["writerVersion"] as? String ?? "")
-        let parsed: Any
-        do { parsed = try JSONSerialization.jsonObject(with: Data(raw.utf8)) } catch { throw fail() }
-        guard let obj = parsed as? [String: Any], Set(obj.keys) == (balanced ? ["sentences", "coverage"] : ["sentences"]),
-              let sentences = obj["sentences"] as? [[String: Any]], (1...(balanced ? 8 : 6)).contains(sentences.count) else { throw fail() }
-        let byID = Dictionary(uniqueKeysWithValues: facts.map { ($0.id, $0) })
-        func numbers(_ text: String) -> Set<String> {
-            let regex = try! NSRegularExpression(pattern: #"(?<![A-Za-z])\d+(?:[.,]\d+)?(?:%|mg|mcg|ml|weeks?|days?|years?)?"#, options: [.caseInsensitive])
-            return Set(regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { Range($0.range, in: text).map { String(text[$0]).lowercased().replacingOccurrences(of: ",", with: "") } })
-        }
-        var texts: [String] = []; var cited = Set<String>()
-        for sentence in sentences {
-            guard Set(sentence.keys) == ["text", "factIDs"], let text = sentence["text"] as? String,
-                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.count <= (balanced ? 1200 : 1000),
-                  !text.contains("\n"), !text.contains("\r"),
-                  text.range(of: #"r\d+\.p\d+\.\d+"#, options: .regularExpression) == nil,
-                  let refs = sentence["factIDs"] as? [String], !refs.isEmpty, refs.allSatisfy({ byID[$0] != nil }) else { throw fail() }
-            let evidence = refs.compactMap { byID[$0] }.map { fact in
-                ([fact.text, fact.by, fact.event] + (["a","t","q","h"].compactMap {fact.plan?[$0]}) + (fact.fields?.map(\.value) ?? [])).joined(separator: " ")
-            }.joined(separator: " ")
-            guard numbers(text).isSubset(of: numbers(evidence)) else { throw fail("numbers") }
-            cited.formUnion(refs); texts.append(text)
-        }
-        if narrativeJob["writerVersion"] as? String == "b-narrative-focus-v2" {
-            for group in narrativeJob["focusIDs"] as? [String] ?? [] {
-                guard facts.contains(where: { $0.groups.contains(group) && cited.contains($0.id) }) else { throw fail() }
-            }
-        }
-        var coverage: [String: String] = [:]
-        if balanced {
-            let codes: Set<String> = ["included_major", "included_secondary", "omitted_minor", "omitted_routine", "omitted_duplicate", "omitted_resolved_without_ongoing_impact", "omitted_uncertain_peripheral"]
-            guard let decisions = obj["coverage"] as? [String: String], Set(decisions.keys) == Set(concerns.map(\.id)),
-                  decisions.values.allSatisfy({ codes.contains($0) }), decisions.values.contains(where: { $0.hasPrefix("included_") }) else { throw fail("coverage") }
-            for (group, decision) in decisions where decision.hasPrefix("included_") {
-                guard facts.contains(where: { $0.groups.contains(group) && cited.contains($0.id) }) else { throw fail() }
-            }
-            if compact || narrativeJob["writerVersion"] as? String == "b-narrative-balanced-v5" {
-                let included = Set(decisions.filter { $0.value.hasPrefix("included_") }.keys)
-                guard sentences.count <= (compact ? 5 : 6), sentences.allSatisfy({ (($0["text"] as? String)?.count ?? 321) <= (compact ? 260 : 320) }) else { throw fail("sentence_length") }
-                for id in cited {
-                    guard let fact = byID[id], fact.groups.isEmpty || !Set(fact.groups).isDisjoint(with: included) else { throw fail() }
-                }
-            }
-            coverage = decisions
-        }
-        let joined = texts.joined(separator: " ")
-        guard joined.count <= (compact ? 850 : (balanced ? 1200 : 1000)) else { throw fail("character_limit") }
-        guard joined.split(whereSeparator: { $0.isWhitespace }).count <= (compact ? 100 : (balanced ? 150 : 130)) else { throw fail("word_limit") }
-        narrative = joined; narrativeCoverage = coverage
+        do {
+            let result=try WholeHistoryNarrativeContract.decode(raw,facts:facts,concerns:concerns,writerVersion:narrativeJob["writerVersion"] as? String,focusIDs:narrativeJob["focusIDs"] as? [String] ?? [])
+            narrative=result.text;narrativeCoverage=result.coverage
+        } catch let issue as WholeHistoryNarrativeContract.Failure {throw fail(issue.reason)}
     }
-    private func decode(_ raw: String) throws {
-        func fail() -> BTrialFailure { BTrialFailure(message: "B returned an invalid or unsupported reference structure. The result remains unverified and was not added to your records.") }
-        guard let data = raw.data(using: .utf8), let result = try JSONSerialization.jsonObject(with: data) as? [String: Any], Set(result.keys) == ["concerns", "overview", "passages"],
-              let locators = saved["locators"] as? [String: [String: Any]], let originals = saved["records"] as? [[String: Any]],
-              let groups = result["concerns"] as? [[String: Any]], !groups.isEmpty,
-              let passages = result["passages"] as? [String: Any], Set(passages.keys) == Set(locators.keys),
-              let paragraphs = result["overview"] as? [[String: Any]], (1...6).contains(paragraphs.count) else { throw fail() }
-        guard Set(originals.compactMap { $0["id"] as? String }).count == originals.count else { throw fail() }
-        if saved["contractVersion"] as? String == "compact-actions-short-overview-v1" {
-            guard paragraphs.count == 1, let text = paragraphs[0]["text"] as? String,
-                  text.unicodeScalars.count <= 1000, !text.contains("\n"), !text.contains("\r") else { throw fail() }
-        }
-        let sourceRecords = Dictionary(uniqueKeysWithValues: originals.compactMap { r -> (String, [String: Any])? in guard let id = r["id"] as? String else { return nil }; return (id,r) })
-        for locator in locators.values {
-            guard let id = locator["recordID"] as? String, let record = sourceRecords[id], let text = record["text"] as? String, let quote = locator["quote"] as? String,
-                  let start = locator["start"] as? Int, let end = locator["end"] as? Int, start >= 0, end >= start else { throw fail() }
-            let chars = Array(text.unicodeScalars)
-            guard end <= chars.count, String(String.UnicodeScalarView(chars[start..<end])) == quote,
-                  locator["sourceSHA256"] as? String == SHA256.hash(data: Data(text.utf8)).map({ String(format: "%02x", $0) }).joined() else { throw fail() }
-        }
-        let categories = Set(SummaryEntryCategory.allCases.map(\.rawValue))
-        let systems = Set(["musculoskeletal","eye","neurological","cardiovascular","respiratory","digestive","endocrine","reproductive","urinary","mental","skin","immune","ear","unknown"])
-        var groupIDs = Set<String>(); var decodedGroups: [BTrialConcern] = []
-        for g in groups {
-            guard let id = g["id"] as? String, id.first == "c", let index = Int(id.dropFirst()), (1...256).contains(index), groupIDs.insert(id).inserted,
-                  let name = g["name"] as? String, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  let codes = g["systems"] as? [String], codes.allSatisfy({ systems.contains($0) }),
-                  let evidence = g["evidence"] as? [String], !evidence.isEmpty, evidence.allSatisfy({ locators[$0] != nil }) else { throw fail() }
-            decodedGroups.append(BTrialConcern(id: id, name: name, systems: codes))
-        }
-        let careStates = Set(["recommended","conditional","planned","prescribed","declined","performed","historical","reported","unclear"])
-        let allStates = careStates.union(["negative","observed","resolved"])
-        var decoded: [BTrialFact] = []; var clinical = Set<String>()
-        for pid in passages.keys.sorted() {
-            if let exclusion = passages[pid] as? String { guard ["nonclinical","other_person","unintelligible"].contains(exclusion) else { throw fail() }; continue }
-            guard let rows = passages[pid] as? [[String: Any]], !rows.isEmpty, let locator = locators[pid], let rid = locator["recordID"] as? String else { throw fail() }
-            clinical.insert(pid)
-            for (index, row) in rows.enumerated() {
-                guard (Set(row.keys) == ["k","s","v","c","p","g"] || Set(row.keys) == ["k","s","v","c","p","g","m"] || Set(row.keys) == ["k","s","v","c","p","g","m","f"]), let k = row["k"] as? String, categories.contains(k), let status = row["s"] as? String, allStates.contains(status),
-                      let v = row["v"] as? [String], v.count == 3, !v[0].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, v[0].unicodeScalars.count <= 360,
-                      let c = row["c"] as? [String], c.count <= 2, c.allSatisfy({ locators[$0]?["recordID"] as? String == rid }),
-                      let g = row["g"] as? [String], Set(g).count == g.count, g.allSatisfy({ groupIDs.contains($0) }) else { throw fail() }
-                let plan = row["p"] as? [String: String]
-                var category = k
-                if let plan {
-                    guard (Set(plan.keys) == ["a","t","q"] || (Set(plan.keys) == ["a","t","q","i","h"] && ["carePlan","followUp"].contains(k) && (plan["i"] ?? "").range(of:#"^p[1-9]\d{0,3}$"#,options:.regularExpression) != nil && (plan["h"] ?? "").unicodeScalars.count<=80 && v[0].unicodeScalars.count<=160)), (plan["a"] ?? "").range(of: #"^r\d+\.p\d+(\.\d+)?$"#, options: .regularExpression) == nil else { throw fail() }
-                    if ["planned","recommended","conditional","prescribed"].contains(status) {
-                        if k == "testsAndLabs" { category = "carePlan" }
-                        if k == "practitionerContact" { category = "followUp" }
-                    }
-                    guard ["carePlan","followUp","vaccinations"].contains(category) || (k == "medications" && ["prescribed","recommended","conditional","planned"].contains(status)) else { throw fail() }
-                } else if !(row["p"] is NSNull) { throw fail() }
-                if ["carePlan","followUp"].contains(category) { guard plan != nil, careStates.contains(status) else { throw fail() } }
-                let refs = Array(Set([pid] + c)).sorted()
-                var medication: StructuredMedication?
-                if let fields = row["m"] as? [String: Any] {
-                    guard k == "medications", Set(fields.keys) == Set(StructuredMedication.keys), fields.values.allSatisfy({ $0 is String || $0 is NSNull }) else { throw fail() }
-                    medication = StructuredMedication.grounded(fields.compactMapValues { $0 as? String }, in: refs.compactMap { locators[$0]?["quote"] as? String })
-                } else if let value = row["m"], (!(value is NSNull) || k == "medications") { throw fail() }
-                var artifactFields: [SummaryEntryField]?
-                var decodedFields=row["f"] as? [[String]]
-                if let object=row["f"] as? [String:Any] {
-                    guard let kind=SummaryEntryCategory(rawValue:k),let pairs=StructuredArtifact.pairsFromObject(object,category:kind) else {throw fail()}
-                    decodedFields=pairs
-                }
-                if let values = decodedFields {
-                    guard let kind=SummaryEntryCategory(rawValue:k), let allowed=StructuredArtifact.keys[kind], values.count<=12,
-                          values.allSatisfy({$0.count==2 && allowed.contains($0[0]) && !$0[1].trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && $0[1].unicodeScalars.count<=360}),
-                          Set(values.map{$0[0]}).count==values.count else { throw fail() }
-                    artifactFields=StructuredArtifact.grounded(values,category:kind,sources:refs.compactMap {locators[$0]?["quote"] as? String})
-                } else if let value=row["f"], (!(value is NSNull) || StructuredArtifact.keys[SummaryEntryCategory(rawValue:k)!] != nil) { throw fail() }
-                decoded.append(BTrialFact(id: "\(pid).\(index+1)", text: v[0], category: category, status: status, by: v[1], event: v[2], groups: g,
-                    quotes: refs.compactMap { ref in guard let quote = locators[ref]?["quote"] as? String else { return nil }; return ref + "\n" + quote }, plan: plan, medication: medication, fields: artifactFields))
-            }
-        }
-        guard decodedGroups.allSatisfy({ group in decoded.contains { $0.groups.contains(group.id) } }) else { throw fail() }
-        var texts: [String] = []
-        for p in paragraphs {
-            guard let text = p["text"] as? String, !text.isEmpty, let refs = p["cite"] as? [String], !refs.isEmpty, refs.allSatisfy({ locators[$0] != nil }), refs.contains(where: { clinical.contains($0) }) else { throw fail() }
-            texts.append(text)
-        }
-        facts = decoded; concerns = decodedGroups; overview = texts
 
+    private func decode(_ raw: String) throws {
+        do {
+            let decoded = try WholeHistoryResponseContract.decode(
+                raw, locators: saved["locators"] as? [String: [String: Any]],
+                originals: saved["records"] as? [[String: Any]],
+                version: saved["contractVersion"] as? String
+            )
+            facts = decoded.facts; concerns = decoded.concerns; overview = decoded.overview
+        } catch let failure as WholeHistoryResponseContract.Failure {
+            throw BTrialFailure(message: failure.localizedDescription, code: failure.code)
+        }
     }
 }
 
@@ -492,9 +389,36 @@ extension BTrialModel {
             return byID[id] == text
         }
     }
+    var canRevalidateSavedDetails: Bool {
+        state == "failed" && saved["failureCode"] as? String == "invalid_proposal" && (saved["revalidationRejected"] as? Bool != true || saved["revalidationRevision"] as? String != "sole-evidence-link-v2")
+    }
+    var requiresNewAttempt: Bool {
+        WholeHistoryRecoveryPolicy.requiresNewAttempt(
+            generationTerminal: terminal, generationCompleted: state == "completed",
+            overviewTerminal: narrativeTerminal, overviewCompleted: narrativeState == "completed",
+            retainedRecords: retainedPublishedRecordCount,
+            canRevalidateSavedDetails: canRevalidateSavedDetails
+        )
+    }
+
+    #if DEBUG
+    var recoveryDiagnostic: [String: Any] {
+        [
+            "generation": state,
+            "validationFailure": saved["validationFailure"] as? String ?? "",
+            "overview": narrativeState,
+            "sourcesMatch": sourcesMatch,
+            "hasUnpublishedResult": hasUnpublishedCompletedResult,
+            "retainedRecords": retainedPublishedRecordCount
+        ]
+    }
+    #endif
+
     func configure(_ transport: OpenAIChatTransport) { self.transport = transport }
-    func process(force: Bool = false, overviewOnly: Bool = false) async throws {
-        guard !busy else { return }
+    func process(force: Bool = false, overviewOnly: Bool = false, revalidateSavedDetails: Bool = false, onOverviewStarted: (() -> Void)? = nil) async throws {
+        guard !busy else { throw BTrialFailure(message: "An update is already running. View progress to check it.") }
+        self.onOverviewStarted = onOverviewStarted
+        defer { self.onOverviewStarted = nil }
         error = nil
         if hasRun && !sourcesMatch && (!terminal || (hasNarrativeJob && !narrativeTerminal)) {
             throw BTrialFailure(message: "A previous update is unfinished. Resume or stop it before processing changed records.")
@@ -513,7 +437,7 @@ extension BTrialModel {
             selected = Set(records.map(\.id))
         }
         if !hasRun { await start() }
-        else if !terminal || state == "failed" { await resume(recheckFailure: true) }
+        else if !terminal || state == "failed" { await resume(recheckFailure: true,revalidateSavedDetails:revalidateSavedDetails) }
         else if state == "completed", overviewOnly {
             if narrativeTerminal, narrativeState != "completed" || saved["publishedNarrativeRun"] as? String == narrativeJob["run"] as? String { await rewriteOverview(force: true) }
             else if !narrativeTerminal { await writeOverview() }
@@ -521,11 +445,20 @@ extension BTrialModel {
         else if state == "completed", !narrativeTerminal { await writeOverview() }
         if let error { throw BTrialFailure(message: error) }
         guard state == "completed", narrativeState == "completed", narrative != nil, sourcesMatch else {
-            throw BTrialFailure(message: "Updating stopped (\(state), overview \(narrativeState)). Your previous saved story is retained. No automatic paid retry was made.")
+            throw BTrialFailure(message: "Some details couldn’t be added. Your saved records are available.")
         }
     }
-    func markPublished() throws {
-        if narrativeState == "completed", narrative != nil { saved["publishedNarrativeRun"] = narrativeJob["run"] }
+    var hasUnpublishedCompletedResult: Bool {
+        guard sourcesMatch, state == "completed", narrativeState == "completed", narrative != nil,
+              let run = narrativeJob["run"] as? String else { return false }
+        return retainedPublishedRecordCount == 0 && saved["publishedNarrativeRun"] as? String != run
+    }
+
+    var retainedPublishedRecordCount: Int { sourcesMatch ? (saved["retainedPublishedRecordCount"] as? Int ?? 0) : 0 }
+
+    func markPublished(retainedRecordCount: Int = 0) throws {
+        saved["retainedPublishedRecordCount"] = retainedRecordCount
+        if retainedRecordCount == 0, narrativeState == "completed", narrative != nil { saved["publishedNarrativeRun"] = narrativeJob["run"] }
         // Completed diagnostic connections are no longer needed after migration.
         if terminal { saved.removeValue(forKey: "connection") }
         if narrativeTerminal { var job = narrativeJob; job.removeValue(forKey: "connection"); saved["narrativeJob"] = job }
@@ -756,6 +689,125 @@ struct BTrialConditionListView: View {
                     Text("\(linked.count) linked detail\(linked.count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+}
+
+
+/// Rollout gate: keep installed legacy receipts readable while the new path passes release gates.
+@MainActor enum IncrementalRecordCoordinator {
+    private enum RecoveryError: Error { case expired }
+    static var enabled: Bool { (Bundle.main.object(forInfoDictionaryKey:"IncrementalRecordsEnabled") as? Bool == true) || (Bundle.main.object(forInfoDictionaryKey:"IncrementalRecordsEnabled") as? String == "YES") }
+    static func request(_ action:String,receipt:RecordUpdateReceipt,records:[Session],transport:OpenAIChatTransport,snapshot:[String:Any]? = nil) async throws -> [String:Any] {
+        guard let jobs=transport.durableJobsURL else {throw URLError(.unsupportedURL)}
+        var request=URLRequest(url:jobs.deletingLastPathComponent().appendingPathComponent("record-updates"))
+        request.httpMethod="POST";request.timeoutInterval=30
+        request.setValue("application/json",forHTTPHeaderField:"Content-Type")
+        request.setValue(try await transport.makeAuthorizationHeader(),forHTTPHeaderField:"Authorization")
+        var body:[String:Any]=["id":receipt.id.uuidString.lowercased(),"action":action]
+        if let snapshot {body["snapshot"]=snapshot}
+        if action == "prepare" || action == "prepareOverview" {
+            body["records"]=records.map {["id":$0.id.uuidString.lowercased(),"text":$0.transcript]}
+            if let url=Bundle.main.url(forResource:"ReleaseManifest",withExtension:"json"),let data=try? Data(contentsOf:url) {
+                body["release"]=try JSONSerialization.jsonObject(with:data)
+            } else {throw URLError(.cannotDecodeContentData)}
+        }
+        request.httpBody=try JSONSerialization.data(withJSONObject:body,options:.sortedKeys)
+        let (data,response)=try await DurableNetworkRecovery.run {try await URLSession.shared.data(for:request)}
+        if (response as? HTTPURLResponse)?.statusCode == 410 {throw RecoveryError.expired}
+        try OpenAIChatTransport.validateDurableResponse(data:data,status:(response as? HTTPURLResponse)?.statusCode ?? 0)
+        guard let result=try JSONSerialization.jsonObject(with:data) as? [String:Any] else {throw URLError(.cannotParseResponse)}
+        return result
+    }
+    static func writeOverview(store:SessionStore,transport:OpenAIChatTransport,facts:[HealthFact],allowExpiredReplacement:Bool = true) async throws {
+        guard !facts.isEmpty else {return}
+        if await store.storyOverview(for:facts) != nil {return}
+        let context=await store.currentOverviewConditionContext(facts)
+        let fingerprint=IncrementalRecordUpdate.sourceHash(StoryOverview.fingerprint(facts)+context)
+        var receipt=try await store.recordOverviewReceipt()
+        if receipt?.sources["snapshot"] != fingerprint || receipt?.state == "cancelled" {
+            receipt=RecordUpdateReceipt(sources:["snapshot":fingerprint])
+            try await store.saveRecordOverviewReceipt(receipt!)
+        }
+        guard let current=receipt else {return}
+        let snapshot:[String:Any]=["fingerprint":fingerprint,"conditionContext":context,"facts":facts.sorted {$0.id<$1.id}.map {fact in
+            let entry=fact.displayEntry
+            return ["id":fact.id,"text":([entry.title,entry.details,"Status: "+(fact.hasKnownStatus ? fact.statusTitle:"Unknown")]+entry.fields.map {$0.label+": "+$0.value}).joined(separator:"\n")]
+        }]
+        let stopID=try await transport.explicitStop?.register {
+            var stopped=current;stopped.state="cancelled";try await store.saveRecordOverviewReceipt(stopped)
+            _=try await request("cancel",receipt:current,records:[],transport:transport)
+        }
+        defer {if let stopID {Task {await transport.explicitStop?.completed(stopID)}}}
+        var status:[String:Any]
+        do {status=try await request("prepareOverview",receipt:current,records:[],transport:transport,snapshot:snapshot)}
+        catch RecoveryError.expired where allowExpiredReplacement {
+            try await store.saveRecordOverviewReceipt(RecordUpdateReceipt(sources:current.sources))
+            try await writeOverview(store:store,transport:transport,facts:facts,allowExpiredReplacement:false)
+            return
+        }
+        while true {
+            try Task.checkCancellation()
+            guard status["contract"] as? String == IncrementalRecordUpdate.version else {throw URLError(.cannotParseResponse)}
+            if let result=(status["units"] as? [[String:Any]])?.first?["result"] as? [String:Any],let overview=result["overview"] {
+                let narrative=try JSONDecoder().decode(StoryOverview.self,from:JSONSerialization.data(withJSONObject:overview))
+                try await store.saveStoryOverview(narrative,expected:facts)
+                var completed=current;completed.state="completed";try await store.saveRecordOverviewReceipt(completed)
+                return
+            }
+            if ["completed_with_withheld_items","blocked","cancelled"].contains(status["state"] as? String ?? "") {throw URLError(.cannotParseResponse)}
+            try await Task.sleep(nanoseconds:3_000_000_000)
+            status=try await request("status",receipt:current,records:[],transport:transport)
+        }
+    }
+    static func run(store:SessionStore,transport:OpenAIChatTransport,allowExpiredReplacement:Bool = true,onPublication:() async -> Void) async throws -> Bool {
+        let all=try await store.loadAll()
+        var receipt=try await store.recordUpdateReceipt()
+        let terminal:Set<String>=["completed","completed_with_withheld_items","blocked","cancelled"]
+        if let previous=receipt,!terminal.contains(previous.state),previous.sources.contains(where:{id,hash in !all.contains(where:{$0.id.uuidString==id && IncrementalRecordUpdate.sourceHash($0.transcript)==hash})}) {
+            _=try await request("cancel",receipt:previous,records:[],transport:transport)
+            receipt=nil
+        }
+        if receipt == nil || terminal.contains(receipt!.state) {
+            let pending=try await store.recordsNeedingIncrementalUpdate()
+            guard !pending.isEmpty else {return false}
+            receipt=RecordUpdateReceipt(sources:Dictionary(uniqueKeysWithValues:pending.map {($0.id.uuidString,IncrementalRecordUpdate.sourceHash($0.transcript))}))
+            try await store.saveRecordUpdateReceipt(receipt!)
+        }
+        guard let current=receipt else {return false}
+        let records=all.filter {current.sources[$0.id.uuidString] != nil}
+        let stopID=try await transport.explicitStop?.register {
+            if var stopped=try await store.recordUpdateReceipt(),stopped.id==current.id {
+                stopped.state="cancelled"
+                try await store.saveRecordUpdateReceipt(stopped)
+            }
+            _=try await Self.request("cancel",receipt:current,records:[],transport:transport)
+        }
+        defer {if let stopID {Task {await transport.explicitStop?.completed(stopID)}}}
+        var status:[String:Any]
+        do {status=try await request("prepare",receipt:current,records:records,transport:transport)}
+        catch RecoveryError.expired where allowExpiredReplacement {
+            try await store.saveRecordUpdateReceipt(RecordUpdateReceipt(sources:current.sources))
+            return try await run(store:store,transport:transport,allowExpiredReplacement:false,onPublication:onPublication)
+        }
+        while true {
+            try Task.checkCancellation()
+            guard status["contract"] as? String == IncrementalRecordUpdate.version else {throw URLError(.cannotParseResponse)}
+            for unit in status["units"] as? [[String:Any]] ?? [] {
+                guard let result=unit["result"] as? [String:Any],let rows=result["facts"],let rid=unit["record_id"] as? String,let recordID=UUID(uuidString:rid),let hash=unit["source_hash"] as? String,let key=unit["unit_key"] as? String else {continue}
+                let facts=try JSONDecoder().decode([IncrementalRecordFact].self,from:JSONSerialization.data(withJSONObject:rows))
+                try await store.publishRecordUnit(facts,recordID:recordID,sourceHash:hash,unitKey:key,updateID:current.id)
+            }
+            await onPublication()
+            guard status["contract"] as? String == IncrementalRecordUpdate.version else {throw URLError(.cannotParseResponse)}
+            let state=status["state"] as? String ?? "running"
+            if terminal.contains(state) {
+                if state == "cancelled" {throw CancellationError()}
+                try await store.finishRecordUpdate(current.id,state:state)
+                return state != "completed"
+            }
+            try await Task.sleep(nanoseconds:3_000_000_000)
+            status=try await request("status",receipt:current,records:[],transport:transport)
         }
     }
 }

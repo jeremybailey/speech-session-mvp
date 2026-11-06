@@ -1,6 +1,6 @@
 import { createHmac, createHash, randomUUID } from 'node:crypto';
 import type {PoolClient} from 'pg';
-import { database, transaction, submitWithinTransaction,workloadType } from './ledger';
+import { database, transaction, submitWithinTransaction,workloadType,jsonbPayload } from './ledger';
 import { conditionModel, conditionReasoning } from './model-policy';
 import { ConditionState, compactConditionPlan, validateConditionPlan, initialConditionState, nextConditionRequest, acceptConditionResponse, repairVerificationContract, recoverSavedMapping } from './condition-workflow';
 
@@ -28,7 +28,7 @@ export async function submitConditionWorkflow(owner:string,value:unknown,stopBef
       VALUES($1,$2,$3,$4,$5,$6,CASE WHEN $4 IN ('completed','cancelled') THEN now() ELSE NULL END,$7,$8,$9)
       ON CONFLICT(owner,request_hash) DO NOTHING RETURNING id,state,revision`,[id,owner,hash,state,plan.batches.flat().length,process.env.AI_BUDGET_ID,workloadType(workload_type),conditionModel(),conditionReasoning()]);
     if(created.rows.length) {
-      if(!stopBeforeSubmission) await db.query('INSERT INTO ai_condition_workflow_payloads(workflow_id,plan,checkpoint) VALUES($1,$2,$3)',[id,plan,checkpoint]);
+      if(!stopBeforeSubmission) await db.query('INSERT INTO ai_condition_workflow_payloads(workflow_id,plan,checkpoint) VALUES($1,$2,$3)',[id,jsonbPayload(plan),jsonbPayload(checkpoint)]);
       return created.rows[0];
     }
     const existing=(await db.query('SELECT id,state,revision FROM ai_condition_workflows WHERE owner=$1 AND request_hash=$2',[owner,hash])).rows[0];

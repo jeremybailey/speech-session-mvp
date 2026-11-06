@@ -10,6 +10,40 @@ final class BArtifactPresentationTests: XCTestCase {
     private func fact(_ e: SummaryEntry) -> HealthFact {
         HealthFact(id:e.id.uuidString,occurrences:[e],preference:.init(id:e.id.uuidString),topicIDs:[])
     }
+    func testCBCPanelKeepsEachMeasurementWithItsReferenceRange() {
+        let original = b("CBC: WBC 5.1 x10**9/L (reference 4.0–11.0); MCV 89 fL (80–100); RDW 13.4% (<16.0).", .testsAndLabs)
+        let displayed = fact(original).displayEntry
+        XCTAssertEqual(displayed.title, "Complete blood count (CBC)")
+        XCTAssertEqual(displayed.fields.map(\.label), ["WBC", "MCV", "RDW"])
+        XCTAssertEqual(displayed.fields.map(\.value), ["5.1 ×10^9/L (ref. 4.0–11.0)", "89 fL (ref. 80–100)", "13.4% (ref. <16.0)"])
+        let ambiguous = b("CBC: WBC 5.1 (4.0–11.0); additional text", .testsAndLabs)
+        XCTAssertTrue(fact(ambiguous).displayEntry.fields.isEmpty)
+    }
+    func testLabIdentitySurvivesNarrativeAndUnknownFormats() {
+        let result = b("Example assay 0.5 ug/L (reference <2.6). Report states that reference intervals depend on age and gives a separate testing pathway.", .testsAndLabs)
+        XCTAssertEqual(fact(result).displayEntry.title, "Example assay")
+        XCTAssertTrue(fact(result).displayEntry.details.contains("reference intervals depend on age"))
+        let order = b("Example assay test ordered; result appears in following passage. Comment: interpret this with the relevant clinical context.", .testsAndLabs)
+        XCTAssertEqual(fact(order).displayEntry.title, "Example assay (ordered)")
+        let unknown = b("This report includes a long general discussion of the methods and limitations used to prepare these measurements.", .testsAndLabs)
+        XCTAssertEqual(fact(unknown).displayEntry.title, "Lab entry · check source")
+    }
+    func testLipidPanelPreservesNameAndReferenceQualifiers() {
+        let entry = b("Lipid panel: triglycerides 0.52 mmol/L (reference <1.70; nonfasting <2.00 acceptable); total cholesterol 5.09 mmol/L (reference <5.20); no abnormality indicated.", .testsAndLabs)
+        let display = fact(entry).displayEntry
+        XCTAssertEqual(display.title, "Lipid panel")
+        XCTAssertEqual(display.fields.map(\.label), ["triglycerides", "total cholesterol"])
+        XCTAssertTrue(display.fields[0].value.contains("nonfasting <2.00 acceptable"))
+        XCTAssertTrue(display.details.contains("no abnormality indicated"))
+    }
+    func testNamedAndUnnamedLabPanelsUseMeasurementRows() {
+        let lipid = b("Lipid panel: HDL 1.2 mmol/L (1.0–2.0); LDL 2.3 mmol/L (<3.0).", .testsAndLabs)
+        XCTAssertEqual(fact(lipid).displayEntry.title, "Lipid panel")
+        XCTAssertEqual(fact(lipid).displayEntry.fields.map(\.label), ["HDL", "LDL"])
+        let unnamed = b("Sodium 140 mmol/L (135–145); potassium 4.1 mmol/L (3.5–5.0).", .testsAndLabs)
+        XCTAssertEqual(fact(unnamed).displayEntry.title, "Lab measurements")
+        XCTAssertEqual(fact(unnamed).displayEntry.fields.count, 2)
+    }
     func testNarrativeContactsHaveNamesAndKeepTheirMeaning() {
         for (text,name) in [
             ("Identifies Dr. Bama as the doctor treating this eye condition; spelling as transcribed","Dr. Bama"),
@@ -58,7 +92,7 @@ final class BArtifactPresentationTests: XCTestCase {
         let text = "Patient reports no prior reaction, but a possible delayed reaction after the second exposure remains uncertain; do not infer resolution or current disease."
         for category in SummaryEntryCategory.allCases where ![.medications,.practitionerContact,.carePlan,.followUp].contains(category) {
             let e = b(text,category), d = fact(e).displayEntry
-            XCTAssertEqual(d.title,category.displayTitle)
+            XCTAssertEqual(d.title, category == .testsAndLabs ? "Lab entry · check source" : category.displayTitle)
             XCTAssertTrue(d.details.contains(text),category.rawValue)
             XCTAssertFalse(d.details.contains("Recorded status:"))
             XCTAssertNil(d.evidence?.eventDate)

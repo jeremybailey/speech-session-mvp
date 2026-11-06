@@ -32,6 +32,47 @@ final class WholeHistoryPublicationTests: XCTestCase {
         let after=try await store.healthSnapshot().sessions[0]
         XCTAssertTrue(after.summaryEntries!.contains{$0.id==labs.id && $0.category == .testsAndLabs})
     }
+    func testPartialPublicationRetainsIncompleteRecordAndSavedOverview() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try SessionStore(storageDirectory: directory)
+        let prior = Session(transcript: "Synthetic lab result.")
+        let new = Session(transcript: "Synthetic symptom.")
+        try await store.upsert(prior)
+        let lab = classified(prior, .testsAndLabs)
+        try await store.publishWholeHistory(.init(entries: [prior.id: [lab]], topics: [], overview: "Saved overview"), expected: [prior])
+        try await store.upsert(new)
+        let symptom = classified(new, .symptoms)
+        let candidate = WholeHistoryPublication(entries: [prior.id: [classified(prior, .findings)], new.id: [symptom]], topics: [], overview: "Candidate overview")
+        let retained = try await store.publishWholeHistory(candidate, expected: [prior, new], retainRecordsWithMissingCategories: true)
+        XCTAssertEqual(retained, 1)
+        let snapshot = try await store.healthSnapshot()
+        XCTAssertEqual(snapshot.sessions.first { $0.id == prior.id }?.summaryEntries?.map(\.id), [lab.id])
+        XCTAssertEqual(snapshot.sessions.first { $0.id == new.id }?.summaryEntries?.map(\.id), [symptom.id])
+        let overview = try await store.wholeHistoryOverview()
+        XCTAssertEqual(overview, "Saved overview")
+        let current = try await store.wholeHistoryOverviewIsCurrent()
+        XCTAssertFalse(current)
+    }
+    func testRejectedOverviewStillPublishesSafeRecordsAndKeepsIncompleteLabRecords() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try SessionStore(storageDirectory: directory)
+        let records = (0..<3).map { Session(transcript: "Synthetic lab source \($0).") }
+        let fresh = Session(transcript: "Synthetic new symptom.")
+        for record in records { try await store.upsert(record) }
+        try await store.publishWholeHistory(.init(entries: Dictionary(uniqueKeysWithValues: records.map { ($0.id, [classified($0, .testsAndLabs)]) }), topics: [], overview: "Saved overview"), expected: records)
+        try await store.upsert(fresh)
+        let entries = Dictionary(uniqueKeysWithValues: (records + [fresh]).map { ($0.id, [classified($0, .symptoms)]) })
+        let retained = try await store.publishWholeHistory(.init(entries: entries, topics: [], overview: nil), expected: records + [fresh], retainRecordsWithMissingCategories: true)
+        XCTAssertEqual(retained, 3)
+        let snapshot = try await store.healthSnapshot()
+        XCTAssertEqual(snapshot.sessions.count, 4)
+        for record in records { XCTAssertEqual(snapshot.sessions.first { $0.id == record.id }?.summaryEntries?.first?.category, .testsAndLabs) }
+        XCTAssertEqual(snapshot.sessions.first { $0.id == fresh.id }?.summaryEntries?.first?.category, .symptoms)
+        let overview = try await store.wholeHistoryOverview()
+        XCTAssertEqual(overview, "Saved overview")
+    }
     func testRecoveryDoesNotReachPastLatestRevisionOrUndoPatientDeletion() {
         var source=Session(transcript:"Synthetic unchanged source.")
         let old=classified(source,.testsAndLabs),current=classified(source,.findings)
@@ -143,6 +184,50 @@ final class WholeHistoryPublicationTests: XCTestCase {
         XCTAssertEqual(previous, "Previous overview")
         let snapshot = try await store.healthSnapshot()
         XCTAssertEqual(HealthMemoryProjection.facts(in: snapshot).count, 1)
+    }
+
+    func testExplicitCategoryReviewIsScopedPreservesHistoryAndDoesNotPromoteTrust() async throws {
+        let dir=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {try? FileManager.default.removeItem(at:dir)}
+        let store=try SessionStore(storageDirectory:dir)
+        let first=Session(transcript:"Synthetic clinical examination."),second=Session(transcript:"Synthetic vaccine history.")
+        try await store.upsert(first);try await store.upsert(second)
+        let old=classified(first,.testsAndLabs),vaccine=classified(second,.vaccinations)
+        try await store.publishWholeHistory(.init(entries:[first.id:[old],second.id:[vaccine]],topics:[],overview:"Previous overview"),expected:[first,second])
+        let current=try await store.healthSnapshot().sessions
+        let selected=try XCTUnwrap(current.first{$0.id==first.id})
+        let replacement=classified(first,.findings)
+        let candidate=WholeHistoryPublication(entries:[first.id:[replacement],second.id:[classified(second,.otherNotes)]],topics:[],overview:"Candidate overview")
+        let review=try XCTUnwrap(WholeHistoryPublication.categoryReview(previous:selected.summaryEntries ?? [],generated:[replacement],session:selected))
+        let retained=try await store.publishWholeHistory(candidate,expected:current,retainRecordsWithMissingCategories:true,acceptedCategoryChanges:[first.id:review.token])
+        XCTAssertEqual(retained,1,"An explicit decision must not approve another source")
+        let after=try await store.healthSnapshot().sessions
+        let accepted=try XCTUnwrap(after.first{$0.id==first.id})
+        XCTAssertEqual(accepted.summaryEntries?.filter{!$0.isDeleted && $0.evidence?.assessment?.admission != .superseded}.map(\.category),[.findings])
+        XCTAssertTrue(accepted.summaryRevisions!.last!.entries.contains{$0.id==old.id})
+        XCTAssertNotNil(accepted.summaryRun?.categoryChangeReviewToken)
+        XCTAssertNil(WholeHistoryPublication.categoryRecovery(for:accepted),"Recovery must not undo a reviewed change")
+        XCTAssertEqual(SummaryVerification.trust(of:accepted.summaryEntries!.first{$0.id==replacement.id}!,sourceHash:SummaryVerification.hash(first.transcript)),.reviewRequired)
+        XCTAssertEqual(after.first{$0.id==second.id}?.summaryEntries?.first?.category,.vaccinations)
+        let overview=try await store.wholeHistoryOverview();XCTAssertEqual(overview,"Previous overview")
+    }
+    func testCategoryReviewRejectsStaleCandidateWithoutChangingSavedProjection() async throws {
+        let dir=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {try? FileManager.default.removeItem(at:dir)}
+        let store=try SessionStore(storageDirectory:dir);let source=Session(transcript:"Synthetic source.")
+        try await store.upsert(source);let old=classified(source,.testsAndLabs)
+        try await store.publishWholeHistory(.init(entries:[source.id:[old]],topics:[],overview:nil),expected:[source])
+        let current=try await store.healthSnapshot().sessions[0];let candidate=classified(source,.findings)
+        let review=try XCTUnwrap(WholeHistoryPublication.categoryReview(previous:current.summaryEntries ?? [],generated:[candidate],session:current))
+        var changed=candidate;changed.title="Changed candidate"
+        let changedHash=SummaryVerification.contentHash(changed)
+        changed.evidence?.assessment?.contentHash=changedHash
+        do {
+            try await store.publishWholeHistory(.init(entries:[source.id:[changed]],topics:[],overview:nil),expected:[current],retainRecordsWithMissingCategories:true,acceptedCategoryChanges:[source.id:review.token])
+            XCTFail("Stale review must not approve new output")
+        } catch SummaryCommitError.sourceChanged {}
+        let after=try await store.healthSnapshot().sessions[0]
+        XCTAssertEqual(after.summaryEntries?.map(\.id),current.summaryEntries?.map(\.id))
     }
 
 }

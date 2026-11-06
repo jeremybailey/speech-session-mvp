@@ -30,6 +30,7 @@ public struct SummaryRun: Codable, Hashable, Sendable {
     public var completedSourceChunks: Int?
     public var workUnits: [String: FastDetailsWorkUnit]?
     public var promptVersion: String?
+    public var categoryChangeReviewToken: String?
     public init(source: String, stage: Stage = .fetching, promptVersion: String = SummaryVerification.promptVersion) {
         id = UUID(); sourceHash = SummaryVerification.hash(source); self.stage = stage
         version = SummaryVerification.version; updatedAt = Date()

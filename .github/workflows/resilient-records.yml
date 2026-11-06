@@ -1,0 +1,49 @@
+name: Resilient record updates
+on:
+  pull_request:
+  push:
+permissions:
+  contents: read
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: synthetic-only
+          POSTGRES_DB: cc_test_incremental
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U test -d cc_test_incremental"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: vercel-openai-proxy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: vercel-openai-proxy/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run check:contracts
+      - name: Verify isolated deployment packaging
+        run: |
+          python3 ../scripts/package_isolated_backend.py "$RUNNER_TEMP/isolated-backend"
+          ln -s "$PWD/node_modules" "$RUNNER_TEMP/isolated-backend/node_modules"
+          cp package.json tsconfig.json "$RUNNER_TEMP/isolated-backend/"
+          npm run typecheck --prefix "$RUNNER_TEMP/isolated-backend"
+          node --import tsx "$RUNNER_TEMP/isolated-backend/scripts/router-smoke.ts"
+      - run: node --import tsx --test tests/incremental-records.test.ts tests/incremental-database.test.ts
+        env:
+          AI_INCREMENTAL_TEST_DATABASE_URL: postgresql://test:synthetic-only@127.0.0.1:5432/cc_test_incremental
+      - run: python3 -m unittest discover -s ../scripts -p test_consumer_release.py
+  native:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test

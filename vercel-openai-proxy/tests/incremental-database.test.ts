@@ -1,0 +1,86 @@
+import test,{mock} from 'node:test';
+import assert from 'node:assert/strict';
+import {createServer} from 'node:http';
+import {readFile} from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
+import {database} from '../api/_lib/ledger';
+import {jobQueue} from '../api/_lib/queue';
+import {revalidateRecordUpdate,recoverRecordUpdates,createSnapshotUpdate,createRecordUpdate,runRecordUnit,recordUpdateStatus,stopRecordUpdate} from '../api/_lib/incremental-workflow';
+
+test('durable incremental lifecycle: duplicate delivery, source isolation, cap, cancellation and partial publication', {skip:!process.env.AI_INCREMENTAL_TEST_DATABASE_URL},async()=>{
+ const url=new URL(process.env.AI_INCREMENTAL_TEST_DATABASE_URL!);assert.match(url.pathname,/^\/cc_test_/);assert.ok(['127.0.0.1','localhost'].includes(url.hostname));
+ Object.assign(process.env,{DATABASE_URL:url.href,AI_BUDGET_ID:'evaluation-v1',AI_DEDUPE_SECRET:'synthetic-only',AI_DURABLE_ENABLED:'true',AI_WHOLE_HISTORY_PROVIDER_BACKGROUND:'true',OPENAI_API_KEY:'synthetic-only'});
+ let failQueue=false;const sent:string[]=[];mock.method(jobQueue,'send',async(_topic:string,message:{id:string})=>{if(failQueue)throw Error('synthetic enqueue outage');sent.push(message.id);return {messageId:randomUUID()};});
+ let posts=0,mode='complete';
+ const server=createServer(async(req,res)=>{
+  let body='';for await(const chunk of req)body+=chunk;
+  const request=JSON.parse(body),input=JSON.parse(request.input[1].content);posts++;
+  if(mode==='ambiguous'){res.statusCode=503;res.setHeader('content-type','application/json');res.end(JSON.stringify({error:{message:'Synthetic lost submission'}}));return;}
+  const result=input.snapshot?(input.candidate?{supported:true,reason:''}:{sentences:[{text:'Example is recorded.',factIDs:['f1']}]}):input.facts?{decisions:input.facts.map((f:any)=>({id:f.id,supported:mode!=='repair'||input.unit.repair===true,reason:'',nameSupported:true,supportedFields:f.fields.map((field:any)=>field.key),supportedConditions:[]})),omissions:[],repairs:mode==='repair'&&!input.unit.repair?input.facts:[]}:
+   {facts:[{id:'f1',category:'medications',text:'Example recorded',quote:input.unit.text,name:'Example',fields:[],status:'reported',attribution:'',date:'',conditions:[]}]};
+  res.setHeader('content-type','application/json');res.end(JSON.stringify({id:'resp_'+posts,object:'response',status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:JSON.stringify(result),annotations:[]}]}],usage:{input_tokens:10,output_tokens:10,total_tokens:20}}));
+ });
+ await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));process.env.OPENAI_BASE_URL=`http://127.0.0.1:${(server.address() as any).port}/v1`;
+ const db=database();
+ try{
+  assert.equal((await db.query("SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema='public'")).rows[0].n,0);
+  await db.query(await readFile('migrations/001_ai_ledger.sql','utf8'));
+  await db.query("ALTER TABLE ai_jobs ADD COLUMN workload_type text NOT NULL DEFAULT 'unknown',ADD COLUMN reasoning_effort text NOT NULL DEFAULT 'low'");
+  await db.query(await readFile('migrations/010_incremental_updates.sql','utf8'));
+  const id=randomUUID(),records=[{id:randomUUID(),text:'Example tablet'}];
+  await Promise.all([createRecordUpdate('owner',id,records,{}),createRecordUpdate('owner',id,records,{})]);
+  const initial=await recordUpdateStatus('owner',id);assert.equal(initial.units.length,1);
+  const unit=initial.units[0].id;
+  await Promise.all([runRecordUnit(unit),runRecordUnit(unit)]);
+  await runRecordUnit(unit);await runRecordUnit(unit);
+  const completed=await recordUpdateStatus('owner',id);assert.equal(completed.state,'completed');assert.equal(posts,2);
+  assert.equal(completed.units[0].result.facts.length,1);
+  await db.query("UPDATE ai_record_units SET state='blocked',diagnostic='invalid_result',validator_version='incremental-validator-v1' WHERE id=$1",[unit]);
+  assert.equal(await revalidateRecordUpdate('owner',id),1);
+  await runRecordUnit(unit);assert.equal(posts,2);
+  assert.equal((await recordUpdateStatus('owner',id)).state,'completed');
+  assert.equal(await revalidateRecordUpdate('owner',id),0);
+  const lostID=randomUUID();failQueue=true;
+  await assert.rejects(createRecordUpdate('owner',lostID,[{id:randomUUID(),text:'Example tablet'}],{}),/enqueue outage/);
+  failQueue=false;const stranded=(await recordUpdateStatus('owner',lostID)).units[0].id;
+  assert.ok(!sent.includes(stranded));await recoverRecordUpdates();
+  assert.equal(posts,2);assert.ok(sent.includes(stranded));
+  await stopRecordUpdate('owner',lostID);
+  await assert.rejects(recordUpdateStatus('different-owner',id),/not_found/);
+  await assert.rejects(createRecordUpdate('owner',id,[{...records[0],text:'changed'}],{}),/invalid_run/);
+  const batch=randomUUID();await createRecordUpdate('owner',batch,Array.from({length:8},()=>({id:randomUUID(),text:'Example tablet'})),{});
+  const pending=await recordUpdateStatus('owner',batch);assert.equal(pending.units.filter((u:any)=>u.state==='running').length,4);
+  await stopRecordUpdate('owner',batch);await runRecordUnit(pending.units[0].id);assert.equal(posts,2);
+  assert.equal((await recordUpdateStatus('owner',batch)).state,'cancelled');
+  const overviewID=randomUUID();
+  const snapshot={fingerprint:'published-v1',conditionContext:'',facts:[{id:'f1',text:'Example is recorded.'}]};
+  await createSnapshotUpdate('owner',overviewID,snapshot,{});
+  const overviewUnit=(await recordUpdateStatus('owner',overviewID)).units[0].id;
+  await runRecordUnit(overviewUnit);await runRecordUnit(overviewUnit);
+  const overview=await recordUpdateStatus('owner',overviewID);
+  assert.equal(overview.state,'completed');assert.equal(overview.units[0].result.overview.sentences[0].factIDs[0],'f1');
+  await assert.rejects(createSnapshotUpdate('owner',overviewID,{...snapshot,fingerprint:'changed'},{}),/invalid_run/);
+  mode='repair';const repairID=randomUUID();await createRecordUpdate('owner',repairID,[{id:randomUUID(),text:'Example tablet'}],{});
+  const base=(await recordUpdateStatus('owner',repairID)).units[0].id;
+  const beforeRepair=posts;await runRecordUnit(base);await runRecordUnit(base);
+  const repair=(await recordUpdateStatus('owner',repairID)).units.find((u:any)=>u.id!==base);
+  assert.ok(repair);await runRecordUnit(repair.id);await runRecordUnit(repair.id);
+  assert.equal(posts-beforeRepair,3);
+  assert.equal((await recordUpdateStatus('owner',repairID)).units.find((u:any)=>u.id===repair.id).result.facts.length,1);
+  const uncertainRun=randomUUID();await createRecordUpdate('owner',uncertainRun,[{id:randomUUID(),text:'Example tablet'}],{});
+  const uncertainUnit=(await recordUpdateStatus('owner',uncertainRun)).units[0].id;
+  mode='ambiguous';await runRecordUnit(uncertainUnit);
+  const oldJob=(await db.query('SELECT job_id FROM ai_record_units WHERE id=$1',[uncertainUnit])).rows[0].job_id;
+  await db.query("UPDATE ai_jobs SET state='uncertain',started_at=now()-interval '16 minutes' WHERE id=$1",[oldJob]);
+  await runRecordUnit(uncertainUnit);
+  assert.equal((await db.query('SELECT state FROM ai_record_units WHERE id=$1',[uncertainUnit])).rows[0].state,'retry_scheduled');
+  const beforeBackoff=posts;await runRecordUnit(uncertainUnit);assert.equal(posts,beforeBackoff);
+  await db.query("UPDATE ai_record_units SET next_attempt_at=now()-interval '1 second' WHERE id=$1",[uncertainUnit]);
+  mode='complete';await runRecordUnit(uncertainUnit);await runRecordUnit(uncertainUnit);
+  assert.equal((await recordUpdateStatus('owner',uncertainRun)).state,'completed');
+  const accounting=(await db.query('SELECT state,cost_nusd FROM ai_jobs WHERE id=$1',[oldJob])).rows[0];
+  assert.equal(accounting.state,'uncertain');assert.equal(accounting.cost_nusd,null);
+  assert.equal((await db.query('SELECT attempts FROM ai_record_units WHERE id=$1',[uncertainUnit])).rows[0].attempts,3);
+
+ }finally{mock.restoreAll();await db.end();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+});

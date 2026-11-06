@@ -1,0 +1,84 @@
+{
+  "isolatedBaseURL": "https://collectivecare-fork-b-recovery-test.vercel.app/api",
+  "httpChecks": {
+    "/server/_lib/ledger.ts": 404,
+    "/scripts/production-check.ts": 404,
+    "/migrations/001_ai_ledger.sql": 404,
+    "/api/v1/health-processing/record-update-queue": 404,
+    "/api/v1/health-processing/record-updates": 401
+  },
+  "recovery": {
+    "recovered": 0
+  },
+  "pilotAliasesUnchanged": true,
+  "pilotAliases": {
+    "speech-session-mvp.vercel.app": "dpl_AW4vtuj14cCeuSCYcd49KBK242N9",
+    "speech-session-mvp-jeremy-baileys-projects.vercel.app": "dpl_Dfc8jpBG8XXngiQzC1rTJRYNGUrN"
+  },
+  "appBuild": "58",
+  "appManifest": {
+    "appBuild": "58",
+    "backendBaseURL": "https://collectivecare-fork-b-recovery-test.vercel.app/api",
+    "contract": "incremental-records-v1",
+    "features": {
+      "incremental": true,
+      "sqlite": false
+    },
+    "format": 1,
+    "gitCommit": "8585d9f12ae05ece45f875d919d9dc2dec701544",
+    "localMigration": 1,
+    "model": "gpt-6-luna",
+    "reasoning": "medium",
+    "serverMigration": 10,
+    "sourceDigest": "24ce1dc919d5f9be1a67c1996c502ae61b6dc23e36ad425726157000df8dff47",
+    "validator": "incremental-validator-v2"
+  },
+  "backendCommit": "8585d9f12ae05ece45f875d919d9dc2dec701544",
+  "backendSourceDigest": "afa5ab5a9ccd96993a1875c8ccec54a071ed0b50781ae43292f2c49b8317569f",
+  "syntheticModelCalls": 4,
+  "modelCostUSD": 0.0005652,
+  "budgetUSD": 1,
+  "pendingReservationsUSD": 0,
+  "syntheticExtractionVerified": true,
+  "undispatchedOverviewAutomaticallyRecovered": true,
+  "patientDataUsed": false,
+  "deviceInstalled": true,
+  "temporaryKeyTTLReportedDays": 7,
+  "deviceLaunchConfirmed": true,
+  "installedDeviceModel": "iPhone 16 Pro Max",
+  "deviceUIVerified": false,
+  "conditionFix": {
+    "deploymentID": "dpl_GnnD4iKbXaWyHWx7pYfA8qLbTBVK",
+    "backendSourceDigest": "710f37d752257bb9b8a42828dd7f2aacac70a865697f9bd65bb09245935de98a",
+    "nativeTests": {
+      "executed": 512,
+      "skipped": 4,
+      "failures": 0
+    },
+    "backendTests": {
+      "executed": 225,
+      "passed": 218,
+      "skipped": 7,
+      "failures": 0
+    },
+    "privateReplay": {
+      "records": 11,
+      "facts": 92,
+      "restoredConcernGroups": 9,
+      "areas": 4
+    },
+    "deviceInstalled": true,
+    "launchConfirmed": true,
+    "deviceUIVerified": false,
+    "patientInferencePerformed": false
+  },
+  "tirednessDisplayFix": {
+    "focusedTestsPassed": 15,
+    "visibleGroups": 8,
+    "retainedFacts": 92,
+    "backendChanged": false,
+    "deviceInstalled": true,
+    "launchConfirmed": true,
+    "deviceUIVerified": false
+  }
+}

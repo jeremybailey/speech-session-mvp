@@ -1,6 +1,11 @@
 import Foundation
 
 struct SessionsEnvelope: Codable, Equatable {
+    var medicationProducts: [MedicationProduct] = []
+    var assertionReconciliations: [AssertionReconciliation] = []
+    var recordOverview: RecordUpdateReceipt? = nil
+    var recordUpdate: RecordUpdateReceipt? = nil
+    var completedRecordRevisions: [String:String] = [:]
     var wholeHistorySourceFingerprint: String? = nil
     var wholeHistoryOverview: String? = nil
     var wholeHistoryOverviewSourceFingerprint: String? = nil
@@ -18,7 +23,7 @@ struct SessionsEnvelope: Codable, Equatable {
     static let currentVersion = 4
 
     enum CodingKeys: String, CodingKey {
-        case wholeHistoryOverviewSourceFingerprint, wholeHistorySourceFingerprint, wholeHistoryOverview, version, sessions, folders, topics, careTeam, preferences, profile, verifiedPairDecisions, carePlanCards
+        case medicationProducts, assertionReconciliations, recordOverview, recordUpdate, completedRecordRevisions, wholeHistoryOverviewSourceFingerprint, wholeHistorySourceFingerprint, wholeHistoryOverview, version, sessions, folders, topics, careTeam, preferences, profile, verifiedPairDecisions, carePlanCards
     }
 
     init(version: Int = Self.currentVersion, sessions: [Session], folders: [SessionFolder] = []) {
@@ -29,6 +34,11 @@ struct SessionsEnvelope: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        medicationProducts = try c.decodeIfPresent([MedicationProduct].self,forKey:.medicationProducts) ?? []
+        assertionReconciliations = try c.decodeIfPresent([AssertionReconciliation].self,forKey:.assertionReconciliations) ?? []
+        recordOverview = try c.decodeIfPresent(RecordUpdateReceipt.self,forKey:.recordOverview)
+        recordUpdate = try c.decodeIfPresent(RecordUpdateReceipt.self, forKey:.recordUpdate)
+        completedRecordRevisions = try c.decodeIfPresent([String:String].self,forKey:.completedRecordRevisions) ?? [:]
         wholeHistorySourceFingerprint = try c.decodeIfPresent(String.self, forKey: .wholeHistorySourceFingerprint)
         wholeHistoryOverview = try c.decodeIfPresent(String.self, forKey: .wholeHistoryOverview)
         wholeHistoryOverviewSourceFingerprint = try c.decodeIfPresent(String.self, forKey: .wholeHistoryOverviewSourceFingerprint)

@@ -60,10 +60,55 @@ export function strictCareTemplate(base:any){
 
 /** Keep category semantics explicit alongside the strict field shape. */
 export function categoryCareTemplate(base:any){
- const template=strictCareTemplate(base);template.version='category-semantics-v8';
+ const template=strictCareTemplate(base);template.version='category-contract-v9';
  const rules=base.appCategoryPolicy;
  for(const v of template.schema.$defs.fact.anyOf){const k=v.properties.k.enum[0];v.description=rules[k];v.properties.k.description=rules[k];}
  template.instructions+='\nCATEGORY COMPLETENESS v8: Classify the meaning of each assertion BEFORE filling its category-specific fields. Never choose a category because its object is shorter or easier to populate. Category definitions below are mandatory, not background data: '+JSON.stringify(rules)+
  '\nBefore returning, audit EVERY original passage for diagnostic-test results (normal and abnormal), vaccine events, and explicit life context. Keep reported test values/results in testsAndLabs, not findings; reserve findings for diagnoses, clinical impressions and examination findings. Vaccine administration/history/dispensing events belong in vaccinations with their actual status, not findings or a generic medication inventory. Explicit sleep/substance/work/environment/social context belongs in biopsychosocialContext, even when it appears next to a symptom; split distinct symptom and context assertions into grounded rows instead of burying all context in the symptom. Care advice about changing a habit remains carePlan; a documented existing habit is context. No obligation to populate a category absent from the source, no invented facts, and no duplicate assertion merely to fill categories. Preserve all material details and uncertainty. This audit happens inside this same response; do not add output sections or calls.';
+ return template;
+}
+
+/** Shared category-scoped fact definitions avoid duplicating the union for every record.
+ * Context references remain restricted to the same original by both runtime validators. */
+export const balancedCategoryVersion='category-balanced-v14';
+export function balancedCategoryTemplate(base:any){
+ const template=categoryCareTemplate(base);template.version=balancedCategoryVersion;
+ for(const fact of template.schema.$defs.fact.anyOf){
+  const keys=artifactFields[fact.properties.k.enum[0]];
+  fact.properties.f=keys?{type:'array',maxItems:12,items:{type:'object',additionalProperties:false,required:['key','value'],properties:{key:{type:'string',enum:keys},value:{type:'string',minLength:1,maxLength:360}}}}:{type:'null'};
+  fact.properties.v.items.pattern='^[^\\r\\n]*$';
+  if(fact.properties.v.items.minLength)fact.properties.v.items.minLength=0;
+  const candidates=fact.properties.p.anyOf??[fact.properties.p];
+  for(const plan of candidates.filter((p:any)=>p.type==='object'))for(const key of ['a','t','q']){
+   plan.properties[key].pattern='^[^\\r\\n]*$';if(plan.properties[key].minLength)plan.properties[key].minLength=0;
+  }
+ }
+ template.instructions=template.instructions.replace(/CATEGORY FIELD OBJECTS v7:[^\n]*/, 'CATEGORY FIELDS v14: f is a sparse array of objects {key,value}. Every key must be allowed for k by the schema. Copy each nonempty value literally from the cited source. Omit absent values; use [] for an ordinary fact with no separate fields. Scalar field keys may appear only once. Context may contain distinct literal source fragments; never combine or discard their qualifiers. f is null for medications/carePlan/followUp. This replaces all earlier f pair-array and object encodings. All categories use the same list shape; never move a fact to otherNotes to fit fields.');
+ template.instructions+='\nCATEGORY DECISION v12: Select k by clinical meaning, not the author, source format or available field values. A reported symptom remains symptoms; a measured test result remains testsAndLabs even when narrated rather than tabulated. Unverified, historical or incomplete information must not default to otherNotes. Choose otherNotes only for information outside every defined category. Each k selects its allowed field codes; omit unknown values from the sparse f list. Preserve negation, uncertainty and attribution. All c references must still belong to the same enclosing original record; audit this before returning. VACCINE / ALLERGY DISTINCTION: A vaccine name, prescription, dispensing or administration alone is not an allergy. Use vaccinations for that event. Use allergies only for an explicit allergy, intolerance, adverse reaction or negative allergy history. Do not infer hypersensitivity from an injection or medicine being listed. No extra pass or new facts.';
+ return template;
+}
+
+/** New client capability only; older clients retain the v14 wire contract. */
+export const uniformCategoryVersion='category-uniform-fields-scoped-v19';
+export function uniformCategoryTemplate(base:any){
+ const template=categoryCareTemplate(base);template.version=uniformCategoryVersion;
+ template.schema.properties.concerns.minItems=0;
+ template.instructions+='\nNO INVENTED CONCERN: If the originals establish facts or life context but no health concern, return concerns=[] and use g=[] on those facts. Do not invent a condition to populate navigation.';
+ for(const fact of template.schema.$defs.fact.anyOf){
+  const keys=artifactFields[fact.properties.k.enum[0]];
+  if(keys){
+   const padding=Array.from({length:7-keys.length},(_,i)=>'_pad'+(i+1));
+   fact.properties.f={type:'object',additionalProperties:false,required:[...keys,...padding],properties:{...Object.fromEntries(keys.map(key=>[key,{type:['string','null'],minLength:1,maxLength:360}])),...Object.fromEntries(padding.map(key=>[key,{type:'null'}]))}};
+  } else fact.properties.f={type:'null'};
+  fact.properties.v.items.pattern='^[^\\r\\n]*$';
+  if(fact.properties.v.items.minLength)fact.properties.v.items.minLength=0;
+  const candidates=fact.properties.p.anyOf??[fact.properties.p];
+  for(const plan of candidates.filter((p:any)=>p.type==='object'))for(const key of ['a','t','q']){
+   plan.properties[key].pattern='^[^\\r\\n]*$';if(plan.properties[key].minLength)plan.properties[key].minLength=0;
+  }
+ }
+ template.instructions=template.instructions.replace(/CATEGORY FIELD OBJECTS v7:[^\n]*/, 'CATEGORY FIELDS v18: f is the category-specific object required by the schema. Fields named _padN are fixed null placeholders, never patient information; keep them null. Every ordinary category has the same seven-field width so field count is not a reason to change category. Each meaningful field has one value: a literal source span or null when not separately stated. f is null for medications/carePlan/followUp. Never repeat an object key or put multiple measurements in one result. Split independent measurements or assertions into separate facts. For noncontiguous context, retain the complete meaning in v[0] and cite additional same-record passages in c; do not duplicate context fields or fabricate a joined quotation. Null fields are expected and valid: do not choose otherNotes because another category has more fields. This replaces every earlier f encoding instruction. Field shape never determines category; the assertion’s actual meaning does.');
+ template.instructions+='\nCATEGORY DECISION v12: Select k by clinical meaning, not the author, source format or available field values. A reported symptom remains symptoms; a measured test result remains testsAndLabs even when narrated rather than tabulated. Unverified, historical or incomplete information must not default to otherNotes. Choose otherNotes only for information outside every defined category. Choose k first; fill every required field with a literal source span or null. Do not omit keys. Preserve negation, uncertainty and attribution. All c references must still belong to the same enclosing original record; audit this before returning. VACCINE / ALLERGY DISTINCTION: A vaccine name, prescription, dispensing or administration alone is not an allergy. Use vaccinations for that event. Use allergies only for an explicit allergy, intolerance, adverse reaction or negative allergy history. Do not infer hypersensitivity from an injection or medicine being listed. No extra pass or new facts.';
+ template.instructions+='\nTEMPORAL CONTEXT COMPLETENESS v15: For each passage, preserve both sides of explicitly stated changes, including work, time availability, finances, housing, caregiving, support and access to care. Mixed treatment discussions can also contain independent life-context facts. Do not reduce a before/now contrast to its historical half, or bury the current context in otherNotes or a treatment row. Record the actual change under biopsychosocialContext with its stated attribution and uncertainty; do not infer causation, a diagnosis or a new concern from context alone. Separate actual test measurements from future test plans and general screening counselling. Reconcile every material assertion against the source before returning, within this same response.';
  return template;
 }

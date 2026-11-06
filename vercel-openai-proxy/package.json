@@ -5,7 +5,9 @@
     "vercel-build": "npm run typecheck && node --import tsx scripts/apply-pilot-agreement.ts && node --import tsx scripts/preview-check.ts && node --import tsx scripts/apply-result-receipts.ts && node --import tsx scripts/production-check.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
-    "test:condition-recovery": "node scripts/test-condition-recovery.mjs"
+    "test:condition-recovery": "node scripts/test-condition-recovery.mjs",
+    "check:contracts": "node --import tsx scripts/generate-incremental-types.ts --check",
+    "migrate:incremental": "node --import tsx scripts/apply-incremental.ts"
   },
   "engines": {
     "node": "24.x"

@@ -1,5 +1,13 @@
 # CollectiveCare TestFlight Notes
 
+## Version 1.0993 (59) — Incremental updates and recovery
+
+Release candidate prepared November 6, 2026, following successful device testing of builds 57 and 58. Upload and tester availability are pending verification.
+
+Updates process changed records, preserve existing useful details, and recover interrupted work automatically. Medication cards require supported identities. Saved condition organization survives imports; isolated mild tiredness remains in All. SQLite migration remains disabled.
+
+What to test: open an existing story; add a small record; lock and return during processing; verify saved details and original records remain accessible. Check condition organization, medication names, large text, and source history. This is a pilot beta, not a claim that the full clinical accuracy and performance targets have been achieved.
+
 ## Version 1.0993 (18) — Welcome presentation and expired-result recovery
 
 Signed archive, upload, Apple processing and export compliance completed October 23, 2026. Available to all five internal CollectiveCare Founders testers. Testing notes saved. App commit `2f7131a6`; App Store Connect build ID `47a8c318-da44-4ba3-bcea-966199175de3`.

@@ -74,6 +74,11 @@ public struct HealthArea: Identifiable, Sendable {
 }
 
 public enum HealthAreaProjection {
+    /// Unknown anatomy must not conceal distinct, already supported concern names.
+    public static func standaloneConcerns(_ conditions: [ConditionSummary]) -> [ConditionSummary] {
+        conditions.filter {!$0.isUncategorized && !$0.facts.isEmpty && HealthAreaKind.classify($0) == .other}
+    }
+
     /// Retain the input's priority order, identities and facts; never sort by volume or merge concerns.
     public static func groups(_ conditions: [ConditionSummary]) -> [HealthArea] {
         var areas: [HealthArea] = []

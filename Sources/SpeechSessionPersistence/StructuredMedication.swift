@@ -5,6 +5,8 @@ import Foundation
 public struct StructuredMedication: Codable, Hashable, Sendable {
     public static let keys = ["name", "strength", "form", "dose", "frequency", "route", "duration", "instructions", "clinician", "recordDate", "recordStatus", "uncertainty"]
     public var values: [String: String]
+    /// Audit only: never render rejected values as clinical fields.
+    public var rejectedValues: [String: String]? = nil
     public init(values: [String: String]) { self.values = values }
     public subscript(_ field: String) -> String? { values[field].flatMap { $0.isEmpty ? nil : $0 } }
     public static func grounded(_ values: [String: String], in sources: [String]) -> Self {
@@ -13,7 +15,9 @@ public struct StructuredMedication: Codable, Hashable, Sendable {
         }
         let quotes = sources.map(normalized)
         let supported = values.filter { field in keys.contains(field.key) && !field.value.isEmpty && quotes.contains(where: { quote in quote.contains(normalized(field.value)) }) }
-        return Self(values: supported)
+        var result = Self(values: supported)
+        result.rejectedValues = values.filter { supported[$0.key] == nil }
+        return result
     }
 }
 
@@ -142,5 +146,27 @@ public enum BClinicalPresentation {
             values["uncertainty"] = "Source wording needs review"
         }
         return StructuredMedication(values: values)
+    }
+}
+
+/// Shared publication projection. Withholding never deletes a source or patient edit.
+public enum HealthStoryEligibility {
+    public static func includes(_ entry: SummaryEntry) -> Bool {
+        guard !entry.isDeleted else { return false }
+        guard BClinicalPresentation.applies(entry) else { return true }
+        guard !entry.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        guard entry.category == .medications else { return true }
+        return usableMedicationName(BClinicalPresentation.medication(entry)["name"])
+    }
+
+    public static func usableMedicationName(_ value: String?) -> Bool {
+        guard let value else { return false }
+        let name = value.precomposedStringWithCompatibilityMapping.lowercased()
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !name.isEmpty, name.contains(where: \.isLetter) else { return false }
+        let generic: Set<String> = ["medication", "medications", "medicine", "drug", "unknown", "unspecified",
+            "eye drops", "steroid eye drops", "tablet", "tablets", "capsule", "capsules", "check original",
+            "medication — check original"]
+        return !generic.contains(name) && !["unknown", "unspecified", "unclear", "unidentified"].contains(where: name.contains)
     }
 }

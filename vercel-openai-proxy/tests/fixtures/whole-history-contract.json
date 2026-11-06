@@ -1,0 +1,3008 @@
+{
+  "records": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "text": "Synthetic eye discomfort reported. Review at Example Clinic is recommended.",
+      "sourceReference": "synthetic:one"
+    },
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "text": "Administrative cover page.",
+      "sourceReference": "synthetic:two"
+    }
+  ],
+  "locators": {
+    "r1.p1": {
+      "recordID": "11111111-1111-4111-8111-111111111111",
+      "quote": "Synthetic eye discomfort reported. Review at Example Clinic is recommended.",
+      "start": 0,
+      "end": 75,
+      "sourceSHA256": "7631618f0b5b069980166204d8f63cab602ee8c63722bb764b79e98e5fafb7e6"
+    },
+    "r2.p1": {
+      "recordID": "22222222-2222-4222-8222-222222222222",
+      "quote": "Administrative cover page.",
+      "start": 0,
+      "end": 26,
+      "sourceSHA256": "ce6507f970e2ba027b2ab379fcc770bfeaa716cf0065ccf0a09a163522a5ef26"
+    }
+  },
+  "cases": [
+    {
+      "name": "valid legacy fact",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "valid category chiefComplaint",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "chiefComplaint",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "valid category symptoms",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "valid category findings",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "findings",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "valid category vaccinations",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "vaccinations",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "valid category allergies",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "allergies",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "valid category testsAndLabs",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "testsAndLabs",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "valid category practitionerContact",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "practitionerContact",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "valid category biopsychosocialContext",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "biopsychosocialContext",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "valid category otherNotes",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "otherNotes",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "valid instruction carePlan",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "carePlan",
+              "s": "historical",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": {
+                "a": "",
+                "t": "",
+                "q": ""
+              },
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "valid instruction followUp",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "followUp",
+              "s": "historical",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": {
+                "a": "",
+                "t": "",
+                "q": ""
+              },
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "valid instruction medications",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "medications",
+              "s": "historical",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": {
+                "a": "",
+                "t": "",
+                "q": ""
+              },
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "historical structured medication instructions",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "medications",
+              "s": "historical",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": {
+                "a": "",
+                "t": "",
+                "q": ""
+              },
+              "g": [
+                "c1"
+              ],
+              "m": {
+                "name": null,
+                "strength": null,
+                "form": null,
+                "dose": null,
+                "frequency": null,
+                "route": null,
+                "duration": null,
+                "instructions": null,
+                "clinician": null,
+                "recordDate": null,
+                "recordStatus": null,
+                "uncertainty": null
+              },
+              "f": null
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "instruction on symptom",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": {
+                "a": "",
+                "t": "",
+                "q": ""
+              },
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "instruction owner is passage ID",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "carePlan",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": {
+                "a": "r1.p1",
+                "t": "",
+                "q": ""
+              },
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "missing care instruction",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "carePlan",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "test plan projects to care",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "testsAndLabs",
+              "s": "planned",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": {
+                "a": "",
+                "t": "",
+                "q": ""
+              },
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "historical test cannot project to care",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "testsAndLabs",
+              "s": "historical",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": {
+                "a": "",
+                "t": "",
+                "q": ""
+              },
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "unknown overview citation",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r9.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "overview cites only excluded passage",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r2.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "empty overview",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "fact length 360",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "fact length 361",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "same record context",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [
+                "r1.p1"
+              ],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "cross record context",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [
+                "r2.p1"
+              ],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "duplicate concern declaration",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          },
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "unused concern declaration",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          },
+          {
+            "id": "c2",
+            "name": "Another concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "duplicate concern assignment",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1",
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "unknown concern assignment",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c2"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "unsupported body system",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "other"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "unknown artifact field",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ],
+              "m": null,
+              "f": [
+                [
+                  "unsupported",
+                  "value"
+                ]
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "missing source passage",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "unexpected concern field",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ],
+            "extra": "unexpected"
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "noncanonical concern ID",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c01",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c01"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "oversized attribution",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "oversized care metadata",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "carePlan",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": {
+                "a": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "t": "",
+                "q": ""
+              },
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "typed sparse field objects",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ],
+              "f": [
+                {
+                  "key": "name",
+                  "value": "Synthetic"
+                }
+              ],
+              "m": null
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "typed sparse wrong category code",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ],
+              "f": [
+                {
+                  "key": "result",
+                  "value": "Synthetic"
+                }
+              ],
+              "m": null
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "typed sparse duplicate code",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ],
+              "f": [
+                {
+                  "key": "name",
+                  "value": "Synthetic"
+                },
+                {
+                  "key": "name",
+                  "value": "Synthetic"
+                }
+              ],
+              "m": null
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "typed sparse extra field",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ],
+              "f": [
+                {
+                  "key": "name",
+                  "value": "Synthetic",
+                  "extra": "unsafe"
+                }
+              ],
+              "m": null
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "typed sparse missing value",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ],
+              "f": [
+                {
+                  "key": "name"
+                }
+              ],
+              "m": null
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "typed sparse empty value",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ],
+              "f": [
+                {
+                  "key": "name",
+                  "value": ""
+                }
+              ],
+              "m": null
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "aggregate finding names",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "findings",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ],
+              "f": [
+                {
+                  "key": "name",
+                  "value": "Tenderness"
+                },
+                {
+                  "key": "name",
+                  "value": "Swelling"
+                }
+              ],
+              "m": null
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "conflicting finding results",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "findings",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ],
+              "f": [
+                {
+                  "key": "result",
+                  "value": "Positive"
+                },
+                {
+                  "key": "result",
+                  "value": "Negative"
+                }
+              ],
+              "m": null
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "source facts without an invented concern",
+      "valid": true,
+      "proposal": {
+        "concerns": [],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": []
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "empty concern set cannot hide dangling associations",
+      "valid": false,
+      "proposal": {
+        "concerns": [],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "uniform field width strips only exact null padding",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "biopsychosocialContext",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ],
+              "f": {
+                "name": null,
+                "context": null,
+                "_pad1": null,
+                "_pad2": null,
+                "_pad3": null,
+                "_pad4": null,
+                "_pad5": null
+              },
+              "m": null
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "uniform field width rejects non-null padding",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "biopsychosocialContext",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ],
+              "f": {
+                "name": null,
+                "context": null,
+                "_pad1": "unsupported",
+                "_pad2": null,
+                "_pad3": null,
+                "_pad4": null,
+                "_pad5": null
+              },
+              "m": null
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "distinct source context annotations are preserved",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ],
+              "f": [
+                {
+                  "key": "context",
+                  "value": "Synthetic"
+                },
+                {
+                  "key": "context",
+                  "value": "eye discomfort reported. Review at Example Clinic is recommended."
+                }
+              ],
+              "m": null
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "conflicting scalar result stays invalid",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "testsAndLabs",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ],
+              "f": [
+                {
+                  "key": "result",
+                  "value": "Synthetic"
+                },
+                {
+                  "key": "result",
+                  "value": "eye discomfort reported. Review at Example Clinic is recommended."
+                }
+              ],
+              "m": null
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "conflicting scalar name stays invalid",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "testsAndLabs",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ],
+              "f": [
+                {
+                  "key": "name",
+                  "value": "Synthetic"
+                },
+                {
+                  "key": "name",
+                  "value": "eye discomfort reported. Review at Example Clinic is recommended."
+                }
+              ],
+              "m": null
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "conflicting scalar units stays invalid",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "testsAndLabs",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ],
+              "f": [
+                {
+                  "key": "units",
+                  "value": "Synthetic"
+                },
+                {
+                  "key": "units",
+                  "value": "eye discomfort reported. Review at Example Clinic is recommended."
+                }
+              ],
+              "m": null
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "conflicting scalar referenceRange stays invalid",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "testsAndLabs",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ],
+              "f": [
+                {
+                  "key": "referenceRange",
+                  "value": "Synthetic"
+                },
+                {
+                  "key": "referenceRange",
+                  "value": "eye discomfort reported. Review at Example Clinic is recommended."
+                }
+              ],
+              "m": null
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "identical context duplicate stays invalid",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "symptoms",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ],
+              "f": [
+                {
+                  "key": "context",
+                  "value": "Synthetic"
+                },
+                {
+                  "key": "context",
+                  "value": "Synthetic"
+                }
+              ],
+              "m": null
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "sole explicit evidence restores empty reciprocal allergy link",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "allergies",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": []
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "orphan with multiple candidate facts stays invalid",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "allergies",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": []
+            },
+            {
+              "k": "allergies",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": []
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "orphan with multiple evidence passages stays invalid",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1",
+              "r2.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "allergies",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": []
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "orphan contact does not become a condition fact",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "practitionerContact",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": []
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "compound allergy keeps existing link and completes sole explicit reciprocal evidence",
+      "valid": true,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          },
+          {
+            "id": "c2",
+            "name": "Second source-declared intolerance",
+            "systems": [
+              "digestive"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "allergies",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    },
+    {
+      "name": "compound allergy does not repair inconsistent existing evidence",
+      "valid": false,
+      "proposal": {
+        "concerns": [
+          {
+            "id": "c1",
+            "name": "Synthetic concern",
+            "systems": [
+              "eye"
+            ],
+            "evidence": [
+              "r2.p1"
+            ]
+          },
+          {
+            "id": "c2",
+            "name": "Second source-declared intolerance",
+            "systems": [
+              "digestive"
+            ],
+            "evidence": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "overview": [
+          {
+            "text": "Synthetic eye discomfort reported.",
+            "cite": [
+              "r1.p1"
+            ]
+          }
+        ],
+        "passages": {
+          "r1.p1": [
+            {
+              "k": "allergies",
+              "s": "reported",
+              "v": [
+                "Synthetic eye discomfort reported.",
+                "",
+                ""
+              ],
+              "c": [],
+              "p": null,
+              "g": [
+                "c1"
+              ]
+            }
+          ],
+          "r2.p1": "nonclinical"
+        }
+      }
+    }
+  ]
+}

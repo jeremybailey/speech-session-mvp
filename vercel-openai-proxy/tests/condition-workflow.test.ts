@@ -195,7 +195,7 @@ test('PostgreSQL workflow continuation, interruption, concurrency, cancellation 
     assert.equal((await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public'")).rows.length,0,'Use a dedicated empty test database');
     for(const file of ['001_ai_ledger.sql','002_condition_workflows.sql','003_workflow_cost_attribution.sql','004_workload_types.sql','005_workflow_model.sql','006_workflow_reasoning.sql','007_condition_uploads.sql']) await db.query(await readFile(`migrations/${file}`,'utf8'));
     const largeUploadPlan=plan('Upload-only synthetic care');
-    largeUploadPlan.batches=Array.from({length:430},(_,i)=>[{id:uuid(5000+i),title:'Synthetic record',excerpt:'source '.repeat(135)}]);
+    largeUploadPlan.batches=Array.from({length:430},(_,i)=>[{id:uuid(5000+i),title:'Synthetic record',excerpt:'source '.repeat(135)+'\u0000\uD800🧪'}]);
     const uploadData=Buffer.from(JSON.stringify(largeUploadPlan));
     assert.ok(uploadData.length>400000 && uploadData.length<480000);
     const digest=createHash('sha256').update(uploadData).digest('hex');
@@ -207,6 +207,8 @@ test('PostgreSQL workflow continuation, interruption, concurrency, cancellation 
     await conditionUpload('upload-owner',{...upload,operation:'part',index:1,content:uploadData.subarray(middle).toString('base64')});
     const finalized=await Promise.all([conditionUpload('upload-owner',{...upload,operation:'finish'}),conditionUpload('upload-owner',{...upload,operation:'finish'})]);
     assert.equal(finalized[0].id,finalized[1].id);
+    const saved = (await db.query('SELECT plan FROM ai_condition_workflow_payloads WHERE workflow_id=$1',[finalized[0].id])).rows[0].plan;
+    assert.ok(saved.batches[0][0].excerpt.endsWith('  🧪'));
     assert.equal((await db.query('SELECT count(*) FROM ai_jobs')).rows[0].count,'0','Upload and finalization never dispatch inference');
     const bigResult={groups:[],unassigned:Array.from({length:15000},(_,i)=>uuid(20000+i))};
     await db.query("UPDATE ai_condition_workflows SET state='completed' WHERE id=$1",[finalized[0].id]);

@@ -3,9 +3,14 @@ import { cleanup, database } from "../../_lib/ledger";
 import { cleanupConditionWorkflows } from "../../_lib/condition-workflow-store";
 import {cleanupConditionUploads} from '../../_lib/condition-upload';
 
+import providerWebhook from "../../_lib/provider-webhook";
+
+export const config = { api: { bodyParser: false } };
+
 /** Retention maintenance must keep running even when paid processing is disabled. */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Cache-Control", "no-store");
+  if (req.method === "POST" && req.headers["webhook-signature"] !== undefined) return providerWebhook(req, res);
   if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).end();
   if (req.method !== "GET" && req.method !== "POST") return res.status(405).end();
   try {
@@ -13,6 +18,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // deployments where the additive workflow migration has not run yet.
     if((await database().query("SELECT to_regclass('public.ai_condition_workflows') AS name")).rows[0].name) await cleanupConditionWorkflows();
     if((await database().query("SELECT to_regclass('public.ai_condition_uploads') AS name")).rows[0].name) await cleanupConditionUploads();
+    if((await database().query("SELECT to_regclass('public.ai_record_updates') AS name")).rows[0].name)
+      await database().query("DELETE FROM ai_record_updates WHERE expires_at<=now()");
     await cleanup(); return res.status(200).json({ cleaned: true });
   }
   catch { return res.status(503).json({ error: { code: "cleanup_unavailable" } }); }

@@ -28,9 +28,21 @@ public struct WholeHistoryPublication: Sendable {
         let new=Set(generated.filter{!$0.isDeleted && $0.evidence?.assessment?.admission != .superseded}.map(\.category))
         return old.subtracting(new)
     }
+    /// Review tokens bind a decision to this source and both exact projections.
+    public static func categoryReview(previous:[SummaryEntry],generated:[SummaryEntry],session:Session) -> WholeHistoryCategoryReview? {
+        let missing=missingCategories(previous:previous,generated:generated,session:session)
+        guard !missing.isEmpty else {return nil}
+        func signature(_ entries:[SummaryEntry])->String {
+            entries.map{$0.id.uuidString+":"+SummaryVerification.contentHash($0)+":"+$0.origin.rawValue+":"+String($0.isDeleted)}.sorted().joined(separator:"|")
+        }
+        let token=SummaryVerification.hash(session.id.uuidString+SummaryVerification.hash(session.transcript)+signature(previous)+signature(generated))
+        return WholeHistoryCategoryReview(session:session,previous:sourceLinkedEntries(previous,session:session).filter{missing.contains($0.category)},generated:generated,missingCategories:missing,token:token)
+    }
     /// Recover one whole prior source projection, avoiding a mix of duplicate old/new facts.
     public static func categoryRecovery(for session:Session) -> [SummaryEntry]? {
         let current=session.summaryEntries ?? []
+        if let run=session.summaryRun,run.stage == .complete,run.promptVersion==version,
+           run.sourceHash==SummaryVerification.hash(session.transcript),run.categoryChangeReviewToken?.isEmpty==false {return nil}
         guard let revision=session.summaryRevisions?.last else {return nil}
         let prior=sourceLinkedEntries(revision.entries,session:session)
         return missingCategories(previous:prior,generated:current,session:session).isEmpty ? nil:prior
@@ -49,4 +61,14 @@ public struct WholeHistoryPublication: Sendable {
                     owner: entry.evidence?.careInstruction?.owner, quotation: entry.supportingExcerpt ?? "")
             })
     }
+}
+
+/// Accepting organization changes never changes the source-linked trust level.
+public struct WholeHistoryCategoryReview: Identifiable {
+    public var id:UUID {session.id}
+    public let session:Session
+    public let previous:[SummaryEntry]
+    public let generated:[SummaryEntry]
+    public let missingCategories:Set<SummaryEntryCategory>
+    public let token:String
 }

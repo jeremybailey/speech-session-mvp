@@ -10,7 +10,32 @@ public enum BArtifactPresentation {
             Range($0.range(at: $0.numberOfRanges > 1 ? 1 : 0), in: text).map { trim(String(text[$0])) }
         }
     }
+    public static func isLabReportMetadata(_ entry: SummaryEntry) -> Bool {
+        guard BClinicalPresentation.applies(entry), entry.category == .testsAndLabs else { return false }
+        let title = trim(entry.title)
+        if title.range(of: #"(?i)^(?:hours fasting|fasting hours|fasting duration)(?:\s*:|$)"#, options: .regularExpression) != nil {
+            return true
+        }
+        guard !entry.fields.contains(where: { $0.label.caseInsensitiveCompare("Result") == .orderedSame && !trim($0.value).isEmpty }) else { return false }
+        return title.range(of: #"(?i)^lab report (?:notes?|cautions?|advises?|states?|says|comment(?:s)?)[^\n]*(?:different instruments|different assays|instrument differences)"#, options: .regularExpression) != nil
+    }
+
     public static func display(_ entry: SummaryEntry) -> SummaryEntry {
+        var rendered = render(entry)
+        guard BClinicalPresentation.applies(entry), entry.category == .testsAndLabs,
+              rendered.title.caseInsensitiveCompare(entry.category.displayTitle) == .orderedSame else { return rendered }
+
+        let sourceText = [entry.title, entry.details].map(trim).first {
+            !$0.isEmpty && $0.caseInsensitiveCompare(entry.category.displayTitle) != .orderedSame
+        } ?? ""
+        let orderName = matches(#"(?i)^([\p{L}][\p{L}\d /&()–-]{1,69}?)\s+(?:test\s+)?ordered\b"#, sourceText).first
+        var candidate = rendered
+        candidate.title = sourceText
+        rendered.title = lab(candidate)?.title ?? orderName.map { $0 + " (ordered)" } ?? "Lab entry · check source"
+        return rendered
+    }
+
+    private static func render(_ entry: SummaryEntry) -> SummaryEntry {
         guard BClinicalPresentation.applies(entry), entry.category != .medications else { return entry }
         var result = entry
         result.evidence?.practitioner = BClinicalPresentation.namedPractitioner(entry.evidence?.practitioner)
@@ -20,6 +45,12 @@ public enum BArtifactPresentation {
         }.joined(separator: "\n")
         // Absent values must not produce empty Date/Practitioner rows.
         result.fields = entry.fields.filter { !trim($0.value).isEmpty && !HealthStoryText.isInternalField($0.label) }
+        if entry.category == .testsAndLabs {
+            let placeholder = #"(?i)[;,]\s*(?:each has )?abnormality\s*[:=]?\s*["“']?[-–—]["”']?(?=\s*[.;,]|\s*$)"#
+            result.title = result.title.replacingOccurrences(of: placeholder, with: "", options: .regularExpression)
+            result.details = result.details.replacingOccurrences(of: placeholder, with: "", options: .regularExpression)
+        }
+        if entry.category == .testsAndLabs, let panel = labPanel(result) { return panel }
         if entry.evidence?.artifactSchema == StructuredArtifact.version {
             let typed=StructuredArtifact.display(result)
             return entry.category == .practitionerContact ? structuredContact(typed) : typed
@@ -47,7 +78,7 @@ public enum BArtifactPresentation {
             // Preserve every clinical qualifier, including those not recognized as fields.
             result.details = [entry.title, result.details].filter { !trim($0).isEmpty }.joined(separator: "\n")
         } else {
-            let title = trim(entry.title)
+            let title = trim(result.title)
             let cleaned = title.replacingOccurrences(of: #"(?i)^(?:(?:the patient|patient)\s+(?:reports|reported|states|describes|says)|reports(?: that)?)\s+"#, with: "", options: .regularExpression)
             if cleaned.count > 100 || cleaned.contains("\n") {
                 result.title = entry.category.displayTitle
@@ -57,10 +88,51 @@ public enum BArtifactPresentation {
         return result
     }
 
+    private static func labPanel(_ entry: SummaryEntry) -> SummaryEntry? {
+        guard entry.fields.isEmpty, labelled(entry.title).isEmpty else { return nil }
+        let heading = matches(#"^([\p{L}][\p{L} /&()–-]{1,59}):"#, entry.title).first
+        let body = heading.flatMap { _ in entry.title.firstIndex(of: ":") }
+            .map { String(entry.title[entry.title.index(after: $0)...]) } ?? entry.title
+        let parts = body.components(separatedBy: .newlines).joined(separator: " ")
+            .replacingOccurrences(of: #";(?![^()]*\))"#, with: "\n", options: .regularExpression)
+            .split(separator: "\n").map { trim(String($0)) }
+        var measurements = parts.filter { !$0.isEmpty }
+        var reportNote: String?
+        if let last = measurements.last, last.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")) == "no abnormality indicated" {
+            reportNote = measurements.removeLast()
+        }
+        guard measurements.count > 1 || (heading != nil && !measurements.isEmpty) else { return nil }
+        let pattern = #"^(.+?)\s+([<>≤≥]?\s*\d+(?:[.,]\d+)?\s*[^()]*)\s*\(([^()]+)\)\.?$"#
+        let fields = measurements.compactMap { measurement -> SummaryEntryField? in
+            let text = trim(String(measurement))
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                  let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+                  let name = Range(match.range(at: 1), in: text),
+                  let value = Range(match.range(at: 2), in: text),
+                  let reference = Range(match.range(at: 3), in: text) else { return nil }
+            let result = trim(String(text[value]))
+                .replacingOccurrences(of: #"(?i)[x×]10\*\*(\d+)"#, with: "×10^$1", options: .regularExpression)
+            let range = trim(String(text[reference])).replacingOccurrences(of: #"(?i)^reference\s+"#, with: "", options: .regularExpression)
+            return SummaryEntryField(label: trim(String(text[name])), value: result + " (ref. " + range + ")")
+        }
+        var panel = entry
+        guard fields.count == measurements.count else {
+            guard let heading else { return nil }
+            panel.title = heading
+            panel.details = [trim(body), entry.details].filter { !$0.isEmpty }.joined(separator: "\n")
+            return panel
+        }
+        panel.title = heading?.caseInsensitiveCompare("CBC") == .orderedSame
+            ? "Complete blood count (CBC)" : heading ?? "Lab measurements"
+        panel.fields = fields
+        panel.details = [reportNote ?? "", entry.details].filter { !$0.isEmpty }.joined(separator: "\n")
+        return panel
+    }
+
     /// The existing lab report syntax has an explicit value/reference boundary.
     /// Do not interpret abnormality, convert units or select a newer result.
     private static func lab(_ entry: SummaryEntry) -> SummaryEntry? {
-        let pattern = #"^(.{2,70}?)\s+([<>≤≥]?\s*\d+(?:[.,]\d+)?)(?:\s*([^\n;(]+?))?\s*(?:\((?i:reference)\s+([^)]*)\))?(?=;|$)"#
+        let pattern = #"^(.{2,70}?)\s+([<>≤≥]?\s*\d+(?:[.,]\d+)?)(?:\s*([^\n;(]+?))?\s*(?:\((?i:reference)\s+([^)]*)\))?(?=;|\.(?:\s|$)|$)"#
         guard let regex = try? NSRegularExpression(pattern:pattern),
               let match = regex.firstMatch(in:entry.title,range:NSRange(entry.title.startIndex...,in:entry.title)),
               let full = Range(match.range,in:entry.title) else { return nil }
@@ -78,7 +150,7 @@ public enum BArtifactPresentation {
         output.fields += [("Result",result),("Units",value(3)),("Reference range",value(4))].compactMap { label,value in
             value.map { SummaryEntryField(label:label,value:$0) }
         }
-        let tail=String(entry.title[full.upperBound...]).trimmingCharacters(in:CharacterSet(charactersIn:"; \n"))
+        let tail=String(entry.title[full.upperBound...]).trimmingCharacters(in:CharacterSet(charactersIn:";. \n"))
         output.details=[tail,entry.details].filter { !trim($0).isEmpty }.joined(separator:"\n")
         return output
     }

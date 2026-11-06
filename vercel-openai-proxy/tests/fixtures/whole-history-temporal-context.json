@@ -1,0 +1,63 @@
+{
+  "purpose": "Frozen synthetic temporal-context expectations; expectations are never included in inference input.",
+  "records": [
+    {
+      "id": "11111111-2222-4333-8444-555555555551",
+      "text": "I previously used massage and physiotherapy but had no time to continue. I have now stopped working and have more time for appointments.",
+      "sourceSHA256": "a9abd4a77dc957a1e89bd2b0e2b0c59424a3a16d4865cf96ec3a70f431ef77c8"
+    },
+    {
+      "id": "11111111-2222-4333-8444-555555555552",
+      "text": "The clinician discussed gentle exercises if comfortable. The patient says transport was previously unaffordable, but a relative now provides rides, making clinic attendance possible.",
+      "sourceSHA256": "cefa99b219975a522fe413237642bb9bc4bd7459609760c3d24df991a4f1e84b"
+    },
+    {
+      "id": "11111111-2222-4333-8444-555555555553",
+      "text": "The patient is considering a sleep clinic referral. They used to work nights, now work daytime shifts, and still sleep only five hours. The record does not establish a causal diagnosis.",
+      "sourceSHA256": "1374e6c987256ebd327ca8983a134487c4d64bc70e16e77d2fb9f97a53858465"
+    },
+    {
+      "id": "11111111-2222-4333-8444-555555555554",
+      "text": "The clinician explained newborn heel-prick screening. A glucose test is planned at 26 weeks; no glucose result is recorded. The patient now has childcare help, unlike the previous month.",
+      "sourceSHA256": "5a53d329dcb9952d3a319dbf6fbee650fc14d4a4da57992d72b35d1506325723"
+    }
+  ],
+  "expected": [
+    {
+      "id": "T1",
+      "recordID": "11111111-2222-4333-8444-555555555551",
+      "category": "biopsychosocialContext",
+      "meaning": "Previously lacked time; stopped working and now has more time for appointments."
+    },
+    {
+      "id": "T2",
+      "recordID": "11111111-2222-4333-8444-555555555552",
+      "category": "biopsychosocialContext",
+      "meaning": "Transport previously unaffordable; relative now provides rides, enabling attendance."
+    },
+    {
+      "id": "T3",
+      "recordID": "11111111-2222-4333-8444-555555555553",
+      "category": "biopsychosocialContext",
+      "meaning": "Night shifts changed to day shifts, but five-hour sleep persists without an inferred causal diagnosis."
+    },
+    {
+      "id": "T4",
+      "recordID": "11111111-2222-4333-8444-555555555554",
+      "category": "biopsychosocialContext",
+      "meaning": "Now has childcare support, unlike previous month."
+    },
+    {
+      "id": "T5",
+      "recordID": "11111111-2222-4333-8444-555555555554",
+      "category": "carePlan",
+      "meaning": "Glucose testing is planned at 26 weeks, without invented test result."
+    },
+    {
+      "id": "T6",
+      "recordID": "11111111-2222-4333-8444-555555555554",
+      "category": "carePlan",
+      "meaning": "Newborn screening is counselling, without inventing a performed test or result."
+    }
+  ]
+}

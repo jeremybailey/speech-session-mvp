@@ -2,6 +2,7 @@
 export type ResponseDiagnostics = {
   providerStatus?: string;
   providerSeconds?: number;
+  providerHTTPStatus?: number;
   incompleteReason?: 'max_output_tokens' | 'content_filter' | 'other';
   outputTokenLimit: number;
   reasoningTokens?: number;

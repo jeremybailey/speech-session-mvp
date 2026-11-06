@@ -96,7 +96,7 @@ enum SummaryPDFDocumentBuilder {
 
     private static func categorySections(from entries: [SummaryEntry]) -> [SummaryPDFCategorySection] {
         SummaryEntryCategory.allCases.compactMap { category in
-            let matches = entries.filter { $0.category == category && !$0.isDeleted }
+            let matches = entries.filter { $0.category == category && HealthStoryEligibility.includes($0) }
             guard !matches.isEmpty else { return nil }
 
             let clusters = SummaryEntryClusterBuilder.clusters(from: matches, category: category)

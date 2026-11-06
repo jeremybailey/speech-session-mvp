@@ -48,7 +48,7 @@ function harness(stopped=false,uncertain=false,failPublishOnce=false){
  const db={async query(sql:string,args:any[]){
   if(sql.startsWith('SELECT j.stage'))return{rows:[{stage:'whole-history-generation',payload:parent.payload}]};
   if(sql.startsWith('SELECT j.owner'))return{rows:[parent]};
-  if(sql.startsWith('UPDATE ai_payloads SET result')){parent.result={...parent.result,...JSON.parse(args[1])};return{rows:[]};}
+  if(sql.startsWith('UPDATE ai_payloads SET result')){if(sql.includes("result-'overview_error'"))delete parent.result.overview_error;parent.result={...parent.result,...JSON.parse(args[1])};return{rows:[]};}
   throw Error('Unexpected synthetic database query');
  }};
  const runtime:any={database:()=>db,transaction:async(fn:any)=>fn(db),runJob:async()=>{
@@ -78,4 +78,17 @@ test('an exhausted overview allowance is terminal and never resubmits on queue r
  h.runtime.submitWithinTransaction=async()=>{attempts++;throw Error('budget_exhausted');};
  await runWholeHistory('parent-id',h.runtime);await runWholeHistory('parent-id',h.runtime);
  assert.equal(attempts,1);assert.equal(h.parent.result.overview_error,'budget_exhausted');assert.deepEqual(h.queued,[]);
+});
+
+test('explicit revalidation reuses settled generation and creates the overview only once',async()=>{
+ const h=harness();h.parent.state='completed';h.parent.result={output:JSON.stringify(proposal),overview_error:'invalid_proposal'};
+ await runWholeHistory('parent-id',h.runtime);assert.deepEqual(h.counts(),{submissions:0,dispatches:0});
+ await runWholeHistory('parent-id',h.runtime,true);await runWholeHistory('parent-id',h.runtime,true);
+ assert.deepEqual(h.counts(),{submissions:1,dispatches:0});assert.equal(h.parent.result.overview_error,undefined);
+ assert.equal(h.parent.result.overview_revalidation,'sole-evidence-link-v2');assert.equal(h.parent.result.overviewJobID,'child-id');
+});
+test('revalidation never retries an invalid result twice or bypasses stop/budget/uncertainty',async()=>{
+ const invalid=harness();invalid.parent.state='completed';invalid.parent.result={output:'{}',overview_error:'invalid_proposal'};
+ await runWholeHistory('parent-id',invalid.runtime,true);await runWholeHistory('parent-id',invalid.runtime,true);assert.equal(invalid.parent.result.overview_revalidation,'sole-evidence-link-v2');assert.deepEqual(invalid.counts(),{submissions:0,dispatches:0});
+ for(const kind of ['stopped','uncertain','budget']){const h=harness();h.parent.state=kind==='uncertain'?'uncertain':'completed';h.parent.payload.whole_history_stop=kind==='stopped';h.parent.result={output:JSON.stringify(proposal),overview_error:kind==='budget'?'budget_exhausted':'invalid_proposal'};await runWholeHistory('parent-id',h.runtime,true);assert.deepEqual(h.counts(),{submissions:0,dispatches:0});}
 });

@@ -12,6 +12,32 @@ public struct ConditionSummary: Identifiable, Sendable {
 public enum ConditionSummaryProjection {
     public enum Status: String, CaseIterable, Sendable { case all, current, notCurrent, unknown }
 
+    /// Navigation eligibility only. A duplicated isolated tiredness report is not a
+    /// condition card. Keep every underlying fact in All and preserve patient choices.
+    /// This does not establish a diagnosis or reclassify stored assertions.
+    public static func isNavigationEligible(_ condition: ConditionSummary) -> Bool {
+        guard !condition.isUncategorized, !condition.facts.isEmpty else { return false }
+        if condition.facts.contains(where: { !($0.preference.topicIDs ?? []).isEmpty }) { return true }
+        // Deliberately scoped to nonspecific tiredness, not all symptom-led concerns.
+        // A broader condition admission policy needs separate clinical evaluation.
+        guard ["tiredness", "fatigue", "feeling tired", "reported fatigue", "reported tiredness"].contains(normalized(condition.name)) else { return true }
+        let entries = condition.facts.flatMap(\.occurrences)
+        guard entries.allSatisfy({ $0.category == .symptoms }) else { return true }
+        let sources = Set(entries.compactMap(\.sourceSessionID))
+        guard sources.count <= 1 else { return true }
+        // Limit this presentation suppression to explicitly mild, isolated reports.
+        // Missing metadata must not hide an established or unqualified concern.
+        let excerpts = entries.map { normalized($0.supportingExcerpt ?? "") }
+        let mild = ["mild", "slight", "slightly", "a little bit", "a little"]
+        let ongoing = ["persistent", "persisting", "chronic", "ongoing", "recurrent", "recurring", "daily", "every day", "weeks", "months", "years", "if", "when", "whenever"]
+        return !excerpts.allSatisfy { excerpt in
+            let padded = " " + excerpt + " "
+            return mild.contains { padded.contains(" " + $0 + " ") }
+                && !ongoing.contains { padded.contains(" " + $0 + " ") }
+        }
+    }
+
+
     /// Narrow normalization: formatting/plurals and explicit aliases, never symptom-to-diagnosis inference.
     public static func normalized(_ name: String) -> String {
         let words = name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))

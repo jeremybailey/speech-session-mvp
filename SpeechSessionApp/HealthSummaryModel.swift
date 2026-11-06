@@ -81,6 +81,8 @@ final class HealthSummaryModel: ObservableObject {
     @Published private(set) var carePlans: [HealthCarePlan] = []
     @Published private(set) var needsConditionOrganization = false
     @Published private(set) var conditionFacts: [HealthFact] = []
+    @Published private(set) var retainedRecordNotice: String?
+    @Published private(set) var categoryReviews: [WholeHistoryCategoryReview] = []
     @Published private(set) var conditionNotice: String?
     @Published private(set) var overview: String?
     @Published private(set) var overviewNotice: String?
@@ -163,9 +165,11 @@ final class HealthSummaryModel: ObservableObject {
     func state(for region: SummaryUpdateRegion) -> SummaryUpdateState? { updateStates[region] }
 
     func shouldAutomaticallyUpdate(onDevice: Bool, consent: Bool) -> Bool {
-        if !onDevice && wholeHistoryCurrent && wholeHistory.narrativeTerminal && wholeHistory.narrativeState != "completed" { return false }
+        if !onDevice && !IncrementalRecordCoordinator.enabled && wholeHistoryCurrent && wholeHistory.retainedPublishedRecordCount > 0 { return false }
+        if !onDevice && !IncrementalRecordCoordinator.enabled && wholeHistoryCurrent && wholeHistory.narrativeTerminal && wholeHistory.narrativeState != "completed" { return false }
         guard automaticProcessingAllowed, !isProcessing, !isUpdatingStory,
               onDevice || consent, !stoppedForCurrentSources, automaticPolicy.allows(updateInputKey) else { return false }
+        if IncrementalRecordCoordinator.enabled && !onDevice {return incrementalNeedsUpdate || (!facts.isEmpty && !overviewIsCurrent)}
         return snapshot.sessions.contains { !importedRecordIDs.contains($0.id) && $0.needsSummaryVerification && $0.processingState != .failed && $0.processingState != .transcribing && !$0.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             || (!facts.isEmpty && ((!onDevice && needsConditionOrganization) || !overviewIsCurrent))
     }
@@ -199,8 +203,12 @@ final class HealthSummaryModel: ObservableObject {
     /// already-current stages use their validated cache instead of making requests.
     func updateHealthStory(transport: OpenAIChatTransport?, onDevice: Bool, explicitlyRequested: Bool = false,
                            forceConditionRefresh: Bool = false, retryUnfinished: Bool = false) async {
+        if !onDevice && IncrementalRecordCoordinator.enabled {
+            await updateIncrementalRecords(transport:transport,explicitlyRequested:explicitlyRequested)
+            return
+        }
         if !onDevice {
-            await updateWholeHistory(transport: transport, explicitlyRequested: explicitlyRequested, force: forceConditionRefresh)
+            await updateWholeHistory(transport: transport, explicitlyRequested: explicitlyRequested, force: forceConditionRefresh, retryUnfinished: retryUnfinished)
             return
         }
         guard (explicitlyRequested ? hasLoaded && !isTransferringData : automaticProcessingAllowed),
@@ -275,7 +283,7 @@ final class HealthSummaryModel: ObservableObject {
 
     /// The normal cloud flow is B: whole-history details/conditions/care plans,
     /// followed by the concise overview writer. No legacy cloud stage is chained on.
-    private func updateWholeHistory(transport: OpenAIChatTransport?, explicitlyRequested: Bool, force: Bool = false, overviewOnly: Bool = false) async {
+    private func updateWholeHistory(transport: OpenAIChatTransport?, explicitlyRequested: Bool, force: Bool = false, overviewOnly: Bool = false, retryUnfinished: Bool = false) async {
         guard hasLoaded, !isTransferringData, !isUpdatingStory, !isProcessing, !Task.isCancelled,
               explicitlyRequested || (automaticProcessingAllowed && !stoppedForCurrentSources) else { return }
         guard automaticPolicy.claim(updateInputKey, explicitlyRequested: explicitlyRequested) else { return }
@@ -286,11 +294,12 @@ final class HealthSummaryModel: ObservableObject {
         }
         wholeHistory.configure(transport)
         explicitlyStopped = false; updateError = nil; error = nil; processingIssue = nil
+        retainedRecordNotice = nil
         conditionNotice = nil; overviewNotice = nil; careOrganizationNotice = nil
         isUpdatingStory = true; isProcessing = true
         updateStates = overviewOnly && wholeHistoryCurrent ? [.details: .ready, .conditions: .ready, .overview: .updating] : [.details: .updating, .conditions: .updating, .overview: .waiting]
         progressTitle = overviewOnly ? "Creating overview" : "Updating your health story"
-        progress = "Organizing original records and writing your overview…"
+        progress = overviewOnly ? "Writing the overview from saved details…" : "Reading records and organizing conditions in one pass…"
         progressShowsRecordCount = false; progressTotal = 0; progressValue = 0
         var stopID: UUID?
         defer {
@@ -308,26 +317,39 @@ final class HealthSummaryModel: ObservableObject {
             guard !wholeHistory.records.isEmpty else { updateStates = [:]; return }
             let current = try await store.wholeHistoryIsCurrent()
             let overviewCurrent = try await store.wholeHistoryOverviewIsCurrent()
-            let needsRun = force || overviewOnly || !current || !overviewCurrent
+            let needsRun = force || retryUnfinished || overviewOnly || !current || !overviewCurrent
             if needsRun {
-                try await wholeHistory.process(force: force, overviewOnly: overviewOnly && current)
+                try await wholeHistory.process(force: force && !retryUnfinished, overviewOnly: overviewOnly && current && !retryUnfinished, revalidateSavedDetails:retryUnfinished) {
+                    self.updateStates = [.details: .ready, .conditions: .ready, .overview: .updating]
+                    self.progress = "Writing the overview from the organized details…"
+                }
                 try Task.checkCancellation()
                 guard !explicitlyStopped else { return }
+                updateStates = [.details: .ready, .conditions: .ready, .overview: .updating]
+                progress = "Checking category coverage and saving the update…"
                 let publication = try wholeHistory.publication()
-                try await store.publishWholeHistory(publication, expected: wholeHistory.records)
-                try wholeHistory.markPublished()
+                let retainedCount = try await store.publishWholeHistory(
+                    publication, expected: wholeHistory.records, retainRecordsWithMissingCategories: true
+                )
+                try wholeHistory.markPublished(retainedRecordCount: retainedCount)
             }
             if let stopID { await transport.explicitStop?.completed(stopID) }
             await refresh()
-            updateStates = [.details: .ready, .conditions: .ready, .overview: .ready]
+            updateStates = [.details: .ready, .conditions: .ready, .overview: retainedRecordNotice == nil ? .ready : .needsAttention]
         } catch {
             if let stopID { await transport.explicitStop?.completed(stopID) }
             if error is CancellationError || Task.isCancelled { return }
+            if let commitError = error as? SummaryCommitError, case .categoryCoverageChanged = commitError {
+                updateError = error.localizedDescription
+                updateStates = [.details: .ready, .conditions: .ready, .overview: .needsAttention]
+                return
+            }
             // A failed writer does not invalidate a source-validated first pass.
             // Publish only that first pass; keep the previous displayed overview.
             if let partial = try? wholeHistory.publication(allowMissingOverview: true) {
                 do {
-                    try await store.publishWholeHistory(partial, expected: wholeHistory.records)
+                    let retained = try await store.publishWholeHistory(partial, expected: wholeHistory.records, retainRecordsWithMissingCategories: true)
+                    try wholeHistory.markPublished(retainedRecordCount: retained)
                     await refresh()
                     updateError = error.localizedDescription; overviewNotice = error.localizedDescription; conditionNotice = nil
                     updateStates = [.details: .ready, .conditions: .ready, .overview: .needsAttention]
@@ -344,10 +366,57 @@ final class HealthSummaryModel: ObservableObject {
         }
     }
 
+    private func updateIncrementalRecords(transport:OpenAIChatTransport?,explicitlyRequested:Bool) async {
+        guard !isProcessing,!isUpdatingStory,!isTransferringData,let transport,
+              explicitlyRequested || !stoppedForCurrentSources else {return}
+        if explicitlyRequested {
+            UserDefaults.standard.removeObject(forKey:"collectivecare.stoppedSummarySources")
+            UserDefaults.standard.removeObject(forKey:"collectivecare.stoppedSummaryInput")
+        }
+        guard automaticPolicy.claim(updateInputKey, explicitlyRequested: explicitlyRequested) else {return}
+        isUpdatingStory=true;isProcessing=true;explicitlyStopped=false
+        updateError=nil;conditionNotice=nil;overviewNotice=nil;retainedRecordNotice=nil
+        progressTitle="Updating your records";progress="Your saved details are available."
+        updateStates=[.details:.updating,.conditions:.updating,.overview:.waiting]
+        defer {automaticPolicy.finished(updateInputKey);isUpdatingStory=false;isProcessing=false;progress=""}
+        do {
+            let withheld=try await IncrementalRecordCoordinator.run(store:store,transport:transport) {await self.refresh()}
+            try Task.checkCancellation()
+            await refresh()
+            updateStates=[.details:.ready,.conditions:.ready,.overview:.updating]
+            if !facts.isEmpty {
+                let expected=facts
+                try await IncrementalRecordCoordinator.writeOverview(store:store,transport:transport,facts:expected)
+            }
+            await refresh()
+            updateStates=[.details:.ready,.conditions:.ready,.overview:.ready]
+            if withheld {updateError="Some details couldn’t be added. Your original records are available."}
+        } catch is CancellationError {interruptUpdates()}
+        catch {
+            // Transport and publication errors cannot suppress the saved snapshot.
+            await refresh()
+            updateError="Some details couldn’t be added. Your saved records are available."
+            updateStates=[.details:.needsAttention,.conditions:.ready,.overview:.interrupted]
+        }
+    }
+
     private var retryRecordIDs: Set<UUID> = []
     private let store: SessionStore
+    private var incrementalNeedsUpdate=false
     private let processor = RecordSummaryProcessor()
     private let wholeHistory = BTrialModel()
+    var wholeHistoryRequiresNewAttempt: Bool { wholeHistory.requiresNewAttempt }
+    var wholeHistoryCanRevalidateSavedDetails: Bool { wholeHistory.canRevalidateSavedDetails }
+
+    #if DEBUG
+    var wholeHistoryRecoveryDiagnostic: [String: Any] {
+        var report = wholeHistory.recoveryDiagnostic
+        report["hasSaveError"] = updateError != nil
+        report["overviewCurrent"] = overviewIsCurrent
+        return report
+    }
+    #endif
+
     private var wholeHistoryCurrent = false
     private var refreshRevision = 0
 
@@ -396,6 +465,16 @@ final class HealthSummaryModel: ObservableObject {
 
     var storageDirectory: URL { get async { await store.storageDirectory } }
 
+    func acceptCategoryReview(_ review:WholeHistoryCategoryReview) async throws {
+        guard !isProcessing,!isUpdatingStory else {throw SummaryCommitError.sourceChanged}
+        let publication=try wholeHistory.publication(allowMissingOverview:true)
+        let retained=try await store.publishWholeHistory(publication,expected:wholeHistory.records,
+            retainRecordsWithMissingCategories:true,acceptedCategoryChanges:[review.id:review.token])
+        try wholeHistory.markPublished(retainedRecordCount:retained)
+        await refresh()
+        updateStates=[.details:.ready,.conditions:.ready,.overview:retained==0 && wholeHistory.narrative != nil ? .ready:.needsAttention]
+    }
+
     func refresh() async {
         let started = Date()
         defer { Logger(subsystem: "com.CollectiveCare.pilot", category: "SummaryPerformance").info("refresh seconds=\(Date().timeIntervalSince(started), privacy: .public)") }
@@ -405,15 +484,43 @@ final class HealthSummaryModel: ObservableObject {
         do {
             isImportedHistory = await store.isImportedHistory
             importedRecordIDs = try await store.importedRecordIDs()
+            var retainedCount=0
+            if !IncrementalRecordCoordinator.enabled {
             await wholeHistory.load(store: store)
             if wholeHistory.usesCategoryObjectV7 { _ = try await store.recoverWholeHistoryCategories() }
-            // Migrate a complete matching on-phone B result without another paid call.
-            // Source hashes and exact quotations must still validate before admission.
-            if !(try await store.wholeHistoryIsCurrent()), let publication = try? wholeHistory.publication(allowMissingOverview: true) {
-                try await store.publishWholeHistory(publication, expected: wholeHistory.records)
-                try wholeHistory.markPublished()
+            // Reconcile a retained result independently of loading saved records.
+            // A source/publication error must never prevent the snapshot reaching the UI.
+            do {
+                if !isUpdatingStory && !isProcessing && wholeHistory.hasUnpublishedCompletedResult,
+                   let publication = try? wholeHistory.publication() {
+                    let retained = try await store.publishWholeHistory(
+                        publication, expected: wholeHistory.records, retainRecordsWithMissingCategories: true
+                    )
+                    try wholeHistory.markPublished(retainedRecordCount: retained)
+                } else if !(try await store.wholeHistoryIsCurrent()),
+                          let publication = try? wholeHistory.publication(allowMissingOverview: true) {
+                    let retained = try await store.publishWholeHistory(
+                        publication, expected: wholeHistory.records, retainRecordsWithMissingCategories: true
+                    )
+                    try wholeHistory.markPublished(retainedRecordCount: retained)
+                }
+            } catch {
+                updateError = error.localizedDescription
             }
             wholeHistoryCurrent = try await store.wholeHistoryIsCurrent()
+            retainedCount = wholeHistoryCurrent ? wholeHistory.retainedPublishedRecordCount : 0
+            if retainedCount == 1 {
+                retainedRecordNotice = "We kept the previous details for one record because some categories changed. Compare both versions before replacing them."
+            } else if retainedCount > 1 {
+                retainedRecordNotice = "We kept the previous details for \(retainedCount) records because some categories changed. Compare both versions before replacing them."
+            } else {
+                retainedRecordNotice = nil
+            }
+            } else { wholeHistoryCurrent=false;retainedRecordNotice=nil;categoryReviews=[] }
+            if IncrementalRecordCoordinator.enabled {
+                let receipt=try await store.recordUpdateReceipt()
+                incrementalNeedsUpdate = !(try await store.recordsNeedingIncrementalUpdate()).isEmpty || (receipt.map {!["completed","completed_with_withheld_items","blocked","cancelled"].contains($0.state)} ?? false)
+            }
             var saved = try await store.healthSnapshot()
             for session in saved.sessions where !isImportedHistory && session.summaryEntries?.isEmpty != false {
                 guard let markdown = session.summary, !markdown.isEmpty else { continue }
@@ -432,14 +539,17 @@ final class HealthSummaryModel: ObservableObject {
             let savedOverview: String?
             if wholeHistoryCurrent { savedOverview = try await store.wholeHistoryOverview() }
             else { savedOverview = await store.storyOverview(for: projected)?.text }
-            let previousOverview = await store.lastStoryOverviewForDisplay()?.text
+            let previousStoryOverview = await store.lastStoryOverviewForDisplay()?.text
+            let previousBOverview = try? await store.wholeHistoryOverview()
+            let previousOverview = previousStoryOverview ?? previousBOverview
             guard revision == refreshRevision else { return }
             let synthesized = await store.conditionSynthesis(for: projected)
             let displayed = wholeHistoryCurrent ? projected : await store.displayedConditionFacts(for: projected)
-            let useWholeHistory = wholeHistoryCurrent
+            let useWholeHistory = wholeHistoryCurrent || IncrementalRecordCoordinator.enabled
             let presentation = await Task.detached(priority: .userInitiated) {
                 let keys = Self.updateKeys(snapshot: projectionSnapshot, facts: projected, conditionFacts: displayed)
                 let conditions = ConditionSummaryProjection.groups(facts: displayed, topics: projectionSnapshot.topics)
+                    .filter(ConditionSummaryProjection.isNavigationEligible)
                 let areas = HealthAreaProjection.groups(conditions)
                 let ranked = useWholeHistory ? areas.enumerated().sorted {
                     $0.element.conditions.count == $1.element.conditions.count ? $0.offset < $1.offset : $0.element.conditions.count > $1.element.conditions.count
@@ -453,22 +563,34 @@ final class HealthSummaryModel: ObservableObject {
             conditionGroups = presentation.conditions
             healthAreas = presentation.areas
             snapshot = saved
+            if !IncrementalRecordCoordinator.enabled, let publication=try? wholeHistory.publication(allowMissingOverview:true) {
+                categoryReviews=saved.sessions.compactMap {session in
+                    WholeHistoryPublication.categoryReview(previous:session.summaryEntries ?? [],generated:publication.entries[session.id] ?? [],session:session)
+                }
+            } else {categoryReviews=[]}
             facts = projected
             conditionFacts = displayed
             let named=Dictionary(uniqueKeysWithValues:projected.compactMap { fact in practitionerName(for:fact).map{(fact.id,$0)} })
             carePlans=HealthCarePlan.project(facts:projected,conditions:presentation.conditions,sessions:saved.sessions,practitionerNames:named)
             // The store reuses prior condition groups only for unchanged surviving
             // source entries while a replacement is being prepared.
-            needsConditionOrganization = !wholeHistoryCurrent && !projected.isEmpty && synthesized == nil
+            needsConditionOrganization = !IncrementalRecordCoordinator.enabled && !wholeHistoryCurrent && !projected.isEmpty && synthesized == nil
             overviewIsCurrent = wholeHistoryCurrent ? (try await store.wholeHistoryOverviewIsCurrent()) : savedOverview != nil
             if let savedOverview { displayedOverview = savedOverview }
             else if displayedOverview == nil { displayedOverview = previousOverview }
             if projected.isEmpty { displayedOverview = nil }
             overview = overviewIsCurrent ? savedOverview : nil
+            if wholeHistoryCurrent && retainedCount > 0 && !isUpdatingStory && !isProcessing {
+                updateStates = [.details: .ready, .conditions: .ready, .overview: .needsAttention]
+            }
             if wholeHistoryCurrent && wholeHistory.narrativeState == "invalid" && !isUpdatingStory && !isProcessing {
                 conditionNotice = nil
                 overviewNotice = wholeHistory.error ?? "The overview could not be saved. Your details and conditions are updated. You can try writing the overview again."
                 updateStates = [.details: .ready, .conditions: .ready, .overview: .needsAttention]
+            }
+            if !IncrementalRecordCoordinator.enabled, ["failed","invalid"].contains(wholeHistory.state), wholeHistory.sourcesMatch, !isUpdatingStory && !isProcessing {
+                updateError=wholeHistory.error ?? "The saved update couldn’t finish. Your existing details are available."
+                updateStates=[.details:.needsAttention,.conditions:.needsAttention,.overview:.interrupted]
             }
             sourceInputKey = presentation.keys.sources
             if updateInputKey != presentation.keys.inputs { updateInputKey = presentation.keys.inputs }
@@ -613,6 +735,7 @@ final class HealthSummaryModel: ObservableObject {
     }
 
     func organizeConditions(transport: OpenAIChatTransport?, onDevice: Bool) async {
+        if !onDevice && IncrementalRecordCoordinator.enabled {await updateIncrementalRecords(transport:transport,explicitlyRequested:true);return}
         if !onDevice { await updateWholeHistory(transport: transport, explicitlyRequested: true, force: true); return }
         guard !isProcessing, !isTransferringData else { return }
         isProcessing = true
@@ -688,7 +811,13 @@ final class HealthSummaryModel: ObservableObject {
                           organizeConditionsAfterRecords: Bool = true, overviewOnly: Bool = false,
                           forceConditionRefresh: Bool = false, excludedRecordIDs: Set<UUID> = []) async {
         if !onDevice {
-            await updateWholeHistory(transport: configuredTransport, explicitlyRequested: true, force: forceAll || forceSessionID != nil || forceConditionRefresh, overviewOnly: overviewOnly)
+            if IncrementalRecordCoordinator.enabled {
+                if forceAll || forceSessionID != nil {try? await store.invalidateIncrementalRecordRevision(forceSessionID)}
+                if overviewOnly {await createOverview(transport:configuredTransport,onDevice:false)}
+                else {await updateIncrementalRecords(transport:configuredTransport,explicitlyRequested:true)}
+                return
+            }
+            await updateWholeHistory(transport: configuredTransport, explicitlyRequested: true, force: forceAll || forceSessionID != nil || forceConditionRefresh, overviewOnly: overviewOnly, retryUnfinished: retryUnfinished)
             return
         }
         if overviewOnly {
@@ -925,7 +1054,15 @@ final class HealthSummaryModel: ObservableObject {
     /// An explicit user request must always end with a visible result or explanation.
     /// It does not restart repair work or clear a record-processing failure.
     func createOverview(transport: OpenAIChatTransport?, onDevice: Bool) async {
-        if !onDevice { await updateWholeHistory(transport: transport, explicitlyRequested: true, overviewOnly: true); return }
+        if !onDevice && IncrementalRecordCoordinator.enabled {
+            guard !isProcessing,!isUpdatingStory,let transport else {return}
+            isProcessing=true;updateStates[.overview] = .updating
+            defer {isProcessing=false}
+            do {try await IncrementalRecordCoordinator.writeOverview(store:store,transport:transport,facts:facts);await refresh();updateStates[.overview] = .ready}
+            catch {overviewNotice="Some details couldn’t be added. Your saved overview is available.";updateStates[.overview] = .needsAttention}
+            return
+        }
+        if !onDevice && !IncrementalRecordCoordinator.enabled { await updateWholeHistory(transport: transport, explicitlyRequested: true, overviewOnly: true); return }
         guard !isProcessing, !isTransferringData else { return }
         isProcessing = true
         updateStates[.overview] = .updating
@@ -1710,6 +1847,10 @@ actor RecordSummaryProcessor {
         blood tests." Do not add "to monitor your overall health", "routine", or "to investigate fatigue".
         Mention purpose only when explicitly recorded. A readable story may contain independent events;
         do not manufacture a medical connection to make the narrative flow.
+        Include an exact date, count, measurement, or dose only if it is necessary to the story
+        and appears in the health details linked to that sentence. Copy its recorded form.
+        Do not calculate counts, convert units, round values, or fill in dates. If the exact
+        value cannot be supported by those links, leave it out and describe the documented event.
         Dates are clinical dates, never import dates; undated events must not be placed into an invented chronology.
         An old prescription fill does not prove present use, and default Current is a patient UI setting, not proof.
         Do not describe completed/past care steps as future plans. Distinguish patient reports from clinical findings.

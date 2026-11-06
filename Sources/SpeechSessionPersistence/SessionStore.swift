@@ -17,6 +17,7 @@ public actor SessionStore {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private var cachedEnvelope: SessionsEnvelope?
+    private let sqliteEnabled: Bool
 
     /// Root directory containing `sessions.json` and `sources/`.
     public var storageDirectory: URL { directoryURL }
@@ -24,7 +25,8 @@ public actor SessionStore {
     /// - Parameters:
     ///   - fileManager: inject for tests.
     ///   - storageDirectory: directory that will hold `sessions.json` (created if needed).
-    public init(fileManager: FileManager = .default, storageDirectory: URL) throws {
+    public init(fileManager: FileManager = .default, storageDirectory: URL, sqliteEnabled: Bool = false) throws {
+        self.sqliteEnabled = sqliteEnabled || FileManager.default.fileExists(atPath: storageDirectory.appendingPathComponent(SQLiteSessionStorage.filename).path)
         self.fileManager = fileManager
         self.directoryURL = storageDirectory
         self.fileURL = storageDirectory.appendingPathComponent(Self.sessionsFileName, isDirectory: false)
@@ -56,11 +58,17 @@ public actor SessionStore {
     /// Convenience factory using `makeDefaultStorageDirectory`.
     public static func appDefault(fileManager: FileManager = .default) throws -> SessionStore {
         let dir = try makeDefaultStorageDirectory(fileManager: fileManager)
-        return try SessionStore(fileManager: fileManager, storageDirectory: dir)
+        return try SessionStore(fileManager: fileManager, storageDirectory: dir, sqliteEnabled: (Bundle.main.object(forInfoDictionaryKey: "TransactionalRecordStorageEnabled") as? Bool == true) || (Bundle.main.object(forInfoDictionaryKey: "TransactionalRecordStorageEnabled") as? String == "YES"))
     }
 
     private func loadEnvelope() throws -> SessionsEnvelope {
         if let cachedEnvelope { return cachedEnvelope }
+        if sqliteEnabled, let data = try SQLiteSessionStorage(directory:directoryURL).load() {
+            let envelope = try decoder.decode(SessionsEnvelope.self, from:data)
+            guard envelope.version <= SessionsEnvelope.currentVersion else { throw SessionStoreError.decodingFailed }
+            cachedEnvelope = envelope
+            return envelope
+        }
         guard fileManager.fileExists(atPath: fileURL.path) else {
             return SessionsEnvelope(sessions: [], folders: [])
         }
@@ -87,6 +95,14 @@ public actor SessionStore {
                 try saveEnvelope(envelope)
                 envelope.version = SessionsEnvelope.currentVersion
             }
+            if sqliteEnabled {
+                let backup = directoryURL.appendingPathComponent("pre-sqlite-sessions.json")
+                if !fileManager.fileExists(atPath:backup.path) {
+                    try data.write(to:backup,options:[.atomic,.completeFileProtectionUntilFirstUserAuthentication])
+                    guard try Data(contentsOf:backup) == data else { throw SessionStoreError.ioFailed("Could not verify migration backup.") }
+                }
+                try SQLiteSessionStorage(directory:directoryURL).save(encoder.encode(envelope))
+            }
             cachedEnvelope = envelope
             return envelope
         } catch is DecodingError {
@@ -109,7 +125,8 @@ public actor SessionStore {
         } catch {
             throw SessionStoreError.encodingFailed
         }
-        try atomicWrite(data)
+        if sqliteEnabled { try SQLiteSessionStorage(directory:directoryURL).save(data) }
+        else { try atomicWrite(data) }
         cachedEnvelope = env
     }
 
@@ -790,7 +807,10 @@ public actor SessionStore {
 
     /// Commit the full source snapshot atomically. Preserve edits, preferences and
     /// original transcripts, and retain a local pre-B backup and per-record revisions.
-    public func publishWholeHistory(_ publication: WholeHistoryPublication, expected: [Session]) throws {
+    @discardableResult
+    public func publishWholeHistory(_ publication: WholeHistoryPublication, expected: [Session],
+                                    retainRecordsWithMissingCategories: Bool = false,
+                                    acceptedCategoryChanges: [UUID:String] = [:]) throws -> Int {
         try Task.checkCancellation()
         var env = try loadEnvelope()
         let ready = env.sessions.filter { !$0.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.processingState != .failed && $0.processingState != .transcribing }
@@ -798,8 +818,20 @@ public actor SessionStore {
               WholeHistoryPublication.fingerprint(ready) == WholeHistoryPublication.fingerprint(expected),
               Set(publication.entries.keys) == Set(expected.map(\.id)) else { throw SummaryCommitError.sourceChanged }
         let fingerprint = WholeHistoryPublication.fingerprint(expected)
-        for session in ready {
-            guard WholeHistoryPublication.missingCategories(previous:session.summaryEntries ?? [],generated:publication.entries[session.id] ?? [],session:session).isEmpty else {throw SummaryCommitError.categoryCoverageChanged}
+        let reviews=Dictionary(uniqueKeysWithValues:ready.compactMap {session -> (UUID,WholeHistoryCategoryReview)? in
+            guard let review=WholeHistoryPublication.categoryReview(previous:session.summaryEntries ?? [],generated:publication.entries[session.id] ?? [],session:session) else {return nil}
+            return (session.id,review)
+        })
+        guard acceptedCategoryChanges.allSatisfy({reviews[$0.key]?.token == $0.value}) else {throw SummaryCommitError.sourceChanged}
+        let retainedIDs = Set(ready.filter { session in
+            acceptedCategoryChanges[session.id] == nil && !WholeHistoryPublication.missingCategories(
+                previous: session.summaryEntries ?? [],
+                generated: publication.entries[session.id] ?? [],
+                session: session
+            ).isEmpty
+        }.map(\.id))
+        guard retainedIDs.isEmpty || retainRecordsWithMissingCategories else {
+            throw SummaryCommitError.categoryCoverageChanged
         }
         for session in ready {
             for entry in publication.entries[session.id] ?? [] {
@@ -815,10 +847,11 @@ public actor SessionStore {
         if !fileManager.fileExists(atPath: backup.path) {
             try encoder.encode(env).write(to: backup, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         }
-        for index in env.sessions.indices where publication.entries[env.sessions[index].id] != nil {
+        for index in env.sessions.indices where publication.entries[env.sessions[index].id] != nil && !retainedIDs.contains(env.sessions[index].id) {
             let previous = env.sessions[index].summaryEntries ?? []
             let source = env.sessions[index].transcript
             var run = SummaryRun(source: source, stage: .complete, promptVersion: WholeHistoryPublication.version)
+            run.categoryChangeReviewToken=acceptedCategoryChanges[env.sessions[index].id]
             run.updatedAt = Date()
             env.sessions[index].summaryRevisions = (env.sessions[index].summaryRevisions ?? []) + [SummaryRevision(runID: run.id, entries: previous)]
             env.sessions[index].summaryEntries = SummaryEntryMerge.merging(generated: publication.entries[env.sessions[index].id] ?? [], existing: previous, supersedeUnmatchedGenerated: true)
@@ -831,9 +864,10 @@ public actor SessionStore {
         }
         for topic in publication.topics where !env.topics.contains(where: { $0.id == topic.id }) { env.topics.append(topic) }
         env.wholeHistorySourceFingerprint = fingerprint
-        if let overview = publication.overview { env.wholeHistoryOverview = overview }
-        env.wholeHistoryOverviewSourceFingerprint = publication.overview == nil ? nil : fingerprint
+        if retainedIDs.isEmpty, let overview = publication.overview { env.wholeHistoryOverview = overview }
+        env.wholeHistoryOverviewSourceFingerprint = retainedIDs.isEmpty && publication.overview != nil ? fingerprint : nil
         try saveEnvelope(env)
+        return retainedIDs.count
     }
 
     public func publishVerifiedSummary(expected: Session, runID: UUID, entries: [SummaryEntry]) throws {
@@ -906,6 +940,79 @@ public actor SessionStore {
         }
         env.sessions[index].processingState = error == nil ? .ready : .failed
         env.sessions[index].processingError = error
+        try saveEnvelope(env)
+    }
+
+    public func recordOverviewReceipt() throws -> RecordUpdateReceipt? {try loadEnvelope().recordOverview}
+    public func saveRecordOverviewReceipt(_ receipt:RecordUpdateReceipt) throws {var env=try loadEnvelope();env.recordOverview=receipt;try saveEnvelope(env)}
+    public func recordUpdateReceipt() throws -> RecordUpdateReceipt? { try loadEnvelope().recordUpdate }
+    public func saveRecordUpdateReceipt(_ receipt: RecordUpdateReceipt) throws {
+        var env=try loadEnvelope();env.recordUpdate=receipt;try saveEnvelope(env)
+    }
+    public func invalidateIncrementalRecordRevision(_ id:UUID?) throws {
+        var env=try loadEnvelope()
+        if let id {env.completedRecordRevisions.removeValue(forKey:id.uuidString)}else{env.completedRecordRevisions=[:]}
+        try saveEnvelope(env)
+    }
+    public func recordsNeedingIncrementalUpdate() throws -> [Session] {
+        let env=try loadEnvelope()
+        return env.sessions.filter {!$0.transcript.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && $0.processingState != .transcribing && $0.processingState != .failed && env.completedRecordRevisions[$0.id.uuidString] != IncrementalRecordUpdate.sourceHash($0.transcript)}
+    }
+    /// A unit receipt and its visible facts commit together; replay cannot append revisions twice.
+    public func publishRecordUnit(_ facts:[IncrementalRecordFact],recordID:UUID,sourceHash:String,unitKey:String,updateID:UUID) throws {
+        var env=try loadEnvelope()
+        guard var receipt=env.recordUpdate,receipt.id==updateID,receipt.state != "cancelled",let i=env.sessions.firstIndex(where:{$0.id==recordID}),IncrementalRecordUpdate.sourceHash(env.sessions[i].transcript)==sourceHash else {throw SummaryCommitError.sourceChanged}
+        if receipt.publishedUnits.contains(unitKey) {return}
+        var generated=try IncrementalRecordUpdate.entries(facts,session:env.sessions[i])
+        let prior=env.sessions[i].summaryEntries ?? []
+        for index in generated.indices {
+            let previous=AssertionReconciler.match(generated[index],in:prior)
+            env.assertionReconciliations.append(AssertionReconciliation(updateID:updateID,recordID:recordID,occurrenceID:previous?.id ?? generated[index].id,previousID:previous?.id,outcome:previous == nil && prior.contains(where: {$0.evidence?.sourceAssertion?.name != nil && $0.evidence?.sourceAssertion?.name == generated[index].evidence?.sourceAssertion?.name && $0.sourceExcerpt == generated[index].sourceExcerpt}) ? "conflicting":AssertionReconciler.outcome(generated[index],previous:previous)))
+            if let old=previous {
+                if old.origin == .userEdited || old.origin == .userAdded || old.isDeleted {generated[index]=old}
+                else {generated[index].id=old.id;generated[index].createdAt=old.createdAt}
+            }
+        }
+        for entry in generated where entry.category == .medications {
+            guard let id=entry.evidence?.medicationProductID,let key=BClinicalPresentation.productKey(entry),let name=BClinicalPresentation.medication(entry)["name"] else {continue}
+            if !env.medicationProducts.contains(where:{$0.id==id}) {
+                let fields=BClinicalPresentation.medication(entry)
+                env.medicationProducts.append(MedicationProduct(id:id,key:key,name:name,strength:fields["strength"],form:fields["form"]))
+            }
+        }
+        let replacedIDs=Set(generated.map(\.id))
+        var merged=SummaryEntryMerge.merging(generated:generated,existing:prior.filter {!replacedIDs.contains($0.id)})
+        let kept=Set(merged.map(\.id))
+        merged += prior.filter {!kept.contains($0.id)}
+        // An unchanged source omission is unresolved, never an instruction to erase history.
+        env.sessions[i].summaryEntries=merged
+        env.sessions[i].summary=merged.filter {HealthStoryEligibility.includes($0)}.map {"- " + $0.title}.joined(separator:"\n")
+        env.sessions[i].summaryRevisions=(env.sessions[i].summaryRevisions ?? [])+[SummaryRevision(runID:updateID,entries:prior)]
+        for fact in facts {for name in fact.conditions {
+            let system=fact.conditionSystems?.first(where:{$0.name==name})?.system ?? ""
+            let topic=HealthTopic(id:IncrementalRecordUpdate.stableID("condition:"+name.lowercased()),name:name,bodySystem:system)
+            if let existing=env.topics.firstIndex(where:{$0.id==topic.id}) {
+                if ["","unknown","other"].contains(env.topics[existing].bodySystem), !["","unknown"].contains(system) {env.topics[existing].bodySystem=system}
+            } else {env.topics.append(topic)}
+        }}
+        receipt.publishedUnits.append(unitKey);env.recordUpdate=receipt
+        env.wholeHistorySourceFingerprint=nil;env.wholeHistoryOverviewSourceFingerprint=nil
+        try saveEnvelope(env)
+    }
+    public func finishRecordUpdate(_ id:UUID,state:String) throws {
+        var env=try loadEnvelope()
+        guard var receipt=env.recordUpdate,receipt.id==id,receipt.state != "cancelled" else {throw SummaryCommitError.sourceChanged}
+        receipt.state=state;env.recordUpdate=receipt
+        let reconciled=Set(env.assertionReconciliations.filter {$0.updateID==id}.map(\.occurrenceID))
+        for session in env.sessions where receipt.sources[session.id.uuidString] != nil {
+            for entry in session.summaryEntries ?? [] where !reconciled.contains(entry.id) {
+                env.assertionReconciliations.append(AssertionReconciliation(updateID:id,recordID:session.id,occurrenceID:entry.id,previousID:entry.id,outcome:"unresolved"))
+            }
+        }
+        for (id,hash) in receipt.sources {
+            guard let session=env.sessions.first(where:{$0.id.uuidString==id}),IncrementalRecordUpdate.sourceHash(session.transcript)==hash else {continue}
+            env.completedRecordRevisions[id]=hash
+        }
         try saveEnvelope(env)
     }
 

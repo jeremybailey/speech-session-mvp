@@ -5,10 +5,12 @@ import { verifyKindeBearer } from '../../_lib/verifyKinde';
 import { submitConditionWorkflow,conditionWorkflowStatus,cancelConditionWorkflow,cancelConditionPlan,cleanupConditionWorkflows } from '../../_lib/condition-workflow-store';
 import { conditionWorkflowsEnabled,enqueueConditionWorkflow } from '../../_lib/condition-workflow-worker';
 import { durableEnabledForOwner } from '../../_lib/pilot';
+import {processingFailureReason} from '../../_lib/processing-errors';
 import {conditionUpload,cleanupConditionUploads} from '../../_lib/condition-upload';
 
 export default async function handler(req:VercelRequest,res:VercelResponse) {
   res.setHeader('Cache-Control','no-store');
+  let phase = 'authentication';
   try {
     const owner=processingOwner(await verifyKindeBearer(req.headers.authorization), isFastRequest(req.headers));
     // Receipt cleanup stays available even if paid inference is disabled.
@@ -18,10 +20,13 @@ export default async function handler(req:VercelRequest,res:VercelResponse) {
       return res.status(200).json(await acknowledgeResult(owner,id,receiptDigest(req.body),true));
     }
     if(!conditionWorkflowsEnabled() || !durableEnabledForOwner(owner)) return res.status(503).json({error:{code:'pilot_disabled'}});
+    phase = 'maintenance';
     await cleanupConditionWorkflows();
     await cleanupConditionUploads();
     if(req.method==='PUT') {
+      phase = 'upload';
       const job=await conditionUpload(owner,req.body);
+      phase = 'publication';
       if(job.id && ['queued','running'].includes(job.state)) await enqueueConditionWorkflow(job.id,job.revision);
       return res.status(200).json(job);
     }
@@ -45,6 +50,8 @@ export default async function handler(req:VercelRequest,res:VercelResponse) {
   } catch(error) {
     const e=error as {message?:string;status?:number};
     const invalid=['invalid_condition_workflow','invalid_request','invalid_schema'].includes(e.message??'');
-    return res.status(e.status??(invalid?400:503)).json({error:{code:invalid?'invalid_request':'processing_unavailable'}});
+    const status = e.status ?? (invalid ? 400 : 503);
+    if (status >= 500) console.error(JSON.stringify({event:'condition_workflow_failed',phase,status,reason:processingFailureReason(error)}));
+    return res.status(status).json({error:{code:invalid?'invalid_request':'processing_unavailable'}});
   }
 }

@@ -1,0 +1,1221 @@
+{
+  "records": [
+    {
+      "id": "10693daa-4094-55f7-8ac7-d8ff4f624359",
+      "title": "Chief reason",
+      "text": "The patient says the main reason for today’s visit is persistent right knee pain.",
+      "sourceReference": "synthetic:0",
+      "sourceSHA256": "2cdf1d7e8b5972fe5ead5ba6da2c788c440037f4a163e1b7a7fb0403f3aa3418"
+    },
+    {
+      "id": "4cc9cae5-c398-5277-b1d4-ad3079571aab",
+      "title": "Reported symptoms",
+      "text": "The patient reports intermittent dizziness for three weeks, worse when standing. They deny chest pain.",
+      "sourceReference": "synthetic:1",
+      "sourceSHA256": "20100b7884b71c595e39af903ab6a2a9f64cc167bf19d08aef0f4abcf5bf7fa6"
+    },
+    {
+      "id": "bab72904-8248-5142-9a16-097831ad8466",
+      "title": "Clinical finding",
+      "text": "On examination, the clinician observed swelling of the right ankle and documented a sprain.",
+      "sourceReference": "synthetic:2",
+      "sourceSHA256": "27dcb61c75b85da751cad64d6c0bf6e3ced8b607a1f3ab3d680ee0dd9ca116f7"
+    },
+    {
+      "id": "c2cf5ded-3f0b-50a2-81ce-8c24dd2a9c20",
+      "title": "Lab results",
+      "text": "The laboratory report lists urine homovanillate 7.8 ug/mg (reference 3–11), within range. Serum potassium is 4.2 mmol/L (reference 3.5–5.1).",
+      "sourceReference": "synthetic:3",
+      "sourceSHA256": "c96d0a15911540b98411f6bf198ef463cd9d579134c240b127a8f805ecea17b5"
+    },
+    {
+      "id": "d73a062e-572b-59a6-92fe-321869c669e0",
+      "title": "Care contact",
+      "text": "Dr. Maya Example is the treating physiotherapist at Sample Clinic. Clinic phone: 555-0100. Address: 12 Example Street, Unit 2, Example City.",
+      "sourceReference": "synthetic:4",
+      "sourceSHA256": "1f9417d2b1136ebbdcd518396be176bac0bb40fa8acd112cdde9a6ca4d971ac3"
+    },
+    {
+      "id": "e9a6f1d9-e626-5652-9f17-341b3832e2f6",
+      "title": "Vaccination",
+      "text": "The nurse administered an influenza vaccine in the left deltoid on October 2, 2026. Dose: 0.5 mL.",
+      "sourceReference": "synthetic:5",
+      "sourceSHA256": "c86eea29ef5c0e418c709e1b71d19251587e1026a78d2dbf0df7e50636adb73a"
+    },
+    {
+      "id": "67a30864-fa44-5bc8-bd09-305a92cc1705",
+      "title": "Allergy history",
+      "text": "The patient reports a penicillin allergy causing hives. No breathing difficulty was reported with that reaction.",
+      "sourceReference": "synthetic:6",
+      "sourceSHA256": "72792fbddded1b00e20f94ef0970d2ce266f69ee66723c2e61a85928a8186b19"
+    },
+    {
+      "id": "0757bfb9-5424-5249-9f91-e8634cde47f5",
+      "title": "Prescription",
+      "text": "The prescription label states ExampleMed 10 mg tablets, take one tablet daily for seven days. Prescriber: Dr. Sample. Dispensed October 1, 2026; current use is not established.",
+      "sourceReference": "synthetic:7",
+      "sourceSHA256": "e5b48a4e385742908434d366c04a156cf5829d46e3d3838be15725559a139c60"
+    },
+    {
+      "id": "416c52a7-595a-5d4e-a299-b7732a1152f4",
+      "title": "Care recommendation",
+      "text": "The physiotherapist recommends gentle knee exercises twice daily if comfortable. Stop if pain worsens. This is a recommendation, not evidence of completed exercise.",
+      "sourceReference": "synthetic:8",
+      "sourceSHA256": "e348ab546c0b7b6098e07750be3a98f8472685d801ee66e9c6daa11761256c2c"
+    },
+    {
+      "id": "0356ff05-e98e-511f-8dd2-6c731ca825d2",
+      "title": "Follow up",
+      "text": "The patient is to book a follow-up appointment with Dr. Sample in two weeks.",
+      "sourceReference": "synthetic:9",
+      "sourceSHA256": "908feb5da8a9efe3b0a142c84bf9d92ee04d33a20691b42998757c27c6ea1290"
+    },
+    {
+      "id": "928752b1-fc93-5c60-8b32-0f038eb8c0e3",
+      "title": "Life context",
+      "text": "The patient works night shifts, usually sleeps five hours, lives alone and has support from a sibling. The record does not establish that these cause a diagnosis.",
+      "sourceReference": "synthetic:10",
+      "sourceSHA256": "88f904a1cb3a8e13aea67858ca31e51499fa571d7f898d9e82886f17d6cd36ce"
+    },
+    {
+      "id": "9e8863b2-0cdb-504b-a2e3-6bf65eba06c1",
+      "title": "Clinical negatives",
+      "text": "The patient denies dizziness or weakness today. The clinician documented normal strength on examination.",
+      "sourceReference": "synthetic:11",
+      "sourceSHA256": "ba5d7f729e08ed4145948e31a27008c4fa964b5782bfba17558328dd8d6ab348"
+    },
+    {
+      "id": "e3a9b113-14de-5d2b-8ea0-b75fa1978668",
+      "title": "Narrated test",
+      "text": "The report says serum calcium was 2.35 mmol/L, within its reference range of 2.15–2.55. The report does not diagnose a calcium disorder.",
+      "sourceReference": "synthetic:12",
+      "sourceSHA256": "af0437341fd2bcb1755365a6907f20e73d5aa3bfcd65faec1973ca0803df23af"
+    },
+    {
+      "id": "d163c25a-9802-5a7e-90dd-179af8b69faa",
+      "title": "Future testing",
+      "text": "The clinician recommends a glucose tolerance test at 26 weeks and a repeat iron test. These are future orders; no result is reported.",
+      "sourceReference": "synthetic:13",
+      "sourceSHA256": "827a0ebdb4ed87b3eb704328c3fd50934ba0135a9c972516cdb01016c786a197"
+    },
+    {
+      "id": "2ba8bbd8-350f-5ac1-9fc7-b77865abdcf0",
+      "title": "Patient hypothesis",
+      "text": "The patient wonders whether headaches are related to screen use. No diagnosis or causal link was established.",
+      "sourceReference": "synthetic:14",
+      "sourceSHA256": "fe4319fd86ce28a5e9cc89f546c63109fbebde8e52e25d536983d27bb557081d"
+    },
+    {
+      "id": "8804288b-49a3-55fb-bb04-a172e47d526b",
+      "title": "History",
+      "text": "The patient reports a previous wrist fracture in 2015, now healed. This is historical, not a new fracture.",
+      "sourceReference": "synthetic:15",
+      "sourceSHA256": "c8ba6155c332cc77c46b3e11508772508a4ea979d6eff36354cca19f487a1e29"
+    },
+    {
+      "id": "c09639a9-3f63-5944-b0f5-aa2814f20281",
+      "title": "Contact in prose",
+      "text": "An invoice names Dr. Alex Sample at Example Eye Centre. It does not establish who prescribed a medication.",
+      "sourceReference": "synthetic:16",
+      "sourceSHA256": "e9e078f24d161361280707f25b44839f7c2c9d2c5d33fd61c88468141f344142"
+    },
+    {
+      "id": "edb262b1-5e55-5b37-b3f8-d2011fb94ed2",
+      "title": "Declined action",
+      "text": "The clinician offered acupuncture, which the patient declined. No acupuncture was performed.",
+      "sourceReference": "synthetic:17",
+      "sourceSHA256": "66590742fdf210db4f5d4c738cd72886898d7140e25a6d94d80699c3bb0e4b45"
+    },
+    {
+      "id": "f29545fa-8069-51e6-bb00-a470ddfe9457",
+      "title": "Vaccine dispensing",
+      "text": "A pharmacy dispensed a shingles vaccine on September 3, 2026. Administration was not documented.",
+      "sourceReference": "synthetic:18",
+      "sourceSHA256": "f47805c23b995f6aad20b4cd1ad70199f7ec2c5bb798097bcbb4adf83bb0eaf8"
+    },
+    {
+      "id": "f37dc8f5-3b15-5174-9820-5fbb6f383223",
+      "title": "Care ownership",
+      "text": "The patient will call the clinic if symptoms worsen. The clinician will review the test results at the next appointment.",
+      "sourceReference": "synthetic:19",
+      "sourceSHA256": "56aeab571e786fcce406eea7cebc7e0df5db8f2681b67a870fb2df1e32fbdf9f"
+    }
+  ],
+  "locators": {
+    "r1.p1": {
+      "recordID": "10693daa-4094-55f7-8ac7-d8ff4f624359",
+      "recordAlias": "r1",
+      "start": 0,
+      "end": 81,
+      "quote": "The patient says the main reason for today’s visit is persistent right knee pain.",
+      "sourceSHA256": "2cdf1d7e8b5972fe5ead5ba6da2c788c440037f4a163e1b7a7fb0403f3aa3418",
+      "sourceReference": "synthetic:0"
+    },
+    "r2.p1": {
+      "recordID": "4cc9cae5-c398-5277-b1d4-ad3079571aab",
+      "recordAlias": "r2",
+      "start": 0,
+      "end": 102,
+      "quote": "The patient reports intermittent dizziness for three weeks, worse when standing. They deny chest pain.",
+      "sourceSHA256": "20100b7884b71c595e39af903ab6a2a9f64cc167bf19d08aef0f4abcf5bf7fa6",
+      "sourceReference": "synthetic:1"
+    },
+    "r3.p1": {
+      "recordID": "bab72904-8248-5142-9a16-097831ad8466",
+      "recordAlias": "r3",
+      "start": 0,
+      "end": 91,
+      "quote": "On examination, the clinician observed swelling of the right ankle and documented a sprain.",
+      "sourceSHA256": "27dcb61c75b85da751cad64d6c0bf6e3ced8b607a1f3ab3d680ee0dd9ca116f7",
+      "sourceReference": "synthetic:2"
+    },
+    "r4.p1": {
+      "recordID": "c2cf5ded-3f0b-50a2-81ce-8c24dd2a9c20",
+      "recordAlias": "r4",
+      "start": 0,
+      "end": 140,
+      "quote": "The laboratory report lists urine homovanillate 7.8 ug/mg (reference 3–11), within range. Serum potassium is 4.2 mmol/L (reference 3.5–5.1).",
+      "sourceSHA256": "c96d0a15911540b98411f6bf198ef463cd9d579134c240b127a8f805ecea17b5",
+      "sourceReference": "synthetic:3"
+    },
+    "r5.p1": {
+      "recordID": "d73a062e-572b-59a6-92fe-321869c669e0",
+      "recordAlias": "r5",
+      "start": 0,
+      "end": 140,
+      "quote": "Dr. Maya Example is the treating physiotherapist at Sample Clinic. Clinic phone: 555-0100. Address: 12 Example Street, Unit 2, Example City.",
+      "sourceSHA256": "1f9417d2b1136ebbdcd518396be176bac0bb40fa8acd112cdde9a6ca4d971ac3",
+      "sourceReference": "synthetic:4"
+    },
+    "r6.p1": {
+      "recordID": "e9a6f1d9-e626-5652-9f17-341b3832e2f6",
+      "recordAlias": "r6",
+      "start": 0,
+      "end": 97,
+      "quote": "The nurse administered an influenza vaccine in the left deltoid on October 2, 2026. Dose: 0.5 mL.",
+      "sourceSHA256": "c86eea29ef5c0e418c709e1b71d19251587e1026a78d2dbf0df7e50636adb73a",
+      "sourceReference": "synthetic:5"
+    },
+    "r7.p1": {
+      "recordID": "67a30864-fa44-5bc8-bd09-305a92cc1705",
+      "recordAlias": "r7",
+      "start": 0,
+      "end": 112,
+      "quote": "The patient reports a penicillin allergy causing hives. No breathing difficulty was reported with that reaction.",
+      "sourceSHA256": "72792fbddded1b00e20f94ef0970d2ce266f69ee66723c2e61a85928a8186b19",
+      "sourceReference": "synthetic:6"
+    },
+    "r8.p1": {
+      "recordID": "0757bfb9-5424-5249-9f91-e8634cde47f5",
+      "recordAlias": "r8",
+      "start": 0,
+      "end": 176,
+      "quote": "The prescription label states ExampleMed 10 mg tablets, take one tablet daily for seven days. Prescriber: Dr. Sample. Dispensed October 1, 2026; current use is not established.",
+      "sourceSHA256": "e5b48a4e385742908434d366c04a156cf5829d46e3d3838be15725559a139c60",
+      "sourceReference": "synthetic:7"
+    },
+    "r9.p1": {
+      "recordID": "416c52a7-595a-5d4e-a299-b7732a1152f4",
+      "recordAlias": "r9",
+      "start": 0,
+      "end": 164,
+      "quote": "The physiotherapist recommends gentle knee exercises twice daily if comfortable. Stop if pain worsens. This is a recommendation, not evidence of completed exercise.",
+      "sourceSHA256": "e348ab546c0b7b6098e07750be3a98f8472685d801ee66e9c6daa11761256c2c",
+      "sourceReference": "synthetic:8"
+    },
+    "r10.p1": {
+      "recordID": "0356ff05-e98e-511f-8dd2-6c731ca825d2",
+      "recordAlias": "r10",
+      "start": 0,
+      "end": 76,
+      "quote": "The patient is to book a follow-up appointment with Dr. Sample in two weeks.",
+      "sourceSHA256": "908feb5da8a9efe3b0a142c84bf9d92ee04d33a20691b42998757c27c6ea1290",
+      "sourceReference": "synthetic:9"
+    },
+    "r11.p1": {
+      "recordID": "928752b1-fc93-5c60-8b32-0f038eb8c0e3",
+      "recordAlias": "r11",
+      "start": 0,
+      "end": 162,
+      "quote": "The patient works night shifts, usually sleeps five hours, lives alone and has support from a sibling. The record does not establish that these cause a diagnosis.",
+      "sourceSHA256": "88f904a1cb3a8e13aea67858ca31e51499fa571d7f898d9e82886f17d6cd36ce",
+      "sourceReference": "synthetic:10"
+    },
+    "r12.p1": {
+      "recordID": "9e8863b2-0cdb-504b-a2e3-6bf65eba06c1",
+      "recordAlias": "r12",
+      "start": 0,
+      "end": 104,
+      "quote": "The patient denies dizziness or weakness today. The clinician documented normal strength on examination.",
+      "sourceSHA256": "ba5d7f729e08ed4145948e31a27008c4fa964b5782bfba17558328dd8d6ab348",
+      "sourceReference": "synthetic:11"
+    },
+    "r13.p1": {
+      "recordID": "e3a9b113-14de-5d2b-8ea0-b75fa1978668",
+      "recordAlias": "r13",
+      "start": 0,
+      "end": 136,
+      "quote": "The report says serum calcium was 2.35 mmol/L, within its reference range of 2.15–2.55. The report does not diagnose a calcium disorder.",
+      "sourceSHA256": "af0437341fd2bcb1755365a6907f20e73d5aa3bfcd65faec1973ca0803df23af",
+      "sourceReference": "synthetic:12"
+    },
+    "r14.p1": {
+      "recordID": "d163c25a-9802-5a7e-90dd-179af8b69faa",
+      "recordAlias": "r14",
+      "start": 0,
+      "end": 133,
+      "quote": "The clinician recommends a glucose tolerance test at 26 weeks and a repeat iron test. These are future orders; no result is reported.",
+      "sourceSHA256": "827a0ebdb4ed87b3eb704328c3fd50934ba0135a9c972516cdb01016c786a197",
+      "sourceReference": "synthetic:13"
+    },
+    "r15.p1": {
+      "recordID": "2ba8bbd8-350f-5ac1-9fc7-b77865abdcf0",
+      "recordAlias": "r15",
+      "start": 0,
+      "end": 109,
+      "quote": "The patient wonders whether headaches are related to screen use. No diagnosis or causal link was established.",
+      "sourceSHA256": "fe4319fd86ce28a5e9cc89f546c63109fbebde8e52e25d536983d27bb557081d",
+      "sourceReference": "synthetic:14"
+    },
+    "r16.p1": {
+      "recordID": "8804288b-49a3-55fb-bb04-a172e47d526b",
+      "recordAlias": "r16",
+      "start": 0,
+      "end": 106,
+      "quote": "The patient reports a previous wrist fracture in 2015, now healed. This is historical, not a new fracture.",
+      "sourceSHA256": "c8ba6155c332cc77c46b3e11508772508a4ea979d6eff36354cca19f487a1e29",
+      "sourceReference": "synthetic:15"
+    },
+    "r17.p1": {
+      "recordID": "c09639a9-3f63-5944-b0f5-aa2814f20281",
+      "recordAlias": "r17",
+      "start": 0,
+      "end": 106,
+      "quote": "An invoice names Dr. Alex Sample at Example Eye Centre. It does not establish who prescribed a medication.",
+      "sourceSHA256": "e9e078f24d161361280707f25b44839f7c2c9d2c5d33fd61c88468141f344142",
+      "sourceReference": "synthetic:16"
+    },
+    "r18.p1": {
+      "recordID": "edb262b1-5e55-5b37-b3f8-d2011fb94ed2",
+      "recordAlias": "r18",
+      "start": 0,
+      "end": 92,
+      "quote": "The clinician offered acupuncture, which the patient declined. No acupuncture was performed.",
+      "sourceSHA256": "66590742fdf210db4f5d4c738cd72886898d7140e25a6d94d80699c3bb0e4b45",
+      "sourceReference": "synthetic:17"
+    },
+    "r19.p1": {
+      "recordID": "f29545fa-8069-51e6-bb00-a470ddfe9457",
+      "recordAlias": "r19",
+      "start": 0,
+      "end": 96,
+      "quote": "A pharmacy dispensed a shingles vaccine on September 3, 2026. Administration was not documented.",
+      "sourceSHA256": "f47805c23b995f6aad20b4cd1ad70199f7ec2c5bb798097bcbb4adf83bb0eaf8",
+      "sourceReference": "synthetic:18"
+    },
+    "r20.p1": {
+      "recordID": "f37dc8f5-3b15-5174-9820-5fbb6f383223",
+      "recordAlias": "r20",
+      "start": 0,
+      "end": 120,
+      "quote": "The patient will call the clinic if symptoms worsen. The clinician will review the test results at the next appointment.",
+      "sourceSHA256": "56aeab571e786fcce406eea7cebc7e0df5db8f2681b67a870fb2df1e32fbdf9f",
+      "sourceReference": "synthetic:19"
+    }
+  },
+  "proposal": {
+    "concerns": [
+      {
+        "id": "c1",
+        "name": "Persistent right knee pain, patient-reported",
+        "systems": [
+          "musculoskeletal"
+        ],
+        "evidence": [
+          "r1.p1"
+        ]
+      },
+      {
+        "id": "c2",
+        "name": "Intermittent dizziness, patient-reported",
+        "systems": [
+          "neurological"
+        ],
+        "evidence": [
+          "r2.p1"
+        ]
+      },
+      {
+        "id": "c3",
+        "name": "Clinician-documented right ankle sprain with swelling",
+        "systems": [
+          "musculoskeletal"
+        ],
+        "evidence": [
+          "r3.p1"
+        ]
+      },
+      {
+        "id": "c4",
+        "name": "Headaches; screen-use relationship is patient-hypothesized, not established",
+        "systems": [
+          "neurological"
+        ],
+        "evidence": [
+          "r15.p1"
+        ]
+      },
+      {
+        "id": "c5",
+        "name": "Previous wrist fracture in 2015, reported healed",
+        "systems": [
+          "musculoskeletal"
+        ],
+        "evidence": [
+          "r16.p1"
+        ]
+      }
+    ],
+    "overview": [
+      {
+        "cite": [
+          "r1.p1",
+          "r2.p1",
+          "r3.p1",
+          "r9.p1",
+          "r12.p1",
+          "r14.p1",
+          "r15.p1",
+          "r16.p1",
+          "r20.p1"
+        ],
+        "text": "The records describe persistent right knee pain and intermittent dizziness, along with a clinician-observed right ankle sprain and swelling. The patient also wondered whether headaches relate to screen use; no cause or diagnosis was established. A prior wrist fracture from 2015 was reported healed. Knee exercises were recommended twice daily if comfortable, with instructions to stop if pain worsens. Future glucose tolerance and repeat iron testing were recommended, and test-result review was planned for a next appointment. The records also include a two-week follow-up booking instruction and a plan to call the clinic if symptoms worsen."
+      }
+    ],
+    "passages": {
+      "r1.p1": [
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "right knee pain"
+            ],
+            [
+              "context",
+              "persistent"
+            ]
+          ],
+          "g": [
+            "c1"
+          ],
+          "k": "chiefComplaint",
+          "m": null,
+          "p": null,
+          "s": "reported",
+          "v": [
+            "Persistent right knee pain",
+            "",
+            ""
+          ]
+        }
+      ],
+      "r2.p1": [
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "dizziness"
+            ],
+            [
+              "duration",
+              "three weeks"
+            ],
+            [
+              "frequency",
+              "intermittent"
+            ],
+            [
+              "context",
+              "worse when standing"
+            ]
+          ],
+          "g": [
+            "c2"
+          ],
+          "k": "symptoms",
+          "m": null,
+          "p": null,
+          "s": "reported",
+          "v": [
+            "Intermittent dizziness for three weeks, worse when standing",
+            "",
+            ""
+          ]
+        },
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "chest pain"
+            ],
+            [
+              "context",
+              "deny chest pain"
+            ]
+          ],
+          "g": [],
+          "k": "symptoms",
+          "m": null,
+          "p": null,
+          "s": "negative",
+          "v": [
+            "No chest pain reported",
+            "",
+            ""
+          ]
+        }
+      ],
+      "r3.p1": [
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "swelling"
+            ],
+            [
+              "location",
+              "right ankle"
+            ]
+          ],
+          "g": [
+            "c3"
+          ],
+          "k": "findings",
+          "m": null,
+          "p": null,
+          "s": "observed",
+          "v": [
+            "Swelling of the right ankle",
+            "",
+            ""
+          ]
+        },
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "sprain"
+            ],
+            [
+              "location",
+              "right ankle"
+            ]
+          ],
+          "g": [
+            "c3"
+          ],
+          "k": "findings",
+          "m": null,
+          "p": null,
+          "s": "reported",
+          "v": [
+            "Clinician-documented right ankle sprain",
+            "",
+            ""
+          ]
+        }
+      ],
+      "r4.p1": [
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "urine homovanillate"
+            ],
+            [
+              "result",
+              "7.8"
+            ],
+            [
+              "units",
+              "ug/mg"
+            ],
+            [
+              "referenceRange",
+              "3–11"
+            ],
+            [
+              "interpretation",
+              "within range"
+            ]
+          ],
+          "g": [],
+          "k": "testsAndLabs",
+          "m": null,
+          "p": null,
+          "s": "reported",
+          "v": [
+            "Urine homovanillate was within range",
+            "",
+            ""
+          ]
+        },
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "serum potassium"
+            ],
+            [
+              "result",
+              "4.2"
+            ],
+            [
+              "units",
+              "mmol/L"
+            ],
+            [
+              "referenceRange",
+              "3.5–5.1"
+            ]
+          ],
+          "g": [],
+          "k": "testsAndLabs",
+          "m": null,
+          "p": null,
+          "s": "reported",
+          "v": [
+            "Serum potassium result",
+            "",
+            ""
+          ]
+        }
+      ],
+      "r5.p1": [
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "Dr. Maya Example"
+            ],
+            [
+              "role",
+              "treating physiotherapist"
+            ],
+            [
+              "organization",
+              "Sample Clinic"
+            ]
+          ],
+          "g": [],
+          "k": "practitionerContact",
+          "m": null,
+          "p": null,
+          "s": "reported",
+          "v": [
+            "Treating physiotherapist",
+            "",
+            ""
+          ]
+        },
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "Sample Clinic"
+            ],
+            [
+              "phone",
+              "555-0100"
+            ],
+            [
+              "address",
+              "12 Example Street, Unit 2, Example City"
+            ]
+          ],
+          "g": [],
+          "k": "practitionerContact",
+          "m": null,
+          "p": null,
+          "s": "reported",
+          "v": [
+            "Clinic contact details",
+            "",
+            ""
+          ]
+        }
+      ],
+      "r6.p1": [
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "influenza vaccine"
+            ],
+            [
+              "dose",
+              "0.5 mL"
+            ],
+            [
+              "site",
+              "left deltoid"
+            ],
+            [
+              "recordStatus",
+              "administered"
+            ]
+          ],
+          "g": [],
+          "k": "vaccinations",
+          "m": null,
+          "p": null,
+          "s": "performed",
+          "v": [
+            "Influenza vaccine administered",
+            "",
+            "October 2, 2026"
+          ]
+        }
+      ],
+      "r7.p1": [
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "penicillin"
+            ],
+            [
+              "reaction",
+              "hives"
+            ],
+            [
+              "context",
+              "No breathing difficulty was reported with that reaction."
+            ]
+          ],
+          "g": [],
+          "k": "allergies",
+          "m": null,
+          "p": null,
+          "s": "reported",
+          "v": [
+            "Patient reports penicillin allergy causing hives; no breathing difficulty reported",
+            "",
+            ""
+          ]
+        }
+      ],
+      "r8.p1": [
+        {
+          "c": [],
+          "f": null,
+          "g": [],
+          "k": "medications",
+          "m": {
+            "dose": "one tablet",
+            "form": "tablets",
+            "name": "ExampleMed",
+            "route": null,
+            "duration": "seven days",
+            "strength": "10 mg",
+            "clinician": "Dr. Sample",
+            "frequency": "daily",
+            "recordDate": "October 1, 2026",
+            "uncertainty": "current use is not established.",
+            "instructions": "take one tablet daily for seven days",
+            "recordStatus": "Dispensed"
+          },
+          "p": null,
+          "s": "prescribed",
+          "v": [
+            "Prescription label states ExampleMed 10 mg tablets, take one tablet daily for seven days; dispensed October 1, 2026; current use is not established.",
+            "Prescription label",
+            "October 1, 2026"
+          ]
+        }
+      ],
+      "r9.p1": [
+        {
+          "c": [],
+          "f": null,
+          "g": [
+            "c1"
+          ],
+          "k": "carePlan",
+          "m": null,
+          "p": {
+            "a": "Patient",
+            "q": "If comfortable",
+            "t": "Twice daily; stop if pain worsens; recommendation, not completed exercise evidence; gentle knee exercises twice daily if comfortable. Stop if pain worsens. This is a recommendation, not evidence of completed exercise."
+          },
+          "s": "recommended",
+          "v": [
+            "Do gentle knee exercises",
+            "",
+            ""
+          ]
+        }
+      ],
+      "r10.p1": [
+        {
+          "c": [],
+          "f": null,
+          "g": [],
+          "k": "followUp",
+          "m": null,
+          "p": {
+            "a": "Patient",
+            "q": "",
+            "t": "In two weeks; with Dr. Sample; The patient is to book a follow-up appointment with Dr. Sample in two weeks. The patient is to book a follow-up appointment with Dr. Sample in two weeks."
+          },
+          "s": "planned",
+          "v": [
+            "Book follow-up appointment",
+            "",
+            ""
+          ]
+        }
+      ],
+      "r11.p1": [
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "night shifts"
+            ],
+            [
+              "context",
+              "works night shifts"
+            ]
+          ],
+          "g": [],
+          "k": "biopsychosocialContext",
+          "m": null,
+          "p": null,
+          "s": "reported",
+          "v": [
+            "Works night shifts",
+            "",
+            ""
+          ]
+        },
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "sleep"
+            ],
+            [
+              "context",
+              "usually sleeps five hours"
+            ]
+          ],
+          "g": [],
+          "k": "biopsychosocialContext",
+          "m": null,
+          "p": null,
+          "s": "reported",
+          "v": [
+            "Usually sleeps five hours",
+            "",
+            ""
+          ]
+        },
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "living situation"
+            ],
+            [
+              "context",
+              "lives alone"
+            ]
+          ],
+          "g": [],
+          "k": "biopsychosocialContext",
+          "m": null,
+          "p": null,
+          "s": "reported",
+          "v": [
+            "Lives alone",
+            "",
+            ""
+          ]
+        },
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "sibling support"
+            ],
+            [
+              "context",
+              "has support from a sibling"
+            ]
+          ],
+          "g": [],
+          "k": "biopsychosocialContext",
+          "m": null,
+          "p": null,
+          "s": "reported",
+          "v": [
+            "Has support from a sibling",
+            "",
+            ""
+          ]
+        }
+      ],
+      "r12.p1": [
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "dizziness"
+            ],
+            [
+              "context",
+              "today"
+            ]
+          ],
+          "g": [
+            "c2"
+          ],
+          "k": "symptoms",
+          "m": null,
+          "p": null,
+          "s": "negative",
+          "v": [
+            "Denies dizziness today",
+            "",
+            ""
+          ]
+        },
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "weakness"
+            ],
+            [
+              "context",
+              "today"
+            ]
+          ],
+          "g": [],
+          "k": "symptoms",
+          "m": null,
+          "p": null,
+          "s": "negative",
+          "v": [
+            "Denies weakness today",
+            "",
+            ""
+          ]
+        },
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "strength"
+            ],
+            [
+              "result",
+              "normal"
+            ]
+          ],
+          "g": [],
+          "k": "findings",
+          "m": null,
+          "p": null,
+          "s": "observed",
+          "v": [
+            "Normal strength on examination",
+            "",
+            ""
+          ]
+        }
+      ],
+      "r13.p1": [
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "serum calcium"
+            ],
+            [
+              "result",
+              "2.35"
+            ],
+            [
+              "units",
+              "mmol/L"
+            ],
+            [
+              "referenceRange",
+              "2.15–2.55"
+            ],
+            [
+              "interpretation",
+              "within its reference range"
+            ]
+          ],
+          "g": [],
+          "k": "testsAndLabs",
+          "m": null,
+          "p": null,
+          "s": "reported",
+          "v": [
+            "Serum calcium was within its reference range",
+            "",
+            ""
+          ]
+        }
+      ],
+      "r14.p1": [
+        {
+          "c": [],
+          "f": null,
+          "g": [],
+          "k": "carePlan",
+          "m": null,
+          "p": {
+            "a": "",
+            "q": "Future order; no result reported",
+            "t": "At 26 weeks; The clinician recommends a glucose tolerance test at 26 weeks and a repeat iron test. These are future orders; no result is reported."
+          },
+          "s": "planned",
+          "v": [
+            "Have glucose tolerance test",
+            "",
+            ""
+          ]
+        },
+        {
+          "c": [],
+          "f": null,
+          "g": [],
+          "k": "carePlan",
+          "m": null,
+          "p": {
+            "a": "",
+            "h": "",
+            "i": "p1",
+            "q": "Future order; no result reported",
+            "t": "The clinician recommends a glucose tolerance test at 26 weeks and a repeat iron test. These are future orders; no result is reported."
+          },
+          "s": "planned",
+          "v": [
+            "Repeat iron test",
+            "",
+            ""
+          ]
+        }
+      ],
+      "r15.p1": [
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "headaches"
+            ],
+            [
+              "context",
+              "The patient wonders whether headaches are related to screen use. No diagnosis or causal link was established."
+            ]
+          ],
+          "g": [
+            "c4"
+          ],
+          "k": "symptoms",
+          "m": null,
+          "p": null,
+          "s": "reported",
+          "v": [
+            "Patient wonders whether headaches relate to screen use; no link established",
+            "",
+            ""
+          ]
+        }
+      ],
+      "r16.p1": [
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "wrist fracture"
+            ],
+            [
+              "result",
+              "previous wrist fracture in 2015"
+            ],
+            [
+              "interpretation",
+              "now healed"
+            ]
+          ],
+          "g": [
+            "c5"
+          ],
+          "k": "findings",
+          "m": null,
+          "p": null,
+          "s": "historical",
+          "v": [
+            "Previous wrist fracture in 2015, reported healed; not a new fracture",
+            "",
+            ""
+          ]
+        }
+      ],
+      "r17.p1": [
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "Dr. Alex Sample"
+            ],
+            [
+              "organization",
+              "Example Eye Centre"
+            ]
+          ],
+          "g": [],
+          "k": "practitionerContact",
+          "m": null,
+          "p": null,
+          "s": "reported",
+          "v": [
+            "Named on an invoice; prescribing responsibility not established",
+            "",
+            ""
+          ]
+        },
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "Example Eye Centre"
+            ]
+          ],
+          "g": [],
+          "k": "practitionerContact",
+          "m": null,
+          "p": null,
+          "s": "reported",
+          "v": [
+            "Named on an invoice",
+            "",
+            ""
+          ]
+        }
+      ],
+      "r18.p1": [
+        {
+          "c": [],
+          "f": null,
+          "g": [],
+          "k": "carePlan",
+          "m": null,
+          "p": {
+            "a": "Patient",
+            "q": "Offered by clinician; patient declined; no acupuncture was performed.",
+            "t": ""
+          },
+          "s": "declined",
+          "v": [
+            "Declined offered acupuncture",
+            "",
+            ""
+          ]
+        }
+      ],
+      "r19.p1": [
+        {
+          "c": [],
+          "f": [
+            [
+              "name",
+              "shingles vaccine"
+            ],
+            [
+              "recordStatus",
+              "dispensed; administration not documented"
+            ]
+          ],
+          "g": [],
+          "k": "vaccinations",
+          "m": null,
+          "p": null,
+          "s": "reported",
+          "v": [
+            "Shingles vaccine dispensed; administration not documented",
+            "",
+            "September 3, 2026"
+          ]
+        }
+      ],
+      "r20.p1": [
+        {
+          "c": [],
+          "f": null,
+          "g": [],
+          "k": "followUp",
+          "m": null,
+          "p": {
+            "a": "Patient",
+            "q": "If symptoms worsen",
+            "t": ""
+          },
+          "s": "planned",
+          "v": [
+            "Call the clinic",
+            "",
+            ""
+          ]
+        },
+        {
+          "c": [],
+          "f": null,
+          "g": [],
+          "k": "followUp",
+          "m": null,
+          "p": {
+            "a": "Clinician",
+            "q": "",
+            "t": "At the next appointment"
+          },
+          "s": "planned",
+          "v": [
+            "Review the test results",
+            "",
+            ""
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -14,11 +14,27 @@ public enum StructuredArtifact {
         .biopsychosocialContext:["name","context"], .otherNotes:["name","context"]]
     /// Decode the v7 category-scoped wire object; null fields mean absent.
     public static func pairsFromObject(_ object:[String:Any], category:SummaryEntryCategory) -> [[String]]? {
-        guard let allowed=keys[category],Set(object.keys)==Set(allowed),
-              object.values.allSatisfy({$0 is String || $0 is NSNull}) else {return nil}
-        let pairs=allowed.compactMap {key in (object[key] as? String).map{[key,$0]}}
+        guard let allowed=keys[category] else {return nil}
+        var fields=object
+        if fields.keys.contains(where:{$0.hasPrefix("_pad")}) {
+            let padding=(0..<(7-allowed.count)).map{"_pad\($0+1)"}
+            guard Set(fields.keys)==Set(allowed+padding),padding.allSatisfy({fields[$0] is NSNull}) else {return nil}
+            for key in padding {fields.removeValue(forKey:key)}
+        }
+        guard Set(fields.keys)==Set(allowed),fields.values.allSatisfy({$0 is String || $0 is NSNull}) else {return nil}
+        let pairs=allowed.compactMap {key in (fields[key] as? String).map{[key,$0]}}
         guard pairs.allSatisfy({!$0[1].trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && $0[1].unicodeScalars.count<=360}) else {return nil}
         return pairs
+    }
+    public static func hasValidMultiplicity(_ pairs:[[String]],category:SummaryEntryCategory) -> Bool {
+        var seen=Set<String>();var repeated=Set<[String]>()
+        for pair in pairs {
+            guard pair.count==2 else {return false}
+            let repeatable=pair[0] == "context" || (category == .findings && pair[0] == "name")
+            if seen.contains(pair[0]) && !(repeatable && !repeated.contains(pair)) {return false}
+            seen.insert(pair[0]);repeated.insert(pair)
+        }
+        return true
     }
     public static func label(_ key: String, category: SummaryEntryCategory) -> String {
         if key == "name" { return "Name" }
@@ -38,7 +54,11 @@ public enum StructuredArtifact {
     }
     public static func display(_ entry: SummaryEntry) -> SummaryEntry {
         var result=entry
-        if let name=entry.fields.first(where:{$0.label=="Name" && !$0.value.isEmpty}) { result.title=name.value }
+        let names=entry.fields.filter{$0.label=="Name" && !$0.value.isEmpty}.map(\.value)
+        if entry.category == .findings && names.count>1 {
+            let heading=names.joined(separator:" · ")
+            result.title=heading.count<=90 ? heading:"Clinical findings"
+        } else if let name=names.first {result.title=name}
         // The statement carries qualifiers/negation not expressed by a source value.
         // Only identical names and values are removed; never discard a qualifier.
         result.details=entry.title == result.title ? entry.details : ([entry.title,entry.details].filter{!$0.isEmpty}.joined(separator:"\n"))

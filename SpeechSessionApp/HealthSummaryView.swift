@@ -27,6 +27,15 @@ struct HealthSummaryView: View {
     @State private var didRunLiveStress = false
     @State private var didCheckAIConnection = false
     #endif
+    private var liveAuditID: String? {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        guard let index = args.firstIndex(of: "--whole-history-audit-run"), args.indices.contains(index + 1), UUID(uuidString: args[index + 1]) != nil else { return nil }
+        return args[index + 1]
+        #else
+        return nil
+        #endif
+    }
     private var connectionCheckOnly: Bool {
         #if DEBUG
         ProcessInfo.processInfo.arguments.contains("--ai-connection-check") || ProcessInfo.processInfo.arguments.contains("--health-presentation-check")
@@ -59,7 +68,8 @@ struct HealthSummaryView: View {
     private var unlinkedFacts: [HealthFact] {
         let linked = Set(model.snapshot.careTeam.flatMap(\.sourceEntryIDs))
         return model.facts.filter { fact in
-            fact.category != .practitionerContact || !fact.occurrences.contains { linked.contains($0.id) }
+            !BArtifactPresentation.isLabReportMetadata(fact.latest) &&
+            (fact.category != .practitionerContact || !fact.occurrences.contains { linked.contains($0.id) })
         }
     }
 
@@ -84,13 +94,13 @@ struct HealthSummaryView: View {
                         Text(overview).textSelection(.enabled)
                             .contentTransition(.opacity)
                             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: overview)
-                        if !model.overviewIsCurrent {
-                            Text(model.isUpdatingStory ? "Updating with your latest records." : "Last saved overview. Latest changes aren’t included yet.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
                     } else {
                         Text("Your overview will appear here as your records are organized.")
                             .foregroundStyle(.secondary)
+                    }
+                    if model.displayedOverview != nil && !model.overviewIsCurrent && model.isUpdatingStory {
+                        Text("Updating with your latest records.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                     regionRecovery(.overview)
                 } header: { regionHeader("Overview", region: .overview) }
@@ -231,7 +241,7 @@ struct HealthSummaryView: View {
             Button("OK", role: .cancel) { stopError = nil }
         } message: { Text(stopError ?? "") }
         .task(id: "\(model.updateInputKey)|\(model.hasLoaded)|\(cloudConsent)|\(backend)|\(isLaunchingPreparation)|\(scenePhase)") {
-            guard !connectionCheckOnly, scenePhase == .active, !isLaunchingPreparation else { return }
+            guard !connectionCheckOnly, liveAuditID == nil, scenePhase == .active, !isLaunchingPreparation else { return }
             if resumePendingSummaryJobIfPossible() { return }
             if model.shouldAutomaticallyUpdate(onDevice: backend == "onDevice", consent: cloudConsent) {
                 prepare(automatic: true)
@@ -239,6 +249,17 @@ struct HealthSummaryView: View {
         }
         .task(id: connectionCheckOnly ? "ai-connection-check" : String(describing: home.revision)) {
             #if DEBUG
+            if let auditID = liveAuditID {
+                guard !didRunLiveStress else { return }
+                didRunLiveStress = true
+                await model.refresh()
+                let key = "collectivecare.liveAudit.started." + auditID
+                let resuming = UserDefaults.standard.bool(forKey: key)
+                UserDefaults.standard.set(true, forKey: key)
+                conditionsOnlyRequest = !resuming
+                prepare(retryUnfinished: resuming, automaticResume: resuming)
+                return
+            }
             if connectionCheckOnly {
                 guard !didCheckAIConnection else { return }
                 didCheckAIConnection = true
@@ -249,6 +270,8 @@ struct HealthSummaryView: View {
                 if ProcessInfo.processInfo.arguments.contains("--health-presentation-check") {
                     // Local counts only; this mode must never contact the inference service.
                     report["build"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+                    report["wholeHistoryRecovery"] = model.wholeHistoryRecoveryDiagnostic
+                    report["requiresNewAttempt"] = model.wholeHistoryRequiresNewAttempt
                     report["categoryCounts"] = Dictionary(grouping:model.facts,by:{$0.category.rawValue}).mapValues(\.count)
                     report["medicationCards"] = model.facts.filter { $0.category == .medications }.count
                     report["medicationOccurrences"] = Set(model.facts.filter { $0.category == .medications }.flatMap(\.occurrences).map(\.id)).count
@@ -489,40 +512,21 @@ struct HealthSummaryView: View {
     @ViewBuilder private func regionRecovery(_ region: SummaryUpdateRegion) -> some View {
         if model.state(for: region) == .needsAttention {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Couldn’t finish updating").font(.subheadline).foregroundStyle(.secondary)
-                if region == .conditions, let notice = model.conditionNotice {
-                    HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Conditions updated")
-                            .font(.subheadline.weight(.semibold))
-                        Text("Some care plans still show their original details.")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                        DisclosureGroup("More information") {
-                            Text(notice).font(.footnote).foregroundStyle(.secondary)
-                        }
-                        .font(.subheadline)
-                    }
-                    Button {
-                        model.careOrganizationNotice = nil
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Dismiss care plan notice")
+                Text(model.retainedRecordNotice == nil ? "Some details couldn’t be added" : "Update needs review").font(.subheadline).foregroundStyle(.secondary)
+                if region == .conditions {
+                    Text("Your saved details are available. Open progress to review this update.")
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
-                        .textSelection(.enabled)
-                }
-                Button("Retry") {
-                    prepare(retryUnfinished: true)
+                Button(model.wholeHistoryRequiresNewAttempt ? "Review update" : "Retry") {
+                    if model.wholeHistoryRequiresNewAttempt { taskSheet = .progress }
+                    else { prepare(retryUnfinished: true) }
                 }.frame(minHeight: 44)
                     .buttonStyle(.borderless)
-                Button("View progress") { taskSheet = .progress }
-                    .font(.caption)
-                    .buttonStyle(.borderless)
+                if !model.wholeHistoryRequiresNewAttempt {
+                    Button("View progress") { taskSheet = .progress }
+                        .font(.caption)
+                        .buttonStyle(.borderless)
+                }
             }
         } else if model.state(for: region) == .interrupted {
             Text(model.isExplicitlyPaused ? "Update paused. Resume whenever you’re ready." : "Update paused. We’ll continue when you return.")
@@ -568,7 +572,7 @@ struct HealthSummaryView: View {
                     .accessibilityLabel("Dismiss care plan notice")
                 }
             }
-            ForEach(model.healthAreas) { area in
+            ForEach(model.healthAreas.filter {$0.id != .other}) { area in
                 NavigationLink(value: area.id) {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: area.id.symbol)
@@ -587,6 +591,21 @@ struct HealthSummaryView: View {
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityHint("Opens concerns and their health details")
+            }
+            ForEach(HealthAreaProjection.standaloneConcerns(conditions)) { condition in
+                NavigationLink {
+                    List { conditionCategories(condition) }
+                        .navigationTitle(HealthStoryText.displayName(condition.name))
+                        .navigationBarTitleDisplayMode(.inline)
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(HealthStoryText.displayName(condition.name)).font(.headline)
+                            Text("\(condition.facts.count) saved details").font(.caption).foregroundStyle(.secondary)
+                        }
+                    } icon: { Image(systemName: "heart.text.square").foregroundStyle(BrandPalette.icon) }
+                        .padding(.vertical, 4)
+                }.accessibilityHint("Opens this concern and its health details")
             }
         } header: { regionHeader("Conditions", region: .conditions) }
     }
@@ -655,7 +674,10 @@ struct HealthSummaryView: View {
         let order: [SummaryEntryCategory] = [.symptoms, .findings, .medications,
             .testsAndLabs, .vaccinations, .allergies, .biopsychosocialContext, .otherNotes]
         ForEach(order, id: \.self) { category in
-            let rows = condition.facts.filter { $0.category == category || (category == .symptoms && $0.category == .chiefComplaint) }
+            let rows = condition.facts.filter { fact in
+                !BArtifactPresentation.isLabReportMetadata(fact.latest) &&
+                (fact.category == category || (category == .symptoms && fact.category == .chiefComplaint))
+            }
             if !rows.isEmpty {
                 DisclosureGroup {
                     if category == .symptoms {
@@ -838,7 +860,6 @@ struct HealthSummaryView: View {
         preparationWasBackgrounded = scenePhase == .background
         isLaunchingPreparation = true
         model.beginLaunchingUpdate(conditionsOnly ? .conditions : (overviewOnly ? .overview : .details))
-        if !automatic && !automaticResume { taskSheet = .progress }
         let stop = DurableProcessingStop()
         durableStop = stop
         preparationTask = Task {
@@ -858,6 +879,17 @@ struct HealthSummaryView: View {
                 if Task.isCancelled { model.interruptUpdates() }
                 isLaunchingPreparation = false
                 preparationTask = nil
+                #if DEBUG
+                if let auditID = liveAuditID {
+                    let report: [String: Any] = ["auditID": auditID, "records": model.snapshot.sessions.count,
+                        "facts": model.facts.count, "overviewCurrent": model.overviewIsCurrent,
+                        "hasError": model.error != nil || model.updateError != nil,
+                        "wasBackgrounded": preparationWasBackgrounded, "cancelled": Task.isCancelled,
+                        "pending": !pendingSummaryJob.isEmpty, "recovery": model.wholeHistoryRecoveryDiagnostic]
+                    let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("whole-history-live-audit.json")
+                    if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) { try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) }
+                }
+                #endif
             }
             var transport = backend == "onDevice" ? nil : await auth.openAIChatTransport(byokFallback: apiKey)
             transport?.explicitStop = stop
@@ -893,7 +925,7 @@ struct HealthSummaryView: View {
                     unfinishedRecordCount: pendingCount,
                     conditionOrganizationFailed: backend != "onDevice" && (model.conditionNotice != nil
                         || (!model.facts.isEmpty && model.needsConditionOrganization))
-                        || (!recordsOnly && !model.facts.isEmpty && !model.overviewIsCurrent)
+                        || (!recordsOnly && !model.facts.isEmpty && !model.overviewIsCurrent && model.retainedRecordNotice == nil)
                 )
             }
         }
@@ -901,7 +933,8 @@ struct HealthSummaryView: View {
 
     @discardableResult
     private func resumePendingSummaryJobIfPossible() -> Bool {
-        guard !connectionCheckOnly, model.automaticProcessingAllowed else { return false }
+        // Persisted user-started work also resumes for imported histories.
+        guard !connectionCheckOnly, model.hasLoaded, !model.isTransferringData, !model.isExplicitlyPaused else { return false }
         guard SummaryJobResumePolicy.canResume(
             hasPendingJob: !pendingSummaryJob.isEmpty,
             hasLoaded: model.hasLoaded,
@@ -1437,15 +1470,22 @@ private struct SummaryUpdateProgressSheet: View {
     private var needsAttention: Bool {
         model.processingIssue != nil || model.updateError != nil || model.error != nil
             || model.conditionNotice != nil || model.overviewNotice != nil
+            || SummaryUpdateRegion.allCases.contains { model.state(for: $0) == .needsAttention }
+    }
+    private var awaitsRecordReview: Bool {
+        !isActive && !model.categoryReviews.isEmpty && model.retainedRecordNotice != nil
+            && model.overviewNotice == nil && model.conditionNotice == nil
+            && model.updateError == nil && model.error == nil && model.processingIssue == nil
     }
     private var isPaused: Bool {
         SummaryUpdateRegion.allCases.contains { model.state(for: $0) == .interrupted }
     }
     private var title: String {
-        if isActive { return "Updating your health story" }
-        if needsAttention { return "Update needs attention" }
+        if isActive { return "Updating your records" }
+        if awaitsRecordReview { return "Review record changes" }
+        if needsAttention { return "Some details couldn’t be added" }
         if isPaused { return "Update paused" }
-        return "Health story update"
+        return "Updated"
     }
 
     var body: some View {
@@ -1455,10 +1495,20 @@ private struct SummaryUpdateProgressSheet: View {
                     Section {
                         if needsAttention || isPaused {
                             Text("Your saved details are available. You can leave this screen and continue using the app.")
-                            Button(model.overviewNotice != nil && model.conditionNotice == nil && model.state(for: .details) == .ready ? "Try overview again" : (isPaused && !needsAttention ? "Resume update" : "Retry unfinished update"), action: onRetry)
-                                .frame(minHeight: 44)
-                            if supportsConditions && model.conditionNotice != nil {
-                                Button("Start a new condition attempt…") { showNewAttemptConsent = true }
+                            if let retained = model.retainedRecordNotice { Text(retained).foregroundStyle(.secondary) }
+                            if awaitsRecordReview {
+                                Text("The overview will stay unchanged until the record changes are resolved.").foregroundStyle(.secondary)
+                            }
+                            if !model.categoryReviews.isEmpty {
+                                NavigationLink("Compare retained records") {WholeHistoryUpdateReviewView(health:model)}
+                            }
+                            let requiresNewAttempt = supportsConditions && model.wholeHistoryRequiresNewAttempt
+                            if !requiresNewAttempt {
+                                Button(model.wholeHistoryCanRevalidateSavedDetails ? "Recheck saved result" : (model.overviewNotice != nil && model.conditionNotice == nil && model.state(for: .details) == .ready ? "Try overview again" : (isPaused && !needsAttention ? "Resume update" : "Retry unfinished update")), action: onRetry)
+                                    .frame(minHeight: 44)
+                            }
+                            if supportsConditions && (requiresNewAttempt || model.conditionNotice != nil) {
+                                Button("Start a new update…") { showNewAttemptConsent = true }
                                     .frame(minHeight: 44)
                             }
                         }
@@ -1469,13 +1519,13 @@ private struct SummaryUpdateProgressSheet: View {
                 Section {
                     ForEach(SummaryUpdateRegion.allCases.filter { supportsConditions || $0 != .conditions }) { region in
                         HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: symbol(model.state(for: region)))
+                            Image(systemName: awaitsRecordReview && region == .overview ? "doc.text.magnifyingglass" : symbol(model.state(for: region)))
                                 .foregroundStyle(model.state(for: region) == .updating ? BrandPalette.systemBlue : .secondary)
                                 .frame(width: 22)
                                 .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(region.title).font(.headline)
-                                Text(label(model.state(for: region)))
+                                Text(awaitsRecordReview && region == .overview ? "Waiting for record review" : label(model.state(for: region)))
                                     .font(.subheadline).foregroundStyle(.secondary)
                                 if model.state(for: region) == .updating {
                                     if region == .details && progress.showsRecordCount && progress.total > 0 {
@@ -1538,7 +1588,7 @@ private struct SummaryUpdateProgressSheet: View {
         case .ready: "Updated"
         case .updating: "Updating…"
         case .interrupted: "Paused"
-        case .needsAttention: "Couldn’t finish updating"
+        case .needsAttention: "Some details couldn’t be added"
         default: "Waiting"
         }
     }
