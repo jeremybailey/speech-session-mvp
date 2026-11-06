@@ -16,7 +16,7 @@ test('durable incremental lifecycle: duplicate delivery, source isolation, cap, 
   let body='';for await(const chunk of req)body+=chunk;
   const request=JSON.parse(body),input=JSON.parse(request.input[1].content);posts++;
   if(mode==='ambiguous'){res.statusCode=503;res.setHeader('content-type','application/json');res.end(JSON.stringify({error:{message:'Synthetic lost submission'}}));return;}
-  const result=input.snapshot?(input.candidate?{supported:true,reason:''}:{sentences:[{text:'Example is recorded.',factIDs:['f1']}]}):input.facts?{decisions:input.facts.map((f:any)=>({id:f.id,supported:mode!=='repair'||input.unit.repair===true,reason:'',nameSupported:true,supportedFields:f.fields.map((field:any)=>field.key),supportedConditions:[]})),omissions:[],repairs:mode==='repair'&&!input.unit.repair?input.facts:[]}:
+  const result=input.snapshot?(input.candidate?(mode==='overview-repair'&&input.candidate.sentences[0].text==='Example is recorded.'?{supported:false,reason:'Missing qualifier',repair:{sentences:[{text:'Example is recorded; status is uncertain.',factIDs:['f1']}]}}:mode==='overview-reject'?{supported:false,reason:'Still unsupported',repair:{sentences:[{text:'Example is recorded.',factIDs:['f1']}]}}:{supported:true,reason:'',repair:null}):{sentences:[{text:'Example is recorded.',factIDs:['f1']}]}):input.facts?{decisions:input.facts.map((f:any)=>({id:f.id,supported:mode!=='repair'||input.unit.repair===true,reason:'',nameSupported:true,supportedFields:f.fields.map((field:any)=>field.key),supportedConditions:[]})),omissions:[],repairs:mode==='repair'&&!input.unit.repair?input.facts:[]}:
    {facts:[{id:'f1',category:'medications',text:'Example recorded',quote:input.unit.text,name:'Example',fields:[],status:'reported',attribution:'',date:'',conditions:[]}]};
   res.setHeader('content-type','application/json');res.end(JSON.stringify({id:'resp_'+posts,object:'response',status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:JSON.stringify(result),annotations:[]}]}],usage:{input_tokens:10,output_tokens:10,total_tokens:20}}));
  });
@@ -60,6 +60,24 @@ test('durable incremental lifecycle: duplicate delivery, source isolation, cap, 
   const overview=await recordUpdateStatus('owner',overviewID);
   assert.equal(overview.state,'completed');assert.equal(overview.units[0].result.overview.sentences[0].factIDs[0],'f1');
   await assert.rejects(createSnapshotUpdate('owner',overviewID,{...snapshot,fingerprint:'changed'},{}),/invalid_run/);
+  for(const rejectionMode of ['overview-repair','overview-reject']){
+   mode=rejectionMode;
+   const rid=randomUUID(),beforeOverview=posts;
+   await createSnapshotUpdate('owner',rid,{...snapshot,fingerprint:rid,facts:[{id:'f1',text:'Example is recorded; status is uncertain.'}]},{});
+   const uid=(await recordUpdateStatus('owner',rid)).units[0].id;
+   await runRecordUnit(uid);await runRecordUnit(uid);
+   assert.equal((await recordUpdateStatus('owner',rid)).units[0].result,null);
+   await runRecordUnit(uid);await runRecordUnit(uid);
+   const repairedOverview=(await recordUpdateStatus('owner',rid)).units[0];
+   assert.equal(posts-beforeOverview,3);
+   assert.equal(repairedOverview.state,rejectionMode==='overview-repair'?'completed':'blocked');
+   if(rejectionMode==='overview-repair')assert.match(repairedOverview.result.overview.sentences[0].text,/uncertain/);
+   else assert.equal(repairedOverview.result,null);
+  }
+  await db.query("UPDATE ai_record_units SET state='blocked',diagnostic='invalid_result',validator_version='incremental-validator-v2' WHERE id=$1",[unit]);
+  const beforeReplay=posts;assert.equal(await revalidateRecordUpdate('owner',id),1);
+  await runRecordUnit(unit);assert.equal(posts,beforeReplay);
+  assert.equal(await revalidateRecordUpdate('owner',id),0);
   mode='repair';const repairID=randomUUID();await createRecordUpdate('owner',repairID,[{id:randomUUID(),text:'Example tablet'}],{});
   const base=(await recordUpdateStatus('owner',repairID)).units[0].id;
   const beforeRepair=posts;await runRecordUnit(base);await runRecordUnit(base);

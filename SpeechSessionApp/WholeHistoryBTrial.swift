@@ -719,7 +719,7 @@ struct BTrialConditionListView: View {
         guard let result=try JSONSerialization.jsonObject(with:data) as? [String:Any] else {throw URLError(.cannotParseResponse)}
         return result
     }
-    static func writeOverview(store:SessionStore,transport:OpenAIChatTransport,facts:[HealthFact],allowExpiredReplacement:Bool = true) async throws {
+    static func writeOverview(store:SessionStore,transport:OpenAIChatTransport,facts:[HealthFact],allowExpiredReplacement:Bool = true,allowFailedReplacement:Bool = false) async throws {
         guard !facts.isEmpty else {return}
         if await store.storyOverview(for:facts) != nil {return}
         let context=await store.currentOverviewConditionContext(facts)
@@ -755,15 +755,36 @@ struct BTrialConditionListView: View {
                 var completed=current;completed.state="completed";try await store.saveRecordOverviewReceipt(completed)
                 return
             }
-            if ["completed_with_withheld_items","blocked","cancelled"].contains(status["state"] as? String ?? "") {throw URLError(.cannotParseResponse)}
+            if let state=status["state"] as? String,["completed_with_withheld_items","blocked","cancelled"].contains(state) {
+                var failed=current;failed.state=state;try await store.saveRecordOverviewReceipt(failed)
+                if state == "cancelled" {throw CancellationError()}
+                // Only an explicit patient retry may replace a terminal overview.
+                // Keep the previous server receipt/accounting; never restart records.
+                if IncrementalRecordUpdate.mayReplaceOverview(state:state,explicitlyRequested:allowFailedReplacement) {
+                    try await store.saveRecordOverviewReceipt(RecordUpdateReceipt(sources:current.sources))
+                    try await writeOverview(store:store,transport:transport,facts:facts,allowExpiredReplacement:false,allowFailedReplacement:false)
+                    return
+                }
+                throw URLError(.cannotParseResponse)
+            }
             try await Task.sleep(nanoseconds:3_000_000_000)
             status=try await request("status",receipt:current,records:[],transport:transport)
         }
     }
-    static func run(store:SessionStore,transport:OpenAIChatTransport,allowExpiredReplacement:Bool = true,onPublication:() async -> Void) async throws -> Bool {
+    static func run(store:SessionStore,transport:OpenAIChatTransport,allowExpiredReplacement:Bool = true,collectSavedResults:Bool = false,onPublication:() async -> Void) async throws -> Bool {
         let all=try await store.loadAll()
         var receipt=try await store.recordUpdateReceipt()
         let terminal:Set<String>=["completed","completed_with_withheld_items","blocked","cancelled"]
+        // Explicit retry first collects newly revalidated saved results. It does
+        // not reset server attempts or regenerate unchanged source records.
+        if collectSavedResults, var previous=receipt,
+           ["completed_with_withheld_items","blocked"].contains(previous.state),
+           previous.sources.allSatisfy({id,hash in all.contains {$0.id.uuidString==id && IncrementalRecordUpdate.sourceHash($0.transcript)==hash}}),
+           try await store.recordsNeedingIncrementalUpdate().isEmpty {
+            previous.state="queued"
+            try await store.saveRecordUpdateReceipt(previous)
+            receipt=previous
+        }
         if let previous=receipt,!terminal.contains(previous.state),previous.sources.contains(where:{id,hash in !all.contains(where:{$0.id.uuidString==id && IncrementalRecordUpdate.sourceHash($0.transcript)==hash})}) {
             _=try await request("cancel",receipt:previous,records:[],transport:transport)
             receipt=nil

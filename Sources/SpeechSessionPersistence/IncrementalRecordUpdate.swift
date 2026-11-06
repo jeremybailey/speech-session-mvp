@@ -12,6 +12,9 @@ public struct RecordUpdateReceipt: Codable, Sendable, Equatable {
 }
 public enum IncrementalRecordUpdate {
     public static let version = "incremental-records-v1"
+    public static func mayReplaceOverview(state: String, explicitlyRequested: Bool) -> Bool {
+        explicitlyRequested && ["blocked", "completed_with_withheld_items"].contains(state)
+    }
     public static func sourceHash(_ text: String) -> String { SHA256.hash(data:Data(text.utf8)).map {String(format:"%02x",$0)}.joined() }
     public static func stableID(_ text: String) -> UUID {
         let h=sourceHash(text); let parts=[String(h.prefix(8)),String(h.dropFirst(8).prefix(4)),String(h.dropFirst(12).prefix(4)),String(h.dropFirst(16).prefix(4)),String(h.dropFirst(20).prefix(12))]

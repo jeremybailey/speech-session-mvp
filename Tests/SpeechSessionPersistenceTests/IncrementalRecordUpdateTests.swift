@@ -5,6 +5,16 @@ final class IncrementalRecordUpdateTests: XCTestCase {
         let value:[String:Any]=["id":"f1","occurrenceID":"source-occurrence","category":category,"text":text,"quote":session.transcript,"name":"Example","fields":[],"status":"reported","attribution":"","date":"","conditions":[],"sourceHash":IncrementalRecordUpdate.sourceHash(session.transcript),"recordID":session.id.uuidString.lowercased(),"unitKey":"unit-1","start":0]
         return try JSONDecoder().decode(IncrementalRecordFact.self,from:JSONSerialization.data(withJSONObject:value))
     }
+    func testOverviewReplacementRequiresExplicitRetryAndTerminalFailure() {
+        for state in ["queued", "running", "reconciling", "retry_scheduled", "completed", "cancelled"] {
+            XCTAssertFalse(IncrementalRecordUpdate.mayReplaceOverview(state: state, explicitlyRequested: true))
+        }
+        for state in ["blocked", "completed_with_withheld_items"] {
+            XCTAssertFalse(IncrementalRecordUpdate.mayReplaceOverview(state: state, explicitlyRequested: false))
+            XCTAssertTrue(IncrementalRecordUpdate.mayReplaceOverview(state: state, explicitlyRequested: true))
+        }
+    }
+
     func testPublicationIsIdempotentAndPreservesPatientEdits() async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer {try? FileManager.default.removeItem(at:root)}

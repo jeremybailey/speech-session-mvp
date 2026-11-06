@@ -380,13 +380,22 @@ final class HealthSummaryModel: ObservableObject {
         updateStates=[.details:.updating,.conditions:.updating,.overview:.waiting]
         defer {automaticPolicy.finished(updateInputKey);isUpdatingStory=false;isProcessing=false;progress=""}
         do {
-            let withheld=try await IncrementalRecordCoordinator.run(store:store,transport:transport) {await self.refresh()}
+            let withheld=try await IncrementalRecordCoordinator.run(store:store,transport:transport,collectSavedResults:explicitlyRequested) {await self.refresh()}
             try Task.checkCancellation()
             await refresh()
             updateStates=[.details:.ready,.conditions:.ready,.overview:.updating]
             if !facts.isEmpty {
                 let expected=facts
-                try await IncrementalRecordCoordinator.writeOverview(store:store,transport:transport,facts:expected)
+                do {
+                    try await IncrementalRecordCoordinator.writeOverview(store:store,transport:transport,facts:expected,allowFailedReplacement:explicitlyRequested)
+                } catch is CancellationError { throw CancellationError() }
+                catch {
+                    await refresh()
+                    overviewNotice="The overview couldn’t be updated. Your saved details are available."
+                    updateStates=[.details:withheld ? .needsAttention:.ready,.conditions:.ready,.overview:.needsAttention]
+                    if withheld {updateError="Some details couldn’t be added. Your original records are available."}
+                    return
+                }
             }
             await refresh()
             updateStates=[.details:.ready,.conditions:.ready,.overview:.ready]

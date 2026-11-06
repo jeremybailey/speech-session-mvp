@@ -3,10 +3,10 @@ import {randomUUID} from 'node:crypto';
 import {database,transaction,submitWithinTransaction,cancel,Payload} from './ledger';
 import {runJob,ProviderResponsePending} from './worker';
 import {jobQueue} from './queue';
-import {incrementalVersion,splitRecords,extractionPayload,verificationPayload,parseFacts,acceptFacts,digest,RecordInput} from './incremental-contract';
+import {incrementalVersion,splitRecords,extractionPayload,verificationPayload,parseFacts,parseExtractionBatch,acceptFacts,digest,RecordInput} from './incremental-contract';
 
 export const recordUpdateTopic='health-record-updates';
-export const incrementalValidator='incremental-validator-v2';
+export const incrementalValidator='incremental-validator-v3';
 const terminal=['completed','completed_with_withheld_items','blocked','cancelled'];
 export function recoveryDecision(state:string,attempts:number,age:number,replaced:boolean,http?:number):'wait'|'retry'|'block'{
  if(state==='queued'||state==='running')return 'wait';
@@ -98,12 +98,19 @@ export async function runRecordUnit(id:string){
    }else if(current.phase==='overview-verify'){
     const check=JSON.parse(job.result.output);
     if(typeof check.supported!=='boolean')throw Error('invalid_verification');
-    await db.query('UPDATE ai_record_units SET result=$2,state=$3,diagnostic=$4 WHERE id=$1',[id,check.supported?{overview:current.candidate}:null,check.supported?'completed':'blocked',check.supported?null:'unsupported_overview']);
+    if(!check.supported && check.repair && current.attempts<3){
+     const repaired=validateSnapshotOverview(JSON.stringify(check.repair),current.source.snapshot);
+     await db.query("UPDATE ai_record_units SET candidate=$2,job_id=NULL,state='retry_scheduled',diagnostic='overview_repair_pending' WHERE id=$1",[id,repaired]);
+    }else{
+     await db.query('UPDATE ai_record_units SET result=$2,state=$3,diagnostic=$4 WHERE id=$1',[id,check.supported?{overview:current.candidate}:null,check.supported?'completed':'blocked',check.supported?null:'unsupported_overview']);
+    }
    }else if(current.phase==='extract'){
-    const facts=parseFacts(job.result.output,current.source);
-    await db.query("UPDATE ai_record_units SET candidate=$2,phase='verify',job_id=NULL,state='retry_scheduled' WHERE id=$1",[id,JSON.stringify(facts)]);
+    const batch=parseExtractionBatch(job.result.output,current.source);
+    if(!batch.facts.length && batch.withheld)throw Error('invalid_unit');
+    await db.query("UPDATE ai_record_units SET candidate=$2,source=$3,phase='verify',job_id=NULL,state='retry_scheduled' WHERE id=$1",[id,JSON.stringify(batch.facts),{...current.source,extractionWithheld:batch.withheld}]);
    }else{
     const result=acceptFacts(job.result.output,current.candidate,current.source);
+    result.withheld+=current.source.extractionWithheld??0;
     const partial=result.withheld>0||result.omissions.length>0;
     await db.query('UPDATE ai_record_units SET result=$2,state=$3 WHERE id=$1',[id,result,partial?'completed_with_withheld_items':'completed']);
     // A repair consumes the remaining third call of this source unit's budget.
@@ -112,7 +119,7 @@ export async function runRecordUnit(id:string){
      let repairs:ReturnType<typeof parseFacts>=[];
      try {repairs=parseFacts(JSON.stringify({facts:JSON.parse(job.result.output).repairs??[]}),current.source);} catch { /* Keep valid base facts even if repair proposals are malformed. */ }
      if(repairs.length){
-      const source={...current.source,key:current.source.key+':repair',repair:true};
+      const source={...current.source,key:current.source.key+':repair',repair:true,extractionWithheld:0};
       await db.query("INSERT INTO ai_record_units(id,update_id,unit_key,source_hash,source,phase,candidate,attempts) VALUES($1,$2,$3,$4,$5,'verify',$6,$7) ON CONFLICT(update_id,unit_key) DO NOTHING",[randomUUID(),current.update_id,source.key,current.source_hash,source,JSON.stringify(repairs),current.attempts]);
      }
     }
@@ -164,7 +171,7 @@ export async function revalidateRecordUpdate(owner:string,id:string){
   const result=await db.query(`UPDATE ai_record_units u SET state='running',diagnostic=NULL,next_attempt_at=now()
     FROM ai_jobs j,ai_payloads payload WHERE u.update_id=$1 AND u.job_id=j.id AND payload.job_id=j.id
     AND u.state='blocked' AND u.diagnostic='invalid_result' AND u.phase='verify'
-    AND u.validator_version='incremental-validator-v1' AND j.state='completed'
+    AND u.validator_version IN ('incremental-validator-v1','incremental-validator-v2') AND j.state='completed'
     AND payload.result IS NOT NULL AND payload.expires_at>now() RETURNING u.id`,[id]);
   if(result.rows.length)await db.query("UPDATE ai_record_updates SET state='running' WHERE id=$1",[id]);
   return result.rows;

@@ -82,3 +82,20 @@ test('condition navigation systems require independent acceptance and preserve l
  const legacy={...candidate,conditionSystems:undefined};
  assert.deepEqual(acceptFacts(JSON.stringify(check),[legacy],unit).facts[0].conditionSystems,[]);
 });
+
+import {parseExtractionBatch} from '../api/_lib/incremental-contract';
+test('malformed extraction candidates cannot discard valid source-supported neighbors',()=>{
+ const invalid={...fact,id:'bad',quote:'A quotation absent from the source'};
+ const batch=parseExtractionBatch(JSON.stringify({facts:[fact,invalid]}),unit);
+ assert.deepEqual(batch.facts,[fact]);assert.equal(batch.withheld,1);
+ assert.throws(()=>parseFacts(JSON.stringify({facts:[invalid]}),unit));
+ const duplicates=parseExtractionBatch(JSON.stringify({facts:[fact,{...fact}]}),unit);
+ assert.equal(duplicates.facts.length,0);assert.equal(duplicates.withheld,2);
+});
+test('nonliteral omission notes remain unresolved without dropping checked facts',()=>{
+ const check={decisions:[{id:'f1',supported:true,nameSupported:true,supportedFields:['strength'],supportedConditions:[]}],omissions:['A paraphrased missing detail']};
+ const result=acceptFacts(JSON.stringify(check),[fact],unit);
+ assert.equal(result.facts.length,1);assert.equal(result.withheld,1);assert.deepEqual(result.omissions,[]);
+ check.decisions[0].supported=false;
+ assert.equal(acceptFacts(JSON.stringify(check),[fact],unit).facts.length,0);
+});

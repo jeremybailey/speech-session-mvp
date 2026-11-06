@@ -62,6 +62,19 @@ export function parseFacts(output:string,unit:SourceUnit):Fact[]{
  }
  return value.facts;
 }
+/** Quarantine malformed candidates without losing valid neighbors. Every returned
+ * candidate still passes the strict source checks and requires independent verification. */
+export function parseExtractionBatch(output:string,unit:SourceUnit):{facts:Fact[];withheld:number}{
+ const value=JSON.parse(output);
+ if(!value||Object.keys(value).join()!=='facts'||!Array.isArray(value.facts)||value.facts.length>128)throw Error('invalid_unit');
+ const counts=new Map<unknown,number>();for(const f of value.facts)counts.set(f?.id,(counts.get(f?.id)??0)+1);
+ const facts:Fact[]=[];let withheld=0;
+ for(const f of value.facts){
+  try{if(counts.get(f?.id)!==1)throw Error('duplicate_id');facts.push(...parseFacts(JSON.stringify({facts:[f]}),unit));}
+  catch{withheld++;}
+ }
+ return {facts,withheld};
+}
 export function usableMedicationName(value:unknown):boolean{
  if(typeof value!=='string')return false;const name=value.normalize('NFKC').toLowerCase().trim().replace(/\s+/g,' ');
  return /\p{L}/u.test(name)&&!['medication','medications','medicine','drug','unknown','unspecified','eye drops','steroid eye drops','tablet','tablets','capsule','capsules','check original','medication — check original'].includes(name)&&!['unknown','unspecified','unclear','unidentified'].some(x=>name.includes(x));
@@ -70,7 +83,11 @@ export function acceptFacts(output:string,facts:Fact[],unit:SourceUnit):{facts:A
  const check=JSON.parse(output);if(!Array.isArray(check.decisions)||!Array.isArray(check.omissions))throw Error('invalid_verification');
  const decisions=new Map<string,{supported:boolean;nameSupported:boolean;supportedFields:string[];supportedConditions:string[];supportedConditionSystems?:string[]}>();
  for(const d of check.decisions){if(!d||typeof d.id!=='string'||typeof d.supported!=='boolean'||decisions.has(d.id)||!facts.some(f=>f.id===d.id))throw Error('invalid_verification');if(typeof d.nameSupported!=='boolean'||!Array.isArray(d.supportedFields)||!Array.isArray(d.supportedConditions)||new Set(d.supportedFields).size!==d.supportedFields.length||new Set(d.supportedConditions).size!==d.supportedConditions.length)throw Error('invalid_verification');const fact=facts.find(f=>f.id===d.id)!;if(!d.supportedFields.every((key:unknown)=>typeof key==='string'&&fact.fields.some(f=>f.key===key))||!d.supportedConditions.every((name:unknown)=>typeof name==='string'&&fact.conditions.includes(name)))throw Error('invalid_verification');if(d.supportedConditionSystems!==undefined&&(!Array.isArray(d.supportedConditionSystems)||!d.supportedConditionSystems.every((name:unknown)=>typeof name==='string'&&d.supportedConditions.includes(name)&&fact.conditionSystems?.some(a=>a.name===name))))throw Error('invalid_verification');decisions.set(d.id,d);}
- if(decisions.size!==facts.length||!check.omissions.every((q:unknown)=>typeof q==='string'&&q.length>0&&unit.text.includes(q)))throw Error('invalid_verification');
+ if(decisions.size!==facts.length||!check.omissions.every((q:unknown)=>typeof q==='string'&&q.length>0))throw Error('invalid_verification');
+ // An omission note is not an accepted assertion. A paraphrased note must not
+ // discard independently checked facts; retain an unresolved count for recovery.
+ const groundedOmissions=check.omissions.filter((q:string)=>unit.text.includes(q));
+ const unresolvedOmissions=check.omissions.length-groundedOmissions.length;
  const accepted:AcceptedFact[]=[];
  for(const f of facts){
   const start=unit.start+Array.from(unit.text.slice(0,unit.text.indexOf(f.quote))).length;
@@ -85,5 +102,5 @@ export function acceptFacts(output:string,facts:Fact[],unit:SourceUnit):{facts:A
   const original=facts.find(f=>f.id===a.id)!;
   return count+original.fields.length-a.fields.length+original.conditions.length-a.conditions.length+(original.name&&!a.name?1:0);
  },0);
- return {facts:accepted,withheld:facts.length-accepted.length+withheldFields,omissions:check.omissions};
+ return {facts:accepted,withheld:facts.length-accepted.length+withheldFields+unresolvedOmissions,omissions:groundedOmissions};
 }
