@@ -27,6 +27,7 @@ test('durable incremental lifecycle: duplicate delivery, source isolation, cap, 
   await db.query(await readFile('migrations/001_ai_ledger.sql','utf8'));
   await db.query("ALTER TABLE ai_jobs ADD COLUMN workload_type text NOT NULL DEFAULT 'unknown',ADD COLUMN reasoning_effort text NOT NULL DEFAULT 'low'");
   await db.query(await readFile('migrations/010_incremental_updates.sql','utf8'));
+  await db.query(await readFile('migrations/011_record_runtime.sql','utf8'));
   const id=randomUUID(),records=[{id:randomUUID(),text:'Example tablet'}];
   await Promise.all([createRecordUpdate('owner',id,records,{}),createRecordUpdate('owner',id,records,{})]);
   const initial=await recordUpdateStatus('owner',id);assert.equal(initial.units.length,1);
@@ -78,6 +79,16 @@ test('durable incremental lifecycle: duplicate delivery, source isolation, cap, 
   const beforeReplay=posts;assert.equal(await revalidateRecordUpdate('owner',id),1);
   await runRecordUnit(unit);assert.equal(posts,beforeReplay);
   assert.equal(await revalidateRecordUpdate('owner',id),0);
+  process.env.VERCEL_DEPLOYMENT_ID='dpl_active';
+  await db.query("INSERT INTO ai_record_runtime(id,deployment_id) VALUES('record-updates','dpl_active')");
+  const fencedID=randomUUID();await createRecordUpdate('owner',fencedID,[{id:randomUUID(),text:'Example tablet'}],{});
+  const fencedUnit=(await recordUpdateStatus('owner',fencedID)).units[0].id;
+  await db.query("UPDATE ai_record_runtime SET deployment_id='dpl_new'");
+  const beforeFence=posts;await runRecordUnit(fencedUnit);assert.equal(posts,beforeFence);
+  assert.equal(await recoverRecordUpdates(),0);
+  await assert.rejects(createRecordUpdate('owner',randomUUID(),[{id:randomUUID(),text:'Example tablet'}],{}),/deployment_inactive/);
+  process.env.VERCEL_DEPLOYMENT_ID='dpl_new';mode='complete';await runRecordUnit(fencedUnit);await runRecordUnit(fencedUnit);
+  assert.equal((await recordUpdateStatus('owner',fencedID)).state,'completed');delete process.env.VERCEL_DEPLOYMENT_ID;
   mode='repair';const repairID=randomUUID();await createRecordUpdate('owner',repairID,[{id:randomUUID(),text:'Example tablet'}],{});
   const base=(await recordUpdateStatus('owner',repairID)).units[0].id;
   const beforeRepair=posts;await runRecordUnit(base);await runRecordUnit(base);

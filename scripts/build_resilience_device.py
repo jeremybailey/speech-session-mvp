@@ -19,4 +19,4 @@ assert info['CloudOpenAIBaseURL']==a.base_url
 assert info['IncrementalRecordsEnabled']=='YES'
 assert info['TransactionalRecordStorageEnabled']==('YES' if a.sqlite else 'NO')
 print('Verified device-test candidate:',product)
-print('Backend migration 010 and incremental queue/recovery must be enabled in the test environment before inference tests.')
+print('Backend migrations 010/011, active deployment fence, and incremental recovery must be enabled before inference tests.')

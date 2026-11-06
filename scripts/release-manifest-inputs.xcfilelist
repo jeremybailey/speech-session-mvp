@@ -185,3 +185,6 @@ $(SRCROOT)/vercel-openai-proxy/migrations/010_incremental_updates.sql
 $(SRCROOT)/vercel-openai-proxy/package-lock.json
 $(SRCROOT)/vercel-openai-proxy/package.json
 $(SRCROOT)/vercel-openai-proxy/vercel.json
+
+$(SRCROOT)/vercel-openai-proxy/api/_lib/record-runtime.ts
+$(SRCROOT)/vercel-openai-proxy/migrations/011_record_runtime.sql

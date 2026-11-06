@@ -10,7 +10,7 @@ export default async function handler(req:VercelRequest,res:VercelResponse){
   if(req.method!=='POST')return res.status(405).end();
   const b=req.body??{};if(typeof b.id!=='string'||!/^[0-9a-f-]{36}$/i.test(b.id))return res.status(400).json({error:'invalid_run'});
   if(['prepare','prepareOverview'].includes(b.action)&&JSON.stringify(b.release??{}).length>2048)return res.status(400).json({error:'invalid_run'});
-  if(b.action==='prepare')await createRecordUpdate(owner,b.id,b.records,{app:b.release??null,backend:process.env.CC_BACKEND_COMMIT||process.env.VERCEL_GIT_COMMIT_SHA||'local',backendSourceDigest:process.env.CC_BACKEND_SOURCE_DIGEST??null,model:'gpt-6-luna',reasoning:'medium',validator:incrementalValidator,migration:10});
+  if(b.action==='prepare')await createRecordUpdate(owner,b.id,b.records,{app:b.release??null,backend:process.env.CC_BACKEND_COMMIT||process.env.VERCEL_GIT_COMMIT_SHA||'local',backendSourceDigest:process.env.CC_BACKEND_SOURCE_DIGEST??null,model:'gpt-6-luna',reasoning:'medium',validator:incrementalValidator,migration:11});
   else if(b.action==='prepareOverview')await createSnapshotUpdate(owner,b.id,b.snapshot,{app:b.release??null,backend:process.env.CC_BACKEND_COMMIT||process.env.VERCEL_GIT_COMMIT_SHA||'local',backendSourceDigest:process.env.CC_BACKEND_SOURCE_DIGEST??null,contract:'incremental-records-v1'});
   else if(b.action==='cancel')await stopRecordUpdate(owner,b.id);
   else if(b.action!=='status')return res.status(400).json({error:'invalid_action'});

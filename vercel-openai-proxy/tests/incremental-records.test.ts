@@ -99,3 +99,15 @@ test('nonliteral omission notes remain unresolved without dropping checked facts
  check.decisions[0].supported=false;
  assert.equal(acceptFacts(JSON.stringify(check),[fact],unit).facts.length,0);
 });
+
+import {isRecordDeploymentActive} from '../api/_lib/record-runtime';
+test('superseded deployment cannot keep a recovery heartbeat alive',async()=>{
+ const prior=process.env.VERCEL_DEPLOYMENT_ID;
+ try{
+  process.env.VERCEL_DEPLOYMENT_ID='dpl_old';
+  const db={query:async()=>({rows:[{deployment_id:'dpl_current'}]})} as any;
+  assert.equal(await isRecordDeploymentActive(db),false);
+  process.env.VERCEL_DEPLOYMENT_ID='dpl_current';assert.equal(await isRecordDeploymentActive(db),true);
+  assert.equal(await isRecordDeploymentActive({query:async()=>({rows:[]})} as any),false);
+ }finally{if(prior===undefined)delete process.env.VERCEL_DEPLOYMENT_ID;else process.env.VERCEL_DEPLOYMENT_ID=prior;}
+});

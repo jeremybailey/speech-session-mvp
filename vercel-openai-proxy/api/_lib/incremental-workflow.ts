@@ -1,3 +1,4 @@
+import {isRecordDeploymentActive} from './record-runtime';
 import {snapshotPayload,validateSnapshot,validateSnapshotOverview} from './incremental-overview';
 import {randomUUID} from 'node:crypto';
 import {database,transaction,submitWithinTransaction,cancel,Payload} from './ledger';
@@ -18,6 +19,7 @@ export async function enqueueRecordUnit(id:string,delay=0){
  await jobQueue.send(recordUpdateTopic,{id},{delaySeconds:delay,idempotencyKey:`${id}:${Math.floor(Date.now()/5000)}:${delay}`});
 }
 export async function createRecordUpdate(owner:string,id:string,records:RecordInput[],manifest:unknown){
+ if(!await isRecordDeploymentActive())throw Error('deployment_inactive');
  const units=splitRecords(records);const requestHash=digest(JSON.stringify(units.map(u=>u.key)));
  await transaction(async db=>{
   await db.query('SELECT pg_advisory_xact_lock(hashtext($1))',[id]);
@@ -29,6 +31,7 @@ export async function createRecordUpdate(owner:string,id:string,records:RecordIn
  await scheduleRecordUpdate(id);
 }
 export async function scheduleRecordUpdate(id:string){
+ if(!await isRecordDeploymentActive())return;
  const ids=await transaction(async db=>{
   const parent=(await db.query('SELECT * FROM ai_record_updates WHERE id=$1 FOR UPDATE',[id])).rows[0];
   if(!parent||parent.stopped||new Date(parent.expires_at).getTime()<=Date.now())return [];
@@ -45,6 +48,7 @@ export async function scheduleRecordUpdate(id:string){
  await Promise.all(ids.map(id=>enqueueRecordUnit(id)));
 }
 export async function runRecordUnit(id:string){
+ if(!await isRecordDeploymentActive())return;
  let unit=(await database().query('SELECT u.*,p.owner,p.stopped,p.expires_at FROM ai_record_units u JOIN ai_record_updates p ON p.id=u.update_id WHERE u.id=$1',[id])).rows[0];
  if(!unit||unit.stopped||terminal.includes(unit.state)||new Date(unit.expires_at).getTime()<=Date.now())return;
  if(new Date(unit.next_attempt_at).getTime()>Date.now()){
@@ -53,7 +57,7 @@ export async function runRecordUnit(id:string){
  if(!unit.job_id){
   try{await transaction(async db=>{
    const current=(await db.query('SELECT u.*,p.owner,p.stopped FROM ai_record_units u JOIN ai_record_updates p ON p.id=u.update_id WHERE u.id=$1 FOR UPDATE OF p,u',[id])).rows[0];
-   if(!current||current.stopped||current.job_id||terminal.includes(current.state))return;
+   if(!current||current.stopped||current.job_id||terminal.includes(current.state)||!await isRecordDeploymentActive(db))return;
    if(current.attempts>=3){await db.query("UPDATE ai_record_units SET state='blocked',diagnostic='attempt_limit' WHERE id=$1",[id]);return;}
    const identity=`${id}:${current.phase}:${current.attempts+1}`;
    const payload:Payload=current.phase==='overview'||current.phase==='overview-verify'
@@ -89,8 +93,8 @@ export async function runRecordUnit(id:string){
  }
  await transaction(async db=>{
   const current=(await db.query('SELECT u.*,p.stopped FROM ai_record_units u JOIN ai_record_updates p ON p.id=u.update_id WHERE u.id=$1 FOR UPDATE OF p,u',[id])).rows[0];
-  if(!current||current.stopped||current.job_id!==job.id||terminal.includes(current.state))return;
-  await db.query('UPDATE ai_record_units SET validator_version=$2 WHERE id=$1',[id,incrementalValidator]);
+  if(!current||current.stopped||current.job_id!==job.id||terminal.includes(current.state)||!await isRecordDeploymentActive(db))return;
+  await db.query('UPDATE ai_record_units SET validator_version=$2,worker_deployment_id=$3 WHERE id=$1',[id,incrementalValidator,process.env.VERCEL_DEPLOYMENT_ID??null]);
   try{
    if(current.phase==='overview'){
     const candidate=validateSnapshotOverview(job.result.output,current.source.snapshot);
@@ -150,6 +154,7 @@ export async function resumeRecordJob(jobID:string):Promise<boolean>{
 }
 
 export async function createSnapshotUpdate(owner:string,id:string,value:unknown,manifest:unknown){
+ if(!await isRecordDeploymentActive())throw Error('deployment_inactive');
  const snapshot=validateSnapshot(value),requestHash=digest(JSON.stringify(snapshot));
  await transaction(async db=>{
   await db.query('SELECT pg_advisory_xact_lock(hashtext($1))',[id]);
@@ -164,6 +169,7 @@ export async function createSnapshotUpdate(owner:string,id:string,value:unknown,
 /** Replay only saved independent checker output under an explicitly compatible validator.
  * No provider job is submitted, no attempts reset, no cancelled or expired work revived. */
 export async function revalidateRecordUpdate(owner:string,id:string){
+ if(!await isRecordDeploymentActive())return 0;
  const units=await transaction(async db=>{
   const p=(await db.query('SELECT * FROM ai_record_updates WHERE id=$1 AND owner=$2 FOR UPDATE',[id,owner])).rows[0];
   if(!p)throw Error('not_found');
@@ -181,6 +187,7 @@ export async function revalidateRecordUpdate(owner:string,id:string){
 }
 /** Database is the outbox: recover a missed enqueue without requiring the patient to return. */
 export async function recoverRecordUpdates(){
+ if(!await isRecordDeploymentActive())return 0;
  const parents=await transaction(async db=>{
   const rows=(await db.query(`SELECT id,owner FROM ai_record_updates WHERE stopped=false AND expires_at>now()
     AND state IN ('queued','running','completed_with_withheld_items')
@@ -196,6 +203,7 @@ export async function recoverRecordUpdates(){
 }
 
 export async function seedRecordRecovery(){
+ if(!await isRecordDeploymentActive())return;
  if(process.env.AI_INCREMENTAL_RECORDS_ENABLED!=='true'||process.env.AI_QUEUE_ENABLED!=='true'||process.env.AI_DURABLE_ENABLED!=='true')return;
  await jobQueue.send('health-record-recovery',{id:'00000000-0000-4000-8000-000000000001'},
   {delaySeconds:60,retentionSeconds:86400,idempotencyKey:`record-recovery:${Math.floor(Date.now()/60000)+1}`});
