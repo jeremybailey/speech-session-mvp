@@ -18,9 +18,7 @@
   "backendBaseURL": "https://collectivecare-fork-b-recovery-test.vercel.app/api",
   "sqliteEnabled": false,
   "distributionPending": [
-    "backend selection",
-    "durable API key and allowance",
-    "App Store Connect processing and tester availability"
+    "App Store Connect processing/export compliance/tester availability; browser access tool still disabled"
   ],
   "archiveManifest": {
     "appBuild": "59",
@@ -42,6 +40,20 @@
   "githubChecks": "all passed",
   "archiveSucceeded": true,
   "appStoreExportSucceeded": true,
-  "uploadedToApple": false,
-  "distributedToTesters": false
+  "uploadedToApple": true,
+  "distributedToTesters": false,
+  "appleProcessingLastObserved": "processing after successful upload",
+  "backendDeployment": "dpl_2pto6qxqrYeTnYbwwYnwGKw89mCX",
+  "budgetTotalUSD": 10,
+  "budgetUsedUSD": 0.199185,
+  "budgetReservedUSD": 0,
+  "replacementKeyConfirmedByUser": true,
+  "syntheticReadiness": {
+    "completed": true,
+    "attempts": 2,
+    "acceptedFacts": 1,
+    "costUSD": 0.0003234,
+    "patientDataUsed": false
+  },
+  "originalPilotAliasesUnchanged": true
 }
