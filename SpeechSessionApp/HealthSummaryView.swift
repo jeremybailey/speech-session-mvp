@@ -1480,9 +1480,15 @@ private struct SummaryUpdateProgressSheet: View {
     private var isPaused: Bool {
         SummaryUpdateRegion.allCases.contains { model.state(for: $0) == .interrupted }
     }
+    private var completedWithWithheldDetails: Bool {
+        model.completedWithWithheldDetails && model.overviewNotice == nil && model.conditionNotice == nil
+            && model.error == nil && model.processingIssue == nil && !isPaused
+            && model.state(for: .overview) == .ready
+    }
     private var title: String {
         if isActive { return "Updating your records" }
         if awaitsRecordReview { return "Review record changes" }
+        if completedWithWithheldDetails { return "Updated with some details left out" }
         if needsAttention { return "Some details couldn’t be added" }
         if isPaused { return "Update paused" }
         return "Updated"
@@ -1503,7 +1509,7 @@ private struct SummaryUpdateProgressSheet: View {
                                 NavigationLink("Compare retained records") {WholeHistoryUpdateReviewView(health:model)}
                             }
                             let requiresNewAttempt = supportsConditions && model.wholeHistoryRequiresNewAttempt
-                            if !requiresNewAttempt {
+                            if !requiresNewAttempt && !completedWithWithheldDetails {
                                 Button(model.wholeHistoryCanRevalidateSavedDetails ? "Recheck saved result" : (model.overviewNotice != nil && model.conditionNotice == nil && model.state(for: .details) == .ready ? "Try overview again" : (isPaused && !needsAttention ? "Resume update" : "Retry unfinished update")), action: onRetry)
                                     .frame(minHeight: 44)
                             }

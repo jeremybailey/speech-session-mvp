@@ -70,7 +70,7 @@ final class HealthSummaryModel: ObservableObject {
         importedRecordIDs = []
         UserDefaults.standard.removeObject(forKey: "collectivecare.stoppedSummaryInput")
         UserDefaults.standard.removeObject(forKey: "collectivecare.stoppedSummarySources")
-        overviewNotice = nil; overviewCheckerExplanation = nil
+        overviewNotice = nil; overviewCheckerExplanation = nil; completedWithWithheldDetails = false
         conditionNotice = nil; needsConditionOrganization = false
         undoCombination = nil; contactReviewUndos = []; undoRemoval = nil; retryRecordIDs = []
         processingIssue = nil; updateError = nil; error = nil
@@ -86,6 +86,7 @@ final class HealthSummaryModel: ObservableObject {
     @Published private(set) var conditionNotice: String?
     @Published private(set) var overview: String?
     @Published private(set) var overviewNotice: String?
+    @Published private(set) var completedWithWithheldDetails = false
     @Published private(set) var overviewCheckerExplanation: String?
     @Published private(set) var undoCombination: HealthCombinationUndo?
     @Published private(set) var contactReviewUndos: [HealthCombinationUndo] = []
@@ -375,7 +376,7 @@ final class HealthSummaryModel: ObservableObject {
         }
         guard automaticPolicy.claim(updateInputKey, explicitlyRequested: explicitlyRequested) else {return}
         isUpdatingStory=true;isProcessing=true;explicitlyStopped=false
-        updateError=nil;conditionNotice=nil;overviewNotice=nil;retainedRecordNotice=nil
+        updateError=nil;conditionNotice=nil;overviewNotice=nil;retainedRecordNotice=nil;completedWithWithheldDetails=false
         progressTitle="Updating your records";progress="Your saved details are available."
         updateStates=[.details:.updating,.conditions:.updating,.overview:.waiting]
         defer {automaticPolicy.finished(updateInputKey);isUpdatingStory=false;isProcessing=false;progress=""}
@@ -398,8 +399,9 @@ final class HealthSummaryModel: ObservableObject {
                 }
             }
             await refresh()
-            updateStates=[.details:.ready,.conditions:.ready,.overview:.ready]
-            if withheld {updateError="Some details couldn’t be added. Your original records are available."}
+            updateStates=[.details:withheld ? .needsAttention:.ready,.conditions:.ready,.overview:.ready]
+            completedWithWithheldDetails=withheld && overviewIsCurrent
+            if withheld {updateError=completedWithWithheldDetails ? "Your overview is updated. Some record details couldn’t be added. Your original records are available." : "Some record details couldn’t be added. Your original records are available."}
         } catch is CancellationError {interruptUpdates()}
         catch {
             // Transport and publication errors cannot suppress the saved snapshot.
