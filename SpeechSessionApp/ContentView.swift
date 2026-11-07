@@ -6,11 +6,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var appModel: AppModel
     var body: some View {
-        NavigationStack {
-            HomeView(home: appModel.home, recording: appModel.recording, store: appModel.store,
-                     pendingSharedImportURL: $appModel.pendingSharedImportURL,
-                     advanceSharedImportQueue: appModel.enqueuePendingSharedImportIfAvailable)
-        }
+        StoryLabView(appModel:appModel)
         .environmentObject(appModel.health)
         .onChange(of: scenePhase) { _, phase in
             appModel.recording.setAppInBackground(phase != .active)

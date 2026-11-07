@@ -8,6 +8,7 @@ struct HealthSummaryView: View {
     @ObservedObject var model: HealthSummaryModel
     @ObservedObject var home: HomeViewModel
     let store: SessionStore
+    var structuredOnly = false
     var canOpenSettings = true
     var openSettings: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -88,7 +89,7 @@ struct HealthSummaryView: View {
             if model.undoRemoval != nil {
                 Section { Button("Undo removal", systemImage: "arrow.uturn.backward") { Task { await model.restoreRemovedDetail() } } }
             }
-            if model.displayedOverview != nil || !model.facts.isEmpty || model.isUpdatingStory {
+            if !structuredOnly && (model.displayedOverview != nil || !model.facts.isEmpty || model.isUpdatingStory) {
                 Section {
                     if let overview = model.displayedOverview {
                         Text(overview).textSelection(.enabled)

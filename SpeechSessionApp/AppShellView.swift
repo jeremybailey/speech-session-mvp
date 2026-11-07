@@ -9,9 +9,18 @@ struct AppShellView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var agreement = PilotAgreementState()
 
+    private var storyFixture:Bool {
+        #if DEBUG
+        return Bundle.main.bundleIdentifier == "com.CollectiveCare.storylab" && ProcessInfo.processInfo.arguments.contains("--storylab-fixture")
+        #else
+        return false
+        #endif
+    }
     var body: some View {
         Group {
-            if !kindeAuth.isSignedIn {
+            if storyFixture {
+                ContentView(appModel:appModel)
+            } else if !kindeAuth.isSignedIn {
                 SignInGateView()
             } else if agreement.acceptedOwner == kindeAuth.accountID, agreement.acceptedOwner != nil {
                 ContentView(appModel: appModel)
@@ -25,7 +34,7 @@ struct AppShellView: View {
         .tint(BrandPalette.systemBlue)
         .onOpenURL { url in
             guard !KindeAuthManager.isKindeOAuthCallbackURL(url) else { return }
-            if url.scheme == "collectivecare", url.host == "record-start" {
+            if url.scheme == "collectivecare-storylab", url.host == "record-start" {
                 NotificationCenter.default.post(name: .liveActivityStartRecording, object: nil)
                 return
             }

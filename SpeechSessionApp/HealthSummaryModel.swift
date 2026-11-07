@@ -488,7 +488,7 @@ final class HealthSummaryModel: ObservableObject {
 
     func refresh() async {
         let started = Date()
-        defer { Logger(subsystem: "com.CollectiveCare.pilot", category: "SummaryPerformance").info("refresh seconds=\(Date().timeIntervalSince(started), privacy: .public)") }
+        defer { Logger(subsystem: "com.CollectiveCare.storylab", category: "SummaryPerformance").info("refresh seconds=\(Date().timeIntervalSince(started), privacy: .public)") }
         refreshRevision += 1
         let revision = refreshRevision
         defer { if revision == refreshRevision { hasLoaded = true } }
@@ -1255,7 +1255,7 @@ struct OverviewReferenceEncoding {
 actor RecordSummaryProcessor {
     static let version = SummaryVerification.version
     private var running = false
-    private let timing = Logger(subsystem: "com.CollectiveCare.pilot", category: "SummaryPerformance")
+    private let timing = Logger(subsystem: "com.CollectiveCare.storylab", category: "SummaryPerformance")
     private var activeJobID = "standalone"
 
 

@@ -1,6 +1,7 @@
 import Foundation
 
 struct SessionsEnvelope: Codable, Equatable {
+    var story: StoryWorkspace = .init()
     var medicationProducts: [MedicationProduct] = []
     var assertionReconciliations: [AssertionReconciliation] = []
     var recordOverview: RecordUpdateReceipt? = nil
@@ -23,7 +24,7 @@ struct SessionsEnvelope: Codable, Equatable {
     static let currentVersion = 4
 
     enum CodingKeys: String, CodingKey {
-        case medicationProducts, assertionReconciliations, recordOverview, recordUpdate, completedRecordRevisions, wholeHistoryOverviewSourceFingerprint, wholeHistorySourceFingerprint, wholeHistoryOverview, version, sessions, folders, topics, careTeam, preferences, profile, verifiedPairDecisions, carePlanCards
+        case story, medicationProducts, assertionReconciliations, recordOverview, recordUpdate, completedRecordRevisions, wholeHistoryOverviewSourceFingerprint, wholeHistorySourceFingerprint, wholeHistoryOverview, version, sessions, folders, topics, careTeam, preferences, profile, verifiedPairDecisions, carePlanCards
     }
 
     init(version: Int = Self.currentVersion, sessions: [Session], folders: [SessionFolder] = []) {
@@ -34,6 +35,7 @@ struct SessionsEnvelope: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        story = try c.decodeIfPresent(StoryWorkspace.self, forKey:.story) ?? .init()
         medicationProducts = try c.decodeIfPresent([MedicationProduct].self,forKey:.medicationProducts) ?? []
         assertionReconciliations = try c.decodeIfPresent([AssertionReconciliation].self,forKey:.assertionReconciliations) ?? []
         recordOverview = try c.decodeIfPresent(RecordUpdateReceipt.self,forKey:.recordOverview)

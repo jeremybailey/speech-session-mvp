@@ -6,7 +6,7 @@ import SQLite3
 struct SQLiteSessionStorage {
     static let filename = "patient.sqlite"
     let directory: URL
-    private let tables = ["records", "folders", "topics", "care_team", "preferences", "care_plans", "occurrences", "source_revisions", "processing_receipts", "medication_products", "metadata"]
+    private let tables = ["records", "folders", "topics", "care_team", "preferences", "care_plans", "occurrences", "source_revisions", "processing_receipts", "medication_products", "metadata", "story_sources", "story_blocks", "story_edits", "story_careEvents", "story_messages"]
     private var url: URL { directory.appendingPathComponent(Self.filename) }
     private func connection<T>(_ body: (OpaquePointer) throws -> T) throws -> T {
         var handle: OpaquePointer?
@@ -19,12 +19,13 @@ struct SQLiteSessionStorage {
               sqlite3_step(versionStatement) == SQLITE_ROW else { sqlite3_finalize(versionStatement); throw SessionStoreError.decodingFailed }
         let version = sqlite3_column_int(versionStatement, 0)
         sqlite3_finalize(versionStatement)
-        guard version <= 1 else { throw SessionStoreError.decodingFailed }
+        guard version <= 2 else { throw SessionStoreError.decodingFailed }
         sqlite3_busy_timeout(db, 5000)
         try execute(db, "PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL;")
         for table in tables {
             try execute(db, "CREATE TABLE IF NOT EXISTS \(table)(id TEXT PRIMARY KEY, position INTEGER NOT NULL, payload TEXT NOT NULL)")
         }
+        try execute(db,"CREATE VIRTUAL TABLE IF NOT EXISTS story_search USING fts5(revision_id UNINDEXED, text)")
         #if os(iOS)
         try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path)
         #endif
@@ -53,6 +54,12 @@ struct SQLiteSessionStorage {
             return nil
         }
         guard var object = try JSONSerialization.jsonObject(with:Data(root.1.utf8)) as? [String:Any] else {throw SessionStoreError.decodingFailed}
+        var story = object["story"] as? [String:Any] ?? [:]
+        for key in ["sources","blocks","edits","careEvents","messages"] {
+            let values = try rows(db, table:"story_"+key)
+            if !values.isEmpty || story[key] == nil {story[key] = try values.map {try JSONSerialization.jsonObject(with:Data($0.1.utf8))}}
+        }
+        if !story.isEmpty {object["story"] = story}
         let mapping = [("sessions","records"),("folders","folders"),("topics","topics"),("careTeam","care_team"),("preferences","preferences"),("carePlanCards","care_plans"),("medicationProducts","medication_products")]
         for (key,table) in mapping { object[key] = try rows(db, table:table).map { try JSONSerialization.jsonObject(with:Data($0.1.utf8)) } }
         var sessions = object["sessions"] as? [[String:Any]] ?? []
@@ -74,6 +81,18 @@ struct SQLiteSessionStorage {
         object["sessions"] = sessions
         return try JSONSerialization.data(withJSONObject:object, options:.sortedKeys)
     }
+    func searchStorySources(query:String,limit:Int) throws -> [String] {
+        let terms=query.split(whereSeparator:{!$0.isLetter && !$0.isNumber}).filter{$0.count>2}.prefix(20).map{"\""+String($0)+"\""}
+        guard !terms.isEmpty else {return []}
+        return try connection {db in
+            var statement:OpaquePointer?;defer{sqlite3_finalize(statement)}
+            guard sqlite3_prepare_v2(db,"SELECT revision_id FROM story_search WHERE story_search MATCH ? ORDER BY rank LIMIT ?",-1,&statement,nil)==SQLITE_OK else {throw SessionStoreError.decodingFailed}
+            sqlite3_bind_text(statement,1,terms.joined(separator:" OR "),-1,unsafeBitCast(-1,to:sqlite3_destructor_type.self));sqlite3_bind_int(statement,2,Int32(max(1,min(limit,200))))
+            var result:[String]=[]
+            while sqlite3_step(statement)==SQLITE_ROW {if let value=sqlite3_column_text(statement,0){result.append(String(cString:value))}}
+            return result
+        }
+    }
     func load() throws -> Data? {
         try connection { db in
             try execute(db,"BEGIN")
@@ -87,6 +106,16 @@ struct SQLiteSessionStorage {
             do {
                 guard var object = try JSONSerialization.jsonObject(with:data) as? [String:Any] else { throw SessionStoreError.decodingFailed }
                 var collections: [String:[(String,Any)]] = [:]
+                if var story = object["story"] as? [String:Any] {
+                    for key in ["sources","blocks","edits","careEvents","messages"] {
+                        let values = story.removeValue(forKey:key) as? [[String:Any]] ?? []
+                        collections["story_"+key] = try values.map {value in
+                            guard let id = value["id"] as? String else {throw SessionStoreError.encodingFailed}
+                            return (id,value)
+                        }
+                    }
+                    object["story"] = story
+                }
                 for (key,table) in [("sessions","records"),("folders","folders"),("topics","topics"),("careTeam","care_team"),("preferences","preferences"),("carePlanCards","care_plans"),("medicationProducts","medication_products")] {
                     let values = object.removeValue(forKey:key) as? [[String:Any]] ?? []
                     var seen = Set<String>()
@@ -111,6 +140,19 @@ struct SQLiteSessionStorage {
                 }
                 if let receipt=object.removeValue(forKey:"recordUpdate") {collections["processing_receipts",default:[]].append(("update",receipt))}
                 collections["metadata"] = [("envelope",object)]
+                let priorSources = try rows(db,table:"story_sources").map{$0.1}
+                let nextSources = try (collections["story_sources"] ?? []).map{String(decoding:try JSONSerialization.data(withJSONObject:$0.1,options:[.sortedKeys,.fragmentsAllowed]),as:UTF8.self)}
+                if priorSources != nextSources {
+                    try execute(db,"DELETE FROM story_search")
+                    var seenRecords=Set<String>()
+                    for (id,value) in (collections["story_sources"] ?? []).reversed() {
+                        guard let source=value as? [String:Any],let record=source["recordID"] as? String,let text=source["text"] as? String,seenRecords.insert(record).inserted else {continue}
+                        var insert:OpaquePointer?;defer{sqlite3_finalize(insert)}
+                        guard sqlite3_prepare_v2(db,"INSERT INTO story_search(revision_id,text) VALUES(?,?)",-1,&insert,nil)==SQLITE_OK else {throw SessionStoreError.encodingFailed}
+                        sqlite3_bind_text(insert,1,id,-1,unsafeBitCast(-1,to:sqlite3_destructor_type.self));sqlite3_bind_text(insert,2,text,-1,unsafeBitCast(-1,to:sqlite3_destructor_type.self))
+                        guard sqlite3_step(insert)==SQLITE_DONE else {throw SessionStoreError.encodingFailed}
+                    }
+                }
                 let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
                 for table in tables {
                     let values = collections[table] ?? []
@@ -136,7 +178,7 @@ struct SQLiteSessionStorage {
                 // Verify the full reconstructed envelope, including source text and patient preferences, before commit.
                 let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
                 guard let roundTrip = try read(db), try decoder.decode(SessionsEnvelope.self,from:roundTrip) == decoder.decode(SessionsEnvelope.self,from:data) else { throw SessionStoreError.decodingFailed }
-                try execute(db,"PRAGMA user_version=1")
+                try execute(db,"PRAGMA user_version=2")
                 try execute(db,"COMMIT")
             } catch { try? execute(db,"ROLLBACK"); throw error }
         }

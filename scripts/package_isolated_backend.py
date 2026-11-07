@@ -3,10 +3,10 @@
 import argparse,json,shutil,os
 from pathlib import Path
 root=Path(__file__).resolve().parents[1]
-p=argparse.ArgumentParser();p.add_argument('destination',type=Path);a=p.parse_args();target=a.destination.resolve()
+p=argparse.ArgumentParser();p.add_argument('destination',type=Path);p.add_argument('--project-name',choices=['collectivecare-fork-b-recovery-test','collectivecare-story-lab'],default='collectivecare-fork-b-recovery-test');a=p.parse_args();target=a.destination.resolve()
 assert target!=root and target!=root/'vercel-openai-proxy'
 link=target/'.vercel/project.json'
-if link.exists():assert json.loads(link.read_text()).get('projectName')=='collectivecare-fork-b-recovery-test'
+if link.exists():assert json.loads(link.read_text()).get('projectName')==a.project_name
 source=root/'vercel-openai-proxy'
 # These are generated files in the explicitly selected isolated checkout.
 for directory in ['api','server']:

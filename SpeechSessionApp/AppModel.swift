@@ -15,7 +15,7 @@ extension Notification.Name {
 final class SharedImportURLInbox {
     static let shared = SharedImportURLInbox()
 
-    private let appGroupID = "group.com.CollectiveCare.pilot"
+    private let appGroupID = "group.com.CollectiveCare.storylab"
     private let audioImportsDirectoryName = "SharedAudioImports"
     private let photoImportsDirectoryName = "SharedPhotoImports"
     private let documentImportsDirectoryName = "SharedDocumentImports"
@@ -28,7 +28,7 @@ final class SharedImportURLInbox {
     private init() {}
 
     func enqueue(_ url: URL) {
-        if url.scheme == "collectivecare", url.host == "share-debug" {
+        if url.scheme == "collectivecare-storylab", url.host == "share-debug" {
             return
         }
 
@@ -50,7 +50,7 @@ final class SharedImportURLInbox {
     }
 
     private func resolveHandoffURL(_ url: URL) -> URL? {
-        guard url.scheme == "collectivecare",
+        guard url.scheme == "collectivecare-storylab",
               url.host == "share-import",
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let fileName = components.queryItems?.first(where: { $0.name == "file" })?.value,

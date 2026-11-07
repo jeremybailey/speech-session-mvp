@@ -61,7 +61,12 @@ public actor SessionStore {
         return try SessionStore(fileManager: fileManager, storageDirectory: dir, sqliteEnabled: (Bundle.main.object(forInfoDictionaryKey: "TransactionalRecordStorageEnabled") as? Bool == true) || (Bundle.main.object(forInfoDictionaryKey: "TransactionalRecordStorageEnabled") as? String == "YES"))
     }
 
-    private func loadEnvelope() throws -> SessionsEnvelope {
+    func matchingStorySourceIDs(query: String) throws -> Set<String>? {
+        guard sqliteEnabled, query.split(whereSeparator: {!$0.isLetter && !$0.isNumber}).contains(where: {$0.count > 2}) else {return nil}
+        return Set(try SQLiteSessionStorage(directory: directoryURL).searchStorySources(query: query, limit: 200))
+    }
+
+    func loadEnvelope() throws -> SessionsEnvelope {
         if let cachedEnvelope { return cachedEnvelope }
         if sqliteEnabled, let data = try SQLiteSessionStorage(directory:directoryURL).load() {
             let envelope = try decoder.decode(SessionsEnvelope.self, from:data)
@@ -116,7 +121,7 @@ public actor SessionStore {
     func transferEnvelope() throws -> SessionsEnvelope { try loadEnvelope() }
     func invalidateTransferCache() { cachedEnvelope = nil }
 
-    private func saveEnvelope(_ envelope: SessionsEnvelope) throws {
+    func saveEnvelope(_ envelope: SessionsEnvelope) throws {
         var env = envelope
         env.version = SessionsEnvelope.currentVersion
         let data: Data
@@ -964,6 +969,13 @@ public actor SessionStore {
         guard var receipt=env.recordUpdate,receipt.id==updateID,receipt.state != "cancelled",let i=env.sessions.firstIndex(where:{$0.id==recordID}),IncrementalRecordUpdate.sourceHash(env.sessions[i].transcript)==sourceHash else {throw SummaryCommitError.sourceChanged}
         if receipt.publishedUnits.contains(unitKey) {return}
         var generated=try IncrementalRecordUpdate.entries(facts,session:env.sessions[i])
+        if let revision=env.story.sources.last(where:{$0.recordID==recordID}),revision.patientEdited {
+            for index in generated.indices {
+                generated[index].provenance="Patient-corrected source text"
+                let attribution=generated[index].evidence?.sourceAttribution ?? "not recorded"
+                generated[index].evidence?.sourceAttribution="Patient-corrected text; original attribution: "+attribution
+            }
+        }
         let prior=env.sessions[i].summaryEntries ?? []
         for index in generated.indices {
             let previous=AssertionReconciler.match(generated[index],in:prior)

@@ -158,6 +158,17 @@ public enum DataTransferArchive {
               Set(envelope.topics.map(\.id)).count == envelope.topics.count,
               Set(envelope.careTeam.map(\.id)).count == envelope.careTeam.count,
               Set(envelope.preferences.map(\.id)).count == envelope.preferences.count else { throw DataTransferError.invalidArchive }
+        let story = envelope.story
+        guard Set(story.sources.map(\.id)).count == story.sources.count,
+              Set(story.blocks.map(\.id)).count == story.blocks.count,
+              Set(story.edits.map(\.id)).count == story.edits.count,
+              Set(story.careEvents.map(\.id)).count == story.careEvents.count,
+              Set(story.messages.map(\.id)).count == story.messages.count,
+              story.sources.allSatisfy({sessions.contains($0.recordID)}),
+              story.edits.allSatisfy({edit in story.blocks.contains(where: {$0.id == edit.blockID})}),
+              story.blocks.allSatisfy({$0.correctionRecordID.map {sessions.contains($0)} ?? true}),
+              story.careEvents.allSatisfy({$0.recordID.map {sessions.contains($0)} ?? true}),
+              story.messages.allSatisfy({$0.savedRecordID.map {sessions.contains($0)} ?? true}) else {throw DataTransferError.invalidArchive}
         for session in envelope.sessions {
             guard session.folderID.map({ folders.contains($0) }) ?? true else { throw DataTransferError.invalidArchive }
             let assets = session.sourceAssets ?? []

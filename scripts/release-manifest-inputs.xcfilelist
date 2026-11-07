@@ -188,3 +188,8 @@ $(SRCROOT)/vercel-openai-proxy/vercel.json
 
 $(SRCROOT)/vercel-openai-proxy/api/_lib/record-runtime.ts
 $(SRCROOT)/vercel-openai-proxy/migrations/011_record_runtime.sql
+$(SRCROOT)/Sources/SpeechSessionPersistence/StoryWorkspace.swift
+$(SRCROOT)/SpeechSessionApp/StoryLabView.swift
+$(SRCROOT)/vercel-openai-proxy/api/_lib/story-contract.ts
+$(SRCROOT)/vercel-openai-proxy/api/v1/health-processing/story-operations.ts
+$(SRCROOT)/vercel-openai-proxy/migrations/012_story_operations.sql

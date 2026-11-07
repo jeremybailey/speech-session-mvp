@@ -35,7 +35,7 @@ final class KindeAuthManager: ObservableObject {
 
     /// URLs opened by Kinde / AppAuth after login or logout must not be queued as share-import handoffs.
     static func isKindeOAuthCallbackURL(_ url: URL) -> Bool {
-        url.scheme?.caseInsensitiveCompare("comcollectivecarepilotkinde") == .orderedSame
+        url.scheme?.caseInsensitiveCompare("comcollectivecarestorylabkinde") == .orderedSame
     }
 
     var accountID: String? {

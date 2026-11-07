@@ -10,9 +10,9 @@ def manifest(build):
     hashes={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(paths)}
     try: commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True,stderr=subprocess.DEVNULL).strip()
     except subprocess.CalledProcessError: commit=os.environ.get('CC_RELEASE_COMMIT','unavailable-in-build-sandbox')
-    return {'format':1,'backendBaseURL':os.environ.get('CC_BACKEND_BASE_URL','https://speech-session-mvp.vercel.app/api'),'features':{'incremental':os.environ.get('CC_INCREMENTAL_RECORDS_ENABLED','NO')=='YES','sqlite':os.environ.get('CC_SQLITE_ENABLED','NO')=='YES'},'appBuild':build,'gitCommit':commit,
+    return {'format':1,'backendBaseURL':os.environ.get('CC_BACKEND_BASE_URL','https://collectivecare-story-lab.vercel.app/api'),'features':{'incremental':os.environ.get('CC_INCREMENTAL_RECORDS_ENABLED','NO')=='YES','sqlite':os.environ.get('CC_SQLITE_ENABLED','NO')=='YES'},'appBuild':build,'gitCommit':commit,
       'sourceDigest':hashlib.sha256(json.dumps(hashes,sort_keys=True).encode()).hexdigest(),'files':hashes,
-      'model':'gpt-6-luna','reasoning':'medium','contract':'incremental-records-v1','validator':'incremental-validator-v3','serverMigration':11,'localMigration':1}
+      'model':'gpt-6-luna','reasoning':'medium','contract':'incremental-records-v1','validator':'incremental-validator-v4','serverMigration':12,'localMigration':2,'storyContract':'story-v1'}
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--build',required=True);parser.add_argument('--check',type=Path);parser.add_argument('--compact',action='store_true');args=parser.parse_args();value=manifest(args.build)
     if args.compact:value.pop('files')

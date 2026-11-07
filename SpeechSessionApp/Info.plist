@@ -7,7 +7,7 @@
 	<key>TransactionalRecordStorageEnabled</key>
 	<string>$(CC_SQLITE_ENABLED)</string>
 	<key>CFBundleDisplayName</key>
-	<string>CollectiveCare</string>
+	<string>Care Story Lab</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -24,18 +24,18 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.CollectiveCare.pilot.share-import</string>
+			<string>com.CollectiveCare.storylab.share-import</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>collectivecare</string>
+				<string>collectivecare-storylab</string>
 			</array>
 		</dict>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.CollectiveCare.pilot.kinde</string>
+			<string>com.CollectiveCare.storylab.kinde</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>comcollectivecarepilotkinde</string>
+				<string>comcollectivecarestorylabkinde</string>
 			</array>
 		</dict>
 	</array>

@@ -17,6 +17,7 @@ struct HomeView: View {
     @ObservedObject var recording: RecordingViewModel
     let store: SessionStore
     var listScope: EntryListScope = .all
+    var storyRecords = false
     @Binding var pendingSharedImportURL: URL?
     /// Called after consuming (or rejecting) one App Group handoff so queued files + folder scan can drain.
     var advanceSharedImportQueue: () -> Void = {}
@@ -77,9 +78,12 @@ struct HomeView: View {
     }
 
     var body: some View {
-        HealthSummaryView(model: health, home: home, store: store, canOpenSettings: phase == .idle, openSettings: { showSettings = true })
+        Group {
+            if storyRecords {StoryRecordsList(store:store,home:home)}
+            else {HealthSummaryView(model: health, home: home, store: store, canOpenSettings: phase == .idle, openSettings: { showSettings = true })}
+        }
         .background(BrandPalette.canvas)
-        .navigationTitle("My health story")
+        .navigationTitle(storyRecords ? "Records":"My health story")
         .navigationBarTitleDisplayMode(.large)
         .sheet(isPresented: $showAddEntrySheet) {
             AddEntryFlowSheet(
@@ -189,6 +193,7 @@ struct HomeView: View {
             await home.loadSessions()
             await consumePendingSharedImportIfNeeded()
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StoryLabAddRecord"))) { _ in if storyRecords {showAddEntrySheet=true} }
         .onReceive(NotificationCenter.default.publisher(for: .liveActivityStartRecording)) { _ in
             guard !recording.isRecording, !recording.isFinishingWhisper, !recording.isTranscribingFile else { return }
             startLiveRecording(intent: .clinicalVisit)

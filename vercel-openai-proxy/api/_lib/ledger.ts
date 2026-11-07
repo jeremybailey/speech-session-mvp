@@ -176,5 +176,7 @@ export async function cleanup() {
       await db.query("UPDATE ai_jobs SET state='expired',finished_at=now() WHERE id=$1",[job.id]);
     }
     await db.query("DELETE FROM ai_payloads WHERE expires_at<=now()");
+    // Story requests contain source text; use the same seven-day ceiling as job payloads.
+    if (process.env.STORY_LAB_ENABLED === 'true') await db.query("UPDATE ai_story_operations SET request=NULL WHERE created_at<=now()-interval '7 days' AND request IS NOT NULL");
   });
 }
