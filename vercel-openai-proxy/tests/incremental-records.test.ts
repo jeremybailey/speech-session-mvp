@@ -1,6 +1,6 @@
 import test,{mock} from 'node:test';
 import assert from 'node:assert/strict';
-import {splitRecords,parseFacts,acceptFacts,usableMedicationName} from '../api/_lib/incremental-contract';
+import {splitRecords,parseFacts,acceptFacts,usableMedicationName,conditionLabelEligible} from '../api/_lib/incremental-contract';
 import {recoveryDecision} from '../api/_lib/incremental-workflow';
 const unit=splitRecords([{id:'00000000-0000-4000-8000-000000000001',text:'Example 5mg tablet. Take one tablet at night.'}])[0];
 const fact={id:'f1',category:'medications',text:'Example tablet prescribed',quote:unit.text,name:'Example',fields:[{key:'strength',value:'5mg'}],status:'prescribed',attribution:'',date:'',conditions:[]};
@@ -110,4 +110,19 @@ test('superseded deployment cannot keep a recovery heartbeat alive',async()=>{
   process.env.VERCEL_DEPLOYMENT_ID='dpl_current';assert.equal(await isRecordDeploymentActive(db),true);
   assert.equal(await isRecordDeploymentActive({query:async()=>({rows:[]})} as any),false);
  }finally{if(prior===undefined)delete process.env.VERCEL_DEPLOYMENT_ID;else process.env.VERCEL_DEPLOYMENT_ID=prior;}
+});
+
+test('investigation-only labels cannot create condition cards; original facts survive',()=>{
+ for(const text of ['TB was to be ruled out.','The clinical history states to rule out TB.','TB was ruled out.','No evidence of TB.','Screening for TB.']){
+  const source={...unit,text};const f={...fact,category:'otherNotes',text,quote:text,name:null,fields:[],status:'planned',conditions:['TB'],conditionSystems:[{name:'TB',system:'respiratory'}]};
+  const result=acceptFacts(JSON.stringify({decisions:[{id:f.id,supported:true,nameSupported:false,supportedFields:[],supportedConditions:['TB'],supportedConditionSystems:['TB']}],omissions:[]}),[f],source);
+  assert.equal(result.facts.length,1);assert.equal(result.facts[0].text,text);assert.equal(result.facts[0].quote,text);
+  assert.deepEqual(result.facts[0].conditions,[]);assert.deepEqual(result.facts[0].conditionSystems,[]);
+ }
+ assert.equal(conditionLabelEligible('Sarcoidosis was to be ruled out.','sarcoidosis'),false);
+ assert.equal(conditionLabelEligible('History of uveitis evaluation ruled out.','uveitis'),false);
+ for(const text of ['TB diagnosed in 2020.','History of treated TB.','TB was ruled out previously, but is now confirmed.','Back pain prompted tests to rule out TB.'])
+  assert.equal(conditionLabelEligible(text,text.startsWith('Back')?'Back pain':'TB'),true);
+ assert.equal(conditionLabelEligible('No evidence of TB.','T'),true);
+ assert.equal(conditionLabelEligible('No evidence of disease (A).','disease (A)'),false);
 });

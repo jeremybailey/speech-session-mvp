@@ -7,7 +7,7 @@ import {jobQueue} from './queue';
 import {incrementalVersion,splitRecords,extractionPayload,verificationPayload,parseFacts,parseExtractionBatch,acceptFacts,digest,RecordInput} from './incremental-contract';
 
 export const recordUpdateTopic='health-record-updates';
-export const incrementalValidator='incremental-validator-v3';
+export const incrementalValidator='incremental-validator-v4';
 const terminal=['completed','completed_with_withheld_items','blocked','cancelled'];
 export function recoveryDecision(state:string,attempts:number,age:number,replaced:boolean,http?:number):'wait'|'retry'|'block'{
  if(state==='queued'||state==='running')return 'wait';
