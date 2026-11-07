@@ -31,6 +31,23 @@ final class DataTransferTests: XCTestCase {
         return (store, session, directory)
     }
 
+    func testSelectedImportPreservesCorrectionAndUntouchedArchive() async throws {
+        let (source, first, _) = try await fixture("selected-source")
+        let second=Session(transcript:"Different synthetic record",title:"Excluded")
+        try await source.upsert(second)
+        let zip=try await source.exportData(password:password,includeOriginals:true,appVersion:"test")
+        let originalBytes=try Data(contentsOf:zip)
+        let destination=try SessionStore(storageDirectory:root.appendingPathComponent("selected-destination"),sqliteEnabled:true)
+        let prepared=try await destination.prepareDataImport(from:zip,password:password)
+        try await destination.replaceWithImportedData(prepared,selecting:[first.id])
+        let records=try await destination.loadAll(), ids=try await destination.importedRecordIDs()
+        XCTAssertEqual(records.map(\.id),[first.id]);XCTAssertEqual(ids,[first.id])
+        XCTAssertEqual(records[0].summaryEntries,first.summaryEntries)
+        let backup=await destination.storageDirectory.appendingPathComponent("import-backups/"+prepared.manifest.exportID.uuidString+".zip")
+        XCTAssertEqual(try Data(contentsOf:backup),originalBytes)
+        let originalRecords=try await source.loadAll();XCTAssertEqual(originalRecords.count,2)
+    }
+
     func testTextOnlyRoundTripKeepsIDsAndTextWithoutOriginalsOrCheckpoints() async throws {
         let (source, session, _) = try await fixture("source")
         let zip = try await source.exportData(password: password, includeOriginals: false, appVersion: "test")

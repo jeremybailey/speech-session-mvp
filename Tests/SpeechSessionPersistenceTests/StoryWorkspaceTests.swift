@@ -79,6 +79,53 @@ final class StoryWorkspaceTests:XCTestCase {
         let changed=try await s.storyWorkspace(), records=try await s.loadAll()
         XCTAssertEqual(changed.blocks[0].correctionRecordID,records.last?.id)
         XCTAssertEqual(records[0].transcript,"I have neck pain.")
+        try await s.undoStoryEdit(try XCTUnwrap(pending))
+        let evidence=try await s.storyEvidence(query:"knee pain",limit:200),pendingRecords=try await s.recordsNeedingIncrementalUpdate()
+        XCTAssertFalse(evidence.contains(where:{$0.recordID==records.last?.id}))
+        XCTAssertFalse(pendingRecords.contains(where:{$0.id==records.last?.id}))
+    }
+
+    func testRepeatedProgressSubmissionCreatesOneRecord() async throws {
+        let s=try store(), id=UUID()
+        try await s.recordStoryCareEvent(actionID:"daily-walk",kind:"progress",text:"Completed today's walk",eventID:id)
+        try await s.recordStoryCareEvent(actionID:"daily-walk",kind:"progress",text:"Completed today's walk",eventID:id)
+        let state=try await s.storyWorkspace(),records=try await s.loadAll()
+        XCTAssertEqual(state.careEvents.count,1);XCTAssertEqual(records.count,1)
+    }
+    func testRemovingOneSourceKeepsIndependentEvidence() async throws {
+        let s=try store(), first=UUID(),second=UUID()
+        let text="Neck pain recorded."
+        let a=SummaryEntry(category:.symptoms,title:"Neck pain",sourceSessionID:first,sourceExcerpt:text)
+        let b=SummaryEntry(category:.symptoms,title:"Neck pain",sourceSessionID:second,sourceExcerpt:text)
+        try await s.save([Session(id:first,transcript:text,summaryEntries:[a]),Session(id:second,transcript:text,summaryEntries:[b])])
+        try await s.reviseStorySource(first,text:"Corrected unrelated note.")
+        let records=try await s.loadAll()
+        XCTAssertTrue(records[0].summaryEntries![0].isDeleted)
+        XCTAssertFalse(records[1].summaryEntries![0].isDeleted)
+    }
+    func testCarePlanQueryDoesNotAssumeAdoption() async throws {
+        let s=try store()
+        try await s.save([Session(transcript:"Recorded recommendation",summaryEntries:[SummaryEntry(category:.carePlan,title:"Synthetic recorded recommendation",origin:.userAdded)])])
+        let info=try await s.storyRetrievalMetadata(query:"What is my current plan?",limit:100)
+        let evidence=try await s.storyEvidence(query:"What is my current plan?",limit:100)
+        XCTAssertEqual(info["scope"],"current_plan");XCTAssertEqual(info["complete"],"true");XCTAssertTrue(evidence.isEmpty)
+    }
+
+    func testExplicitPlanAdoptionAndUndoPreserveRecommendation() async throws {
+        let s=try store()
+        try await s.save([Session(transcript:"Synthetic recommendation",summaryEntries:[SummaryEntry(category:.carePlan,title:"Synthetic recommendation",origin:.userAdded)])])
+        try await s.synchronizeStory()
+        let workspace=try await s.storyWorkspace(),block=try XCTUnwrap(workspace.blocks.first),factID=try XCTUnwrap(block.factIDs.first)
+        let optionalID=try await s.editStoryBlock(block.id,text:"I am following this recommendation.")
+        let id=try XCTUnwrap(optionalID)
+        try await s.applyStoryEdit(id,kind:"correction",targets:[],actionUpdates:[factID:"current"])
+        let updated=try await s.healthSnapshot(),records=try await s.loadAll()
+        XCTAssertEqual(updated.preferences.first(where:{$0.id==factID})?.actionStatus,.current)
+        XCTAssertFalse(records[0].summaryEntries![0].isDeleted)
+        try await s.undoStoryEdit(id)
+        let undone=try await s.healthSnapshot(),history=try await s.storyWorkspace()
+        XCTAssertNotEqual(undone.preferences.first(where:{$0.id==factID})?.actionStatus,.current)
+        XCTAssertEqual(history.careEvents.count,2)
     }
 
 }

@@ -17,6 +17,7 @@ private struct SettingsDataTransferView: View {
     @State private var selectedFile: URL?
     @State private var showPicker = false
     @State private var prepared: PreparedDataImport?
+    @State private var selectedImportRecords=Set<UUID>()
     @State private var showReplacementConfirmation = false
     @State private var shareURL: URL?
     @State private var showShare = false
@@ -48,7 +49,13 @@ private struct SettingsDataTransferView: View {
                 .disabled(busy || prepared != nil)
                 if let prepared {
                     Section("Import preview") {
-                        LabeledContent("Records", value: String(prepared.manifest.records.count))
+                        LabeledContent("Selected records", value: String(selectedImportRecords.count))
+                        DisclosureGroup("Choose records to copy") {
+                            ForEach(prepared.manifest.records,id:\.id){record in
+                                Toggle(record.title ?? "Untitled record",isOn:Binding(get:{selectedImportRecords.contains(record.id)},set:{if $0 {selectedImportRecords.insert(record.id)} else {selectedImportRecords.remove(record.id)}}))
+                            }
+                        }
+                        Text("An untouched copy of the imported ZIP is retained. A partial import includes selected records and their corrections; the previous cross-record narrative and chat are not imported.").font(.footnote)
                         LabeledContent("File created", value: prepared.manifest.exportedAt.formatted(date: .abbreviated, time: .shortened))
                         LabeledContent("Original files", value: prepared.manifest.includesOriginals ? "Included where available" : "Not included")
                         if prepared.manifest.missingOriginalCount > 0 {
@@ -56,7 +63,7 @@ private struct SettingsDataTransferView: View {
                         }
                         Text("Replacing removes this device’s current history and original files. Save a backup ZIP file with originals first if you want to restore it later. Your sign-in will not change. No AI processing starts during import.")
                         Button("Replace local history", role: .destructive) { showReplacementConfirmation = true }
-                            .disabled(busy)
+                            .disabled(busy || selectedImportRecords.isEmpty)
                         Button("Cancel import", role: .cancel) { cancelPreview() }.disabled(busy)
                     }
                 }
@@ -173,6 +180,7 @@ private struct SettingsDataTransferView: View {
             defer { if scoped { selectedFile.stopAccessingSecurityScopedResource() } }
             do {
                 prepared = try await store.prepareDataImport(from: selectedFile, password: secret)
+                selectedImportRecords=Set(prepared?.manifest.records.map(\.id) ?? [])
                 try Task.checkCancellation()
                 status = "Review the ZIP file’s contents before replacing your history."
             } catch {
@@ -194,7 +202,7 @@ private struct SettingsDataTransferView: View {
             defer { busy = false }
             do {
                 let previousReminderIDs = health.snapshot.preferences.filter(\.reminderEnabled).map(\.id)
-                try await store.replaceWithImportedData(prepared)
+                try await store.replaceWithImportedData(prepared,selecting:selectedImportRecords)
                 // The replaced person's reminders must not remain on this phone.
                 UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: previousReminderIDs)
                 UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: previousReminderIDs)

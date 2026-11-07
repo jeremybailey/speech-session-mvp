@@ -3,3 +3,10 @@ const input=storyRequest({id:'00000000-0000-4000-8000-000000000001',version:'sto
 test('reject invented targets, evidence and rewritten patient corrections',()=>{for(const change of [{targetIDs:['b']},{citationIDs:['b']},{text:'No further treatment needed'}])assert.throws(()=>storyResult(JSON.stringify({kind:'correction',text:input.after,targetIDs:['a'],citationIDs:[],question:'',...change}),input));});
 test('presentation and questions cannot silently mutate facts',()=>{assert.throws(()=>storyResult(JSON.stringify({kind:'presentation',text:'',targetIDs:['a'],citationIDs:[],question:''}),input));assert.throws(()=>storyResult(JSON.stringify({kind:'correction',text:input.after,targetIDs:[],citationIDs:[],question:''}),{...input,kind:'chat'}));});
 test('clear patient update accepted with exact words and temporal targets left empty',()=>{assert.equal(storyResult(JSON.stringify({kind:'correction',text:input.after,targetIDs:[],citationIDs:[],question:''}),input).text,input.after);});
+
+test('care status changes require an explicit correction without retiring the recommendation',()=>{
+ const result={kind:'correction',text:input.after,targetIDs:[],citationIDs:[],question:'',actionUpdates:[{factID:'a',status:'current'}]};
+ assert.equal(storyResult(JSON.stringify(result),input).actionUpdates.length,1);
+ for(const value of [{...result,kind:'presentation'},{...result,targetIDs:['a']},{...result,actionUpdates:[{factID:'other',status:'current'}]}])assert.throws(()=>storyResult(JSON.stringify(value),input));
+ assert.throws(()=>storyResult(JSON.stringify(result),{...input,kind:'chat'}));
+});

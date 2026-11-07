@@ -27,7 +27,8 @@ async function main() {
     }
     checkpoint = 'shared-budget';
     const budget=(await db.query('SELECT limit_nusd,used_nusd,reserved_nusd FROM ai_budgets WHERE id=$1',[process.env.AI_BUDGET_ID])).rows[0];
-    assert.ok(budget&&BigInt(budget.limit_nusd)<=20000000000n,'Shared pilot ceiling must not exceed approved $20');
+    assert.ok(budget&&BigInt(budget.limit_nusd)<=(process.env.STORY_LAB_ENABLED==='true'?10000000000n:20000000000n),'Shared ceiling exceeds approved allowance');
+    if(process.env.STORY_LAB_ENABLED==='true')assert.ok((await db.query("SELECT to_regclass('public.ai_story_operations') AS name")).rows[0].name,'Story migration missing');
     checkpoint = 'shared-budget-remaining';
     assert.ok(BigInt(budget.used_nusd)+BigInt(budget.reserved_nusd)<BigInt(budget.limit_nusd),'Pilot budget exhausted');
     for(const [table,column] of [['ai_jobs','result_received_at'],['ai_condition_workflows','result_received_at'],['ai_jobs','reasoning_effort'],['ai_jobs','workload_type'],['ai_condition_workflows','model'],['ai_condition_workflows','reasoning_effort'],['ai_condition_workflow_steps','incurs_cost']]) {

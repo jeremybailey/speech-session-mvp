@@ -1,47 +1,47 @@
-# Care Story Lab implementation checkpoint — 2026-11-07
+# Care Story Lab — implementation and verification, 2026-11-07
 
-Branch: `codex/editable-health-story`, based on Fork B `8fd59ba`.
-This is an experimental implementation in progress, not a release candidate.
+Branch: `codex/editable-health-story`, based on stabilized Fork B `8fd59ba`.
+The experimental implementation is available for private validation. It is not approved for tester distribution.
 
-## Isolation
+## Isolated environment
 
-- Native identity: `com.CollectiveCare.storylab`; app group `group.com.CollectiveCare.storylab`.
-- Display name: Care Story Lab. Separate app and extension containers.
-- Backend project: `collectivecare-story-lab`. Separate free Neon resource provisioned.
-- No pilot backend changes, patient import, live inference, or experimental distribution performed.
-- Dedicated OpenAI credential, approved processing ceiling, and separate Kinde native client remain setup dependencies. The checked-in public Kinde client ID is still a placeholder inherited from the pilot; do not distribute before replacing it.
+- App: **Care Story Lab**, `com.CollectiveCare.storylab`, with separate app/extension containers and `group.com.CollectiveCare.storylab`.
+- Backend: https://collectivecare-story-lab.vercel.app
+- Active deployment: `dpl_9PpFkQQsWwFPyMcMNW5CCfe1LeCL`.
+- Separate Neon database, migrations 001–012, separate API key and fresh backend secrets.
+- Shared budget `storylab-v1`: **$10 total**, $0 used/reserved at deployment verification. Production readiness enforces the $10 ceiling. Legacy unbudgeted chat/audio endpoints reject durable-mode callers.
+- Existing Kinde client and tenant retained for account continuity. Additional callbacks must be registered: `comcollectivecarestorylabkinde://kinde_callback` and `comcollectivecarestorylabkinde://kinde_logoutcallback`. Pilot URLs must remain registered.
+- No pilot app/backend changes, patient-data inference, or TestFlight distribution performed.
 
-## Implemented
+## Implemented behavior
 
-- Overview / Records / Details navigation with persisted last tab.
-- Editable story paragraphs, local persistence, two-second reconciliation debounce, attributed correction records, revision checks, presentation-only deletion, and Undo.
-- Correction citations point to the patient correction record rather than the original report.
-- Original source text and revision history retained. Record drafts save locally; explicit Save corrected text commits a source revision and requests existing processing.
-- Source passage removal retires matching generated occurrences; patient-written occurrences remain intact. Restoring text cannot revive an assertion superseded by an active patient correction.
-- Care adoption, pause/stop status, dated progress records, recurring occurrence logging, and dismissible daily in-app check-in.
-- Persisted conversation, explicit Save to records, evidence snapshots, idempotent answer publication, and local cancellation guards against late results.
-- SQLite storage for story sources, blocks, edits, care events, messages; latest-revision FTS lookup; archive relationship validation.
-- Versioned story-operation backend with idempotency, existing durable ledger integration, separate verification inference, typed result validation, cancellation endpoint, and seven-day request-text retention ceiling.
-- DEBUG-only synthetic-data simulator launch (`--storylab-fixture`) for the isolated bundle; normal builds retain sign-in.
+- Overview, Records, Details tabs; persisted last tab.
+- Editable story, plan and progress prose; immediate local writing persistence; two-second reconciliation debounce; revision guards; presentation-only deletion; attributed patient correction records and Undo.
+- Explicit patient-written care-status changes are typed, independently checked, and restricted to supplied care-plan facts. Recommendations remain intact. Undo refuses to overwrite newer status changes.
+- Changed source records use the existing incremental extractor. Patient corrections remain attributed to their own revision history, with existing source statements retained. Undone corrections cannot re-enter extraction or retrieval.
+- Direct source navigation for each supporting occurrence/revision. Patient-authored prose is protected during generated-overview updates.
+- Record drafts survive relaunch; inactivity or Done commits a source revision and requests processing. Original text/assets and revision history remain accessible.
+- Selected-record import verifies archive hashes and relationships before atomic replacement in the experimental container, retaining an untouched encrypted ZIP backup. Partial imports copy selected records and corrections, not the old cross-history story/chat.
+- Recorded recommendations are separate from adopted plans. Adoption, pause, stop, dated progress, recurring occurrence logging, explicit check-in focus, daily dismissal and disabling are persisted. No new notifications.
+- Explicit Ask/Add composer; persistent conversation; chat saves only on explicit Save to records. Add and progress submissions do not ask a second saving confirmation. Progress submissions are idempotent.
+- SQLite story storage and latest-source full-text search. Complete medication/current-plan queries use structured facts with explicit scope/truncation metadata. Ordinary retrieval never claims complete coverage.
+- Durable backend operation identity, independent checking without phone polling, Stop-before-submit tombstones, active-deployment fence, 30-second transient retry backoff, 15-minute ambiguous reconciliation, and a maximum of three inference attempts including verification. Existing unresolved accounting stays reserved.
+- Stop persists locally and reaches the server after reconnection; stale/cancelled results cannot publish locally. Server request text is purged after seven days even if inference is disabled.
 
-## Verified so far
+## Verification
 
-- Simulator build succeeds; Overview rendered with synthetic data and three tabs.
-- Full Swift run: 522 tests, 5 skipped, zero failures.
-- Backend typecheck succeeds; 225 tests passed, 7 database-dependent tests skipped.
-- Focused persistence scenarios include deletion vs clinical truth, coalesced typing/stale edits, correction Undo, source revisions, idempotent chat saving, recurring progress, cancelled late answers, offline draft persistence, and correction source attribution.
-- These tests do not establish semantic accuracy or physical-device performance.
+- Simulator builds pass and the three-tab app has been rendered with synthetic data.
+- Latest full Swift suite: **527 tests, 5 skipped, zero failures**; later focused source/Undo checks also pass.
+- Backend: **234 tests passed, no skips**, including all PostgreSQL integration suites against independent temporary local databases and mocked inference.
+- Integration coverage includes single verification creation under concurrency, retry backoff/caps, cancellation, retention, budget accounting, source isolation, worker/provider receipt recovery, import integrity and idempotent publication.
+- Native regressions cover source removal with independent support, narrative deletion, stale edits, correction citations, Undo, explicit plan adoption, recurring progress, duplicate progress saves, offline drafts and selected imports retaining their original archive.
+- Deployed API rejects anonymous access (401); private source paths return 404.
 
-## Remaining implementation and release gates
+## Required before distribution
 
-1. Complete typed assertion/evidence supersession rather than treating all new patient corrections as general notes. Validate preservation across subsequent source regeneration and independent supporting sources.
-2. Complete targeted narrative refresh, patient focus/preferences, editable plan/progress prose, and exact per-claim source navigation. Current generated paragraph refresh consumes existing overview output.
-3. Complete automatic record-edit reconciliation after inactivity/Done. Current record editor saves drafts immediately but commits via Save corrected text.
-4. Wire durable Stop and retry controls through the native UI and server. The verifier starts on the next client poll; fully unattended chaining remains to be implemented and failure-injected.
-5. Add completeness-sensitive structured query responses with explicit completeness metadata; bound retrieval without silently losing expected facts. Current FTS is a source candidate filter with in-memory fact ranking.
-6. Complete selected-record import UI, untouched import backup verification, export/Undo round trips, independent-source retirement, source-edit-during-inference, and stale condition membership tests.
-7. Apply migrations to the isolated database, configure auth/budget/keys, deploy only the separate backend, verify access controls and active-deployment guard, and run DB integration tests.
-8. Frozen semantic evaluation, physical-device import/edit/recovery, VoiceOver/large text, keyboard, interrupted recording, and latency measurements remain outstanding.
-9. No TestFlight distribution until those gates pass and a selected tester list is established.
-
-Do not interpret green unit tests as permission to distribute this checkpoint.
+1. **Device signing is blocked:** Xcode reports missing Developer account token and cannot provision the new app-group identity. Sign back in at Xcode → Settings → Accounts, then rebuild/install the separate app.
+2. Confirm the two additional Kinde callback URLs are registered and complete an actual sign-in.
+3. Run a physical-device import/edit/Undo/recovery session and actual-model semantic evaluation with the approved budget. No real inference has been exercised in this experiment yet.
+4. Verify VoiceOver, large text, keyboard/focus behavior, interrupted recording, locked-phone return and measured latency. Automated tests are not substitutes for these checks.
+5. The current narrative refresh reuses the established overview generator and protects patient blocks during projection. A fully independent per-block refresh scheduler and exhaustive semantic coverage for ambiguous edits remain follow-up work; do not claim the full target architecture or accuracy/latency gates are complete.
+6. Distribute only after these gates pass and the selected experimental tester list is established. Do not update the existing pilot distribution.

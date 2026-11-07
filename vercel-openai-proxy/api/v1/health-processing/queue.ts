@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { jobQueue, jobTopic, queueJobID } from "../../_lib/queue";
+import {runStoryJob} from '../../_lib/story-runtime';
 import {runWholeHistory} from '../../_lib/whole-history-background';
 import { ProviderResponsePending, runJob } from "../../_lib/worker";
 
@@ -8,6 +9,7 @@ import { ProviderResponsePending, runJob } from "../../_lib/worker";
 const consume = jobQueue.handleNodeCallback(async (message: unknown) => {
   const id = queueJobID(message);
   try {
+    if (await runStoryJob(id)) return;
     if (await runWholeHistory(id)) return;
     const processed = await runJob(id);
     console.info("ai_queue_step", JSON.stringify({ id, processed }));

@@ -424,6 +424,10 @@ extension SessionStore {
         do {
             try DataTransferArchive.extract(zip, password: password, to: payload)
             let (manifest, _) = try DataTransferArchive.validate(payload)
+            let backup=work.appendingPathComponent("untouched-import.zip")
+            try FileManager.default.copyItem(at:zip,to:backup)
+            try DataTransferArchive.protect(backup)
+            guard try DataTransferArchive.digest(zip).1 == DataTransferArchive.digest(backup).1 else {throw DataTransferError.invalidArchive}
             return PreparedDataImport(manifest: manifest, directory: payload)
         } catch {
             try? FileManager.default.removeItem(at: work)
@@ -431,7 +435,7 @@ extension SessionStore {
         }
     }
 
-    public func replaceWithImportedData(_ prepared: PreparedDataImport) throws {
+    public func replaceWithImportedData(_ prepared: PreparedDataImport, selecting selected: Set<UUID>? = nil) throws {
         let work = DataTransferArchive.workRoot(storageDirectory)
         guard prepared.directory.standardizedFileURL.path == work.appendingPathComponent("payload").standardizedFileURL.path else { throw DataTransferError.invalidArchive }
         let (manifest, original) = try DataTransferArchive.validate(prepared.directory)
@@ -439,6 +443,18 @@ extension SessionStore {
         let incoming = work.appendingPathComponent("incoming")
         try DataTransferArchive.createDirectory(incoming)
         var envelope = original
+        let selectedIDs=selected ?? Set(original.sessions.map(\.id))
+        guard !selectedIDs.isEmpty,selectedIDs.isSubset(of:Set(original.sessions.map(\.id))) else {throw DataTransferError.invalidArchive}
+        let partial=selectedIDs.count != original.sessions.count
+        if partial {
+            envelope.sessions.removeAll{!selectedIDs.contains($0.id)}
+            envelope.carePlanCards.removeAll{!selectedIDs.contains($0.sessionID)}
+            envelope.completedRecordRevisions=envelope.completedRecordRevisions.filter{selectedIDs.contains(UUID(uuidString:$0.key) ?? UUID())}
+            envelope.recordUpdate=nil;envelope.recordOverview=nil
+            envelope.wholeHistoryOverview=nil;envelope.wholeHistorySourceFingerprint=nil;envelope.wholeHistoryOverviewSourceFingerprint=nil
+            envelope.story=StoryWorkspace() // A cross-history narrative is not evidence for a selected-record import.
+        }
+        try DataTransferArchive.validateEnvelope(envelope)
         for i in envelope.sessions.indices {
             envelope.sessions[i].summaryRun = nil; envelope.sessions[i].summaryDrafts = nil
             envelope.sessions[i].processingState = nil; envelope.sessions[i].processingError = nil
@@ -446,14 +462,23 @@ extension SessionStore {
         try DataTransferArchive.write(DataTransferArchive.encoder().encode(envelope), to: incoming.appendingPathComponent(SessionStore.sessionsFileName))
         for file in manifest.files where file.destination != SessionStore.sessionsFileName && !file.destination.hasPrefix("texts/") {
             try Task.checkCancellation()
+            if partial {
+                if DataTransferArchive.savedResults.contains(file.destination) {continue}
+                if file.destination.hasPrefix("sources/"), !selectedIDs.contains(UUID(uuidString:String(file.destination.split(separator:"/")[1])) ?? UUID()) {continue}
+            }
             let destination = incoming.appendingPathComponent(file.destination)
             try DataTransferArchive.createDirectory(destination.deletingLastPathComponent())
             try FileManager.default.copyItem(at: prepared.directory.appendingPathComponent(file.archiveName), to: destination)
             try DataTransferArchive.protect(destination)
         }
+        let archiveBackup=incoming.appendingPathComponent("import-backups/"+manifest.exportID.uuidString+".zip")
+        try DataTransferArchive.createDirectory(archiveBackup.deletingLastPathComponent())
+        try FileManager.default.copyItem(at:work.appendingPathComponent("untouched-import.zip"),to:archiveBackup)
+        try DataTransferArchive.protect(archiveBackup)
+        let importedManifest=DataTransferManifest(version:manifest.version,exportID:manifest.exportID,exportedAt:manifest.exportedAt,appVersion:manifest.appVersion,includesOriginals:manifest.includesOriginals,missingOriginalCount:manifest.missingOriginalCount,records:manifest.records.filter{selectedIDs.contains($0.id)},files:manifest.files)
         // Persist provenance and the no-auto-processing policy with the replacement,
         // not in account preferences, so interruption cannot enable processing.
-        try DataTransferArchive.write(DataTransferArchive.encoder().encode(manifest), to: incoming.appendingPathComponent(DataTransferArchive.importedMarker))
+        try DataTransferArchive.write(DataTransferArchive.encoder().encode(importedManifest), to: incoming.appendingPathComponent(DataTransferArchive.importedMarker))
         try Task.checkCancellation()
         let rollback = DataTransferArchive.rollbackRoot(storageDirectory)
         guard !FileManager.default.fileExists(atPath: rollback.path) else { throw DataTransferError.busy }

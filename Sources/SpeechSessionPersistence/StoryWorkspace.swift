@@ -17,6 +17,7 @@ public struct StoryBlock: Codable, Equatable, Identifiable, Sendable {
     public var suppressed: Bool = false
     public var evidenceChanged: Bool = false
     public var correctionRecordID: UUID? = nil
+    public var section: String? = nil
 }
 public struct StoryEdit: Codable, Equatable, Identifiable, Sendable {
     public var id: UUID = UUID()
@@ -29,8 +30,11 @@ public struct StoryEdit: Codable, Equatable, Identifiable, Sendable {
     public var question: String? = nil
     public var createdAt: Date = Date()
     public var requestJSON: String? = nil
+    public var cancellationPending: Bool? = nil
     public var addedRecordID: UUID? = nil
     public var retiredEntryIDs: [UUID] = []
+    public var priorActionPreferences: [HealthFactPreference]? = nil
+    public var careEventIDs: [UUID]? = nil
 }
 public struct StoryCareEvent: Codable, Equatable, Identifiable, Sendable {
     public var id: UUID = UUID()
@@ -48,6 +52,7 @@ public struct StoryMessage: Codable, Equatable, Identifiable, Sendable {
     public var citationIDs: [String] = []
     public var state: String = "saved"
     public var requestJSON: String? = nil
+    public var cancellationPending: Bool? = nil
     public var evidence: [StoryEvidence]? = nil
     public var savedRecordID: UUID? = nil
     public var createdAt: Date = Date()
@@ -61,6 +66,7 @@ public struct StoryWorkspace: Codable, Equatable, Sendable {
     public var messages: [StoryMessage] = []
     public var checkInsEnabled: Bool = true
     public var lastCheckInDay: String? = nil
+    public var focusActionID: String? = nil
     public init() {}
 }
 public struct StoryEvidence: Codable, Equatable, Identifiable, Sendable {
@@ -83,8 +89,13 @@ extension SessionStore {
         }
         let facts = HealthMemoryProjection.facts(in: try healthSnapshot())
         let byID = Dictionary(uniqueKeysWithValues: facts.map {($0.id, $0.displayEntry.title)})
+        for i in env.story.blocks.indices {
+            if let sourceID=env.story.blocks[i].correctionRecordID {
+                env.story.blocks[i].factIDs=facts.filter{$0.occurrences.contains(where:{$0.sourceSessionID==sourceID})}.map(\.id)
+            }
+        }
         let previousBlocks=env.story.blocks
-        let protectedIDs=Set(previousBlocks.filter{$0.patientWritten || $0.suppressed}.flatMap(\.factIDs))
+        let protectedIDs=Set(previousBlocks.filter{$0.patientWritten || $0.suppressed}.flatMap(\.factIDs)+env.story.edits.filter{$0.state=="correction"}.flatMap(\.factIDs))
         if let overview=storyOverview(for:facts) {
             let generated=overview.sentences.filter{Set($0.factIDs).isDisjoint(with:protectedIDs)}.map {sentence -> StoryBlock in
                 let old=previousBlocks.first{!$0.patientWritten && !$0.suppressed && Set($0.factIDs)==Set(sentence.factIDs)}
@@ -105,8 +116,10 @@ extension SessionStore {
         }
         try saveEnvelope(env)
     }
-    @discardableResult public func addStoryBlock() throws -> UUID {
-        var env = try loadEnvelope(); let block = StoryBlock(text: "", factIDs: [], patientWritten: true)
+    @discardableResult public func addStoryBlock(section: String = "story") throws -> UUID {
+        guard ["story","plan","progress"].contains(section) else {throw StoryEditError.invalidMutation}
+        var env = try loadEnvelope(); var block = StoryBlock(text: "", factIDs: [], patientWritten: true)
+        block.section=section
         env.story.blocks.append(block); try saveEnvelope(env); return block.id
     }
     @discardableResult public func editStoryBlock(_ id: UUID, text: String) throws -> UUID? {
@@ -121,13 +134,26 @@ extension SessionStore {
         if env.story.blocks[i].suppressed {edit.state = "presentation"}
         env.story.edits.append(edit); try saveEnvelope(env); return edit.id
     }
-    public func applyStoryEdit(_ id: UUID, kind: String, targets: [String], question: String? = nil) throws {
+    public func applyStoryEdit(_ id: UUID, kind: String, targets: [String], question: String? = nil, actionUpdates: [String:String] = [:]) throws {
         var env = try loadEnvelope()
         guard let e = env.story.edits.firstIndex(where: {$0.id == id}), let b = env.story.blocks.firstIndex(where: {$0.id == env.story.edits[e].blockID}) else {throw StoryEditError.notFound}
         guard env.story.edits[e].state == "queued" else {return}
         let edit = env.story.edits[e]
         guard env.story.blocks[b].revision == edit.revision else {throw StoryEditError.staleRevision}
         guard ["presentation", "correction", "clarification"].contains(kind), Set(targets).isSubset(of:Set(edit.factIDs)) else {throw StoryEditError.invalidMutation}
+        guard actionUpdates.isEmpty || (kind == "correction" && targets.isEmpty && Set(actionUpdates.keys).isSubset(of:Set(edit.factIDs))) else {throw StoryEditError.invalidMutation}
+        if !actionUpdates.isEmpty {
+            let currentFacts=HealthMemoryProjection.facts(in:try healthSnapshot())
+            for (id,status) in actionUpdates {
+                guard let fact=currentFacts.first(where:{$0.id==id && $0.category == .carePlan}),["current","paused","past","completed"].contains(status) else {throw StoryEditError.invalidMutation}
+                env.story.edits[e].priorActionPreferences=(env.story.edits[e].priorActionPreferences ?? [])+[fact.preference]
+                var preference=fact.preference
+                preference.actionStatus = status == "current" ? .current:status == "paused" ? .paused:status == "completed" ? .completed:.past
+                if let index=env.preferences.firstIndex(where:{$0.id==id}) {env.preferences[index]=preference}else{env.preferences.append(preference)}
+                var event=StoryCareEvent(actionID:"fact:"+id,kind:status == "current" ? "adopted":status == "past" ? "stopped":status,text:edit.after)
+                event.factIDs=[id];env.story.careEvents.append(event);env.story.edits[e].careEventIDs=(env.story.edits[e].careEventIDs ?? [])+[event.id]
+            }
+        }
         if kind == "clarification" {guard let question, !question.isEmpty else {throw StoryEditError.invalidMutation}; env.story.edits[e].question = question}
         if kind == "correction" {
             guard !edit.after.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else {throw StoryEditError.invalidMutation}
@@ -153,6 +179,13 @@ extension SessionStore {
         var env = try loadEnvelope()
         guard let e = env.story.edits.firstIndex(where: {$0.id == id}), let b = env.story.blocks.firstIndex(where: {$0.id == env.story.edits[e].blockID}) else {throw StoryEditError.notFound}
         let edit = env.story.edits[e];guard env.story.blocks[b].revision == edit.revision, edit.state != "undone" else {throw StoryEditError.staleRevision}
+        for previous in edit.priorActionPreferences ?? [] {
+            guard let latest=env.story.careEvents.last(where:{$0.kind != "progress" && ($0.factIDs ?? []).contains(previous.id)}),(edit.careEventIDs ?? []).contains(latest.id) else {throw StoryEditError.staleRevision}
+            if let i=env.preferences.firstIndex(where:{$0.id==previous.id}) {env.preferences[i].actionStatus=previous.actionStatus}else{env.preferences.append(previous)}
+            let status=previous.actionStatus
+            var restored=StoryCareEvent(actionID:"fact:"+previous.id,kind:status == .current ? "adopted":status == .paused ? "paused":status == .completed ? "completed":status == .past ? "stopped":"restored_unknown",text:"Undid a story edit.")
+            restored.factIDs=[previous.id];env.story.careEvents.append(restored)
+        }
         for s in env.sessions.indices {for j in env.sessions[s].summaryEntries?.indices ?? 0..<0 {
             if edit.retiredEntryIDs.contains(env.sessions[s].summaryEntries![j].id) {env.sessions[s].summaryEntries![j].isDeleted = false}
             if env.sessions[s].id == edit.addedRecordID {env.sessions[s].summaryEntries![j].isDeleted = true}
@@ -160,6 +193,7 @@ extension SessionStore {
         env.story.blocks[b].correctionRecordID = nil
         env.story.blocks[b].text = edit.before;env.story.blocks[b].factIDs = edit.factIDs
         env.story.blocks[b].suppressed = edit.before.isEmpty;env.story.blocks[b].revision += 1
+        if let recordID=edit.addedRecordID,let index=env.sessions.firstIndex(where:{$0.id==recordID}) {env.sessions[index].title="Story correction (undone)"}
         env.story.edits[e].state = "undone";try saveEnvelope(env)
     }
     public func saveStorySourceDraft(_ recordID: UUID, text: String) throws {
@@ -192,9 +226,10 @@ extension SessionStore {
         let entry = SummaryEntry(category:.otherNotes,title:text,sourceSessionID:id,sourceTitle:title,sourceExcerpt:text,provenance:"Patient reported",origin:.userAdded)
         return Session(id:id,transcript:text,title:title,summaryEntries:[entry],inputType:.documentFile,entryIntent:.personalJournal)
     }
-    public func recordStoryCareEvent(actionID: String, kind: String, text: String, factIDs: [String] = []) throws {
+    public func recordStoryCareEvent(actionID: String, kind: String, text: String, factIDs: [String] = [], eventID: UUID = UUID()) throws {
         guard ["adopted", "paused", "stopped", "completed", "progress"].contains(kind) else {throw StoryEditError.invalidMutation}
-        var env = try loadEnvelope(); var event = StoryCareEvent(actionID:actionID,kind:kind,text:text)
+        var env = try loadEnvelope();guard !env.story.careEvents.contains(where:{$0.id==eventID}) else {return}
+        var event = StoryCareEvent(actionID:actionID,kind:kind,text:text);event.id=eventID
         if kind == "progress" {
             guard !text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else {throw StoryEditError.invalidMutation}
             let record = Self.patientStoryRecord(text:text,title:"Care plan progress");env.sessions.append(record);event.recordID = record.id
@@ -212,6 +247,7 @@ extension SessionStore {
         }
         env.story.careEvents.append(event);try saveEnvelope(env)
     }
+    public func setStoryFocus(_ actionID:String?) throws {var env=try loadEnvelope();env.story.focusActionID=actionID;try saveEnvelope(env)}
     public func setStoryCheckIn(enabled: Bool, day: String? = nil) throws {
         var env = try loadEnvelope();env.story.checkInsEnabled = enabled
         if let day {env.story.lastCheckInDay = day};try saveEnvelope(env)
@@ -248,17 +284,56 @@ extension SessionStore {
     }
     public func cancelStoryOperation(_ id:UUID) throws {
         var env=try loadEnvelope()
-        if let i=env.story.edits.firstIndex(where:{$0.id==id}) {env.story.edits[i].state="cancelled"}
-        if let i=env.story.messages.firstIndex(where:{$0.id==id}) {env.story.messages[i].state="cancelled"}
+        if let i=env.story.edits.firstIndex(where:{$0.id==id}) {env.story.edits[i].state="cancelled";env.story.edits[i].cancellationPending=true}
+        if let i=env.story.messages.firstIndex(where:{$0.id==id}) {env.story.messages[i].state="cancelled";env.story.messages[i].cancellationPending=true}
         try saveEnvelope(env)
     }
+    public func acknowledgeStoryCancellation(_ id:UUID) throws {
+        var env=try loadEnvelope()
+        if let i=env.story.edits.firstIndex(where:{$0.id==id}) {env.story.edits[i].cancellationPending=false}
+        if let i=env.story.messages.firstIndex(where:{$0.id==id}) {env.story.messages[i].cancellationPending=false}
+        try saveEnvelope(env)
+    }
+    public func storySources(factIDs:[String],correctionRecordID:UUID? = nil) throws -> [StoryEvidence] {
+        let env=try loadEnvelope(),facts=HealthMemoryProjection.facts(in:try healthSnapshot())
+        if let recordID=correctionRecordID,let revision=env.story.sources.last(where:{$0.recordID==recordID}) {
+            return [StoryEvidence(id:revision.id.uuidString,text:revision.text,recordID:recordID,sourceRevisionID:revision.id,title:"Your correction")]
+        }
+        return facts.filter{factIDs.contains($0.id)}.flatMap {fact in fact.occurrences.map {entry in
+            let quote=entry.supportingExcerpt ?? entry.title
+            let source=env.story.sources.last(where:{$0.recordID==entry.sourceSessionID && $0.text.contains(quote)})
+            return StoryEvidence(id:fact.id+":"+entry.id.uuidString,text:quote,recordID:entry.sourceSessionID,sourceRevisionID:source?.id,title:entry.sourceTitle ?? "Saved source")
+        }}
+    }
+    public func storyTargetEvidence(_ ids:[String]) throws -> [StoryEvidence] {
+        HealthMemoryProjection.facts(in:try healthSnapshot()).filter{ids.contains($0.id)}.map{StoryEvidence(id:$0.id,text:([$0.displayEntry.title,$0.displayEntry.details,"Category: "+$0.category.rawValue,"Status: "+($0.hasKnownStatus ? $0.statusTitle:"Unknown")]+$0.displayEntry.fields.map{$0.label+": "+$0.value}).joined(separator:"\n"),recordID:$0.latest.sourceSessionID,title:$0.displayEntry.title)}
+    }
+    private func storyQueryScope(_ query:String) -> String {
+        let text=query.lowercased()
+        if text.contains("all"),text.contains("medicat") {return "all_medications"}
+        if text.contains("following") || text.contains("current plan") {return "current_plan"}
+        return "retrieval"
+    }
+    private func storyQueryFacts(_ query:String) throws -> [HealthFact] {
+        let facts=HealthMemoryProjection.facts(in:try healthSnapshot()).filter{!$0.preference.hidden && HealthStoryEligibility.includes($0.displayEntry)}
+        switch storyQueryScope(query) {
+        case "all_medications":return facts.filter{$0.category == .medications}
+        case "current_plan":return facts.filter{$0.category == .carePlan && $0.preference.actionStatus == .current}
+        default:return facts
+        }
+    }
+    public func storyRetrievalMetadata(query:String,limit:Int) throws -> [String:String] {
+        let scope=storyQueryScope(query), count=try storyQueryFacts(query).count
+        return ["scope":scope,"availableCount":String(count),"returnedCount":String(min(count,max(1,min(limit,200)))),"complete":scope != "retrieval" && count <= limit && count <= 200 ? "true":"false"]
+    }
     public func storyEvidence(query:String, limit:Int = 24) throws -> [StoryEvidence] {
-        let env = try loadEnvelope();var facts = HealthMemoryProjection.facts(in:try healthSnapshot())
-        if query.lowercased().contains("all"),query.lowercased().contains("medicat") {facts=facts.filter{$0.category == .medications}}
+        let env = try loadEnvelope();let facts = try storyQueryFacts(query)
         let terms = query.lowercased().split(whereSeparator:{!$0.isLetter && !$0.isNumber}).map(String.init).filter{$0.count > 2}
-        var evidence = facts.map {StoryEvidence(id:$0.id,text:([$0.displayEntry.title,$0.displayEntry.details,"Status: "+($0.hasKnownStatus ? $0.statusTitle:"Unknown")]+$0.displayEntry.fields.map{$0.label+": "+$0.value}).joined(separator:"\n"),recordID:$0.latest.sourceSessionID,title:$0.displayEntry.title)}
+        var evidence = facts.map {StoryEvidence(id:$0.id,text:([$0.displayEntry.title,$0.displayEntry.details,"Category: "+$0.category.rawValue,"Status: "+($0.hasKnownStatus ? $0.statusTitle:"Unknown")]+$0.displayEntry.fields.map{$0.label+": "+$0.value}).joined(separator:"\n"),recordID:$0.latest.sourceSessionID,title:$0.displayEntry.title)}
+        if storyQueryScope(query) != "retrieval" {return Array(evidence.prefix(max(1,min(limit,200))))}
+        let undoneRecords=Set(env.story.edits.filter{$0.state=="undone"}.compactMap(\.addedRecordID))
         let matchedSources = try matchingStorySourceIDs(query:query)
-        for source in env.story.sources where env.story.sources.last(where:{$0.recordID == source.recordID})?.id == source.id && (matchedSources?.contains(source.id.uuidString) ?? true) {
+        for source in env.story.sources where !undoneRecords.contains(source.recordID) && env.story.sources.last(where:{$0.recordID == source.recordID})?.id == source.id && (matchedSources?.contains(source.id.uuidString) ?? true) {
             // Stable revision-scoped passages retain exact text; never cite a mutable offset alone.
             for (index,paragraph) in source.text.components(separatedBy:"\n").enumerated() where !paragraph.isEmpty {
                 evidence.append(StoryEvidence(id:source.id.uuidString+":"+String(index),text:paragraph,recordID:source.recordID,sourceRevisionID:source.id,title:env.sessions.first(where:{$0.id == source.recordID})?.displayTitle ?? "Record"))

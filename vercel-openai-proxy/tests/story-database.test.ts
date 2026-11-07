@@ -1,0 +1,41 @@
+import test,{mock} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile,readdir} from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
+import {database,transaction,submitWithinTransaction,claim,settle,cleanup} from '../api/_lib/ledger';
+import {advanceStoryOperation} from '../api/_lib/story-runtime';
+import {storyRequest,storyPayload} from '../api/_lib/story-contract';
+import {jobQueue} from '../api/_lib/queue';
+test('story verification chains once, preserves cancellation and expires source text',{skip:!process.env.AI_STORY_TEST_DATABASE_URL},async()=>{
+ const url=new URL(process.env.AI_STORY_TEST_DATABASE_URL!);assert.equal(url.hostname,'127.0.0.1');assert.match(url.pathname,/^\/cc_test_/);
+ Object.assign(process.env,{DATABASE_URL:url.href,AI_BUDGET_ID:'evaluation-v1',AI_DEDUPE_SECRET:'synthetic-only',STORY_LAB_ENABLED:'true',AI_QUEUE_ENABLED:'true'});
+ const sent:string[]=[];mock.method(jobQueue,'send',async(_topic:string,m:{id:string})=>{sent.push(m.id);return {messageId:randomUUID()};});
+ const db=database();
+ try{
+  for(const name of (await readdir('migrations')).filter(n=>n.endsWith('.sql')).sort())await db.query(await readFile('migrations/'+name,'utf8'));
+  const input=storyRequest({id:randomUUID(),version:'story-v1',kind:'edit',baseRevision:3,before:'Pain daily',after:'Pain stopped last week',targetIDs:['a'],evidence:[{id:'a',text:'Pain daily',title:'Synthetic note'}]});
+  const job=await transaction(async tx=>{const job=await submitWithinTransaction(tx,'synthetic',storyPayload(input),undefined,'gpt-6-luna','medium');await tx.query('INSERT INTO ai_story_operations(owner,id,request_hash,request,job_id) VALUES($1,$2,$3,$4,$5)',['synthetic',input.id,'synthetic-hash',input,job.id]);return job;});
+  assert.equal((await advanceStoryOperation('other',input.id)).state,'not_found');await claim(job.id);
+  const output=JSON.stringify({kind:'correction',text:input.after,targetIDs:[],citationIDs:[],question:''});
+  await settle(job.id,'completed',{input_tokens:10,output_tokens:10},output);
+  await Promise.all(Array.from({length:5},()=>advanceStoryOperation('synthetic',input.id)));
+  const op=(await db.query('SELECT * FROM ai_story_operations WHERE id=$1',[input.id])).rows[0];
+  assert.ok(op.check_job_id);assert.equal(new Set(sent).size,1);assert.equal((await db.query('SELECT count(*)::int AS n FROM ai_jobs')).rows[0].n,2);
+  await claim(op.check_job_id);await settle(op.check_job_id,'completed',{input_tokens:10,output_tokens:10},output);
+  const completed=await advanceStoryOperation('synthetic',input.id);assert.equal(completed.state,'completed');assert.equal(completed.result?.baseRevision,3);
+  const retryInput={...input,id:randomUUID()};
+  const retryJob=await transaction(async tx=>{const receipt=await submitWithinTransaction(tx,'synthetic',storyPayload(retryInput),undefined,'gpt-6-luna','medium');await tx.query('INSERT INTO ai_story_operations(owner,id,request_hash,request,job_id) VALUES($1,$2,$3,$4,$5)',['synthetic',retryInput.id,'retry-hash',retryInput,receipt.id]);return receipt;});
+  await claim(retryJob.id);await settle(retryJob.id,'incomplete',{input_tokens:0,output_tokens:0},undefined,undefined,{outputTokenLimit:100,providerStatus:'rejected',providerHTTPStatus:429});
+  await Promise.all([advanceStoryOperation('synthetic',retryInput.id),advanceStoryOperation('synthetic',retryInput.id)]);
+  let retryOp=(await db.query('SELECT * FROM ai_story_operations WHERE id=$1',[retryInput.id])).rows[0];assert.equal(retryOp.attempts,2);assert.notEqual(retryOp.job_id,retryJob.id);
+  assert.equal((await advanceStoryOperation('synthetic',retryInput.id)).state,'retry_scheduled');
+  await db.query("UPDATE ai_story_operations SET next_attempt_at=now()-interval '1 second' WHERE id=$1",[retryInput.id]);
+  await claim(retryOp.job_id);await settle(retryOp.job_id,'completed',{input_tokens:10,output_tokens:10},output);await advanceStoryOperation('synthetic',retryInput.id);
+  retryOp=(await db.query('SELECT * FROM ai_story_operations WHERE id=$1',[retryInput.id])).rows[0];assert.equal(retryOp.attempts,3);
+  await claim(retryOp.check_job_id);await settle(retryOp.check_job_id,'incomplete',{input_tokens:0,output_tokens:0},undefined,undefined,{outputTokenLimit:100,providerStatus:'rejected',providerHTTPStatus:429});
+  assert.equal((await advanceStoryOperation('synthetic',retryInput.id)).state,'incomplete');
+  assert.equal((await db.query('SELECT attempts FROM ai_story_operations WHERE id=$1',[retryInput.id])).rows[0].attempts,3);
+  await db.query('UPDATE ai_story_operations SET cancelled=true WHERE id=$1',[input.id]);assert.equal((await advanceStoryOperation('synthetic',input.id)).state,'cancelled');
+  await db.query("UPDATE ai_story_operations SET created_at=now()-interval '8 days' WHERE id=$1",[input.id]);await cleanup();assert.equal((await db.query('SELECT request FROM ai_story_operations WHERE id=$1',[input.id])).rows[0].request,null);
+ }finally{mock.restoreAll();await db.end();}
+});

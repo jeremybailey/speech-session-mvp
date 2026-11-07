@@ -193,3 +193,5 @@ $(SRCROOT)/SpeechSessionApp/StoryLabView.swift
 $(SRCROOT)/vercel-openai-proxy/api/_lib/story-contract.ts
 $(SRCROOT)/vercel-openai-proxy/api/v1/health-processing/story-operations.ts
 $(SRCROOT)/vercel-openai-proxy/migrations/012_story_operations.sql
+
+$(SRCROOT)/vercel-openai-proxy/api/_lib/story-runtime.ts

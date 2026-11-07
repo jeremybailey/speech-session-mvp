@@ -961,12 +961,13 @@ public actor SessionStore {
     }
     public func recordsNeedingIncrementalUpdate() throws -> [Session] {
         let env=try loadEnvelope()
-        return env.sessions.filter {!$0.transcript.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && $0.processingState != .transcribing && $0.processingState != .failed && env.completedRecordRevisions[$0.id.uuidString] != IncrementalRecordUpdate.sourceHash($0.transcript)}
+        let undone=Set(env.story.edits.filter{$0.state=="undone"}.compactMap(\.addedRecordID))
+        return env.sessions.filter {!undone.contains($0.id) && !$0.transcript.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && $0.processingState != .transcribing && $0.processingState != .failed && env.completedRecordRevisions[$0.id.uuidString] != IncrementalRecordUpdate.sourceHash($0.transcript)}
     }
     /// A unit receipt and its visible facts commit together; replay cannot append revisions twice.
     public func publishRecordUnit(_ facts:[IncrementalRecordFact],recordID:UUID,sourceHash:String,unitKey:String,updateID:UUID) throws {
         var env=try loadEnvelope()
-        guard var receipt=env.recordUpdate,receipt.id==updateID,receipt.state != "cancelled",let i=env.sessions.firstIndex(where:{$0.id==recordID}),IncrementalRecordUpdate.sourceHash(env.sessions[i].transcript)==sourceHash else {throw SummaryCommitError.sourceChanged}
+        guard !env.story.edits.contains(where:{$0.state=="undone" && $0.addedRecordID==recordID}),var receipt=env.recordUpdate,receipt.id==updateID,receipt.state != "cancelled",let i=env.sessions.firstIndex(where:{$0.id==recordID}),IncrementalRecordUpdate.sourceHash(env.sessions[i].transcript)==sourceHash else {throw SummaryCommitError.sourceChanged}
         if receipt.publishedUnits.contains(unitKey) {return}
         var generated=try IncrementalRecordUpdate.entries(facts,session:env.sessions[i])
         if let revision=env.story.sources.last(where:{$0.recordID==recordID}),revision.patientEdited {
