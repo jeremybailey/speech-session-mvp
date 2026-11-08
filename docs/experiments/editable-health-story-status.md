@@ -39,8 +39,8 @@ The experimental implementation is available for private validation. It is not a
 
 ## Required before distribution
 
-1. **Device signing is blocked:** Xcode reports missing Developer account token and cannot provision the new app-group identity. Sign back in at Xcode → Settings → Accounts, then rebuild/install the separate app.
-2. Confirm the two additional Kinde callback URLs are registered and complete an actual sign-in.
+1. **Device installation completed November 8:** refreshed Xcode credentials successfully provisioned and signed the separate app. Care Story Lab was installed and launched on the connected iPhone alongside the pilot.
+2. User confirmed both Kinde callback URLs were registered November 8. An actual device sign-in still needs to be verified.
 3. Run a physical-device import/edit/Undo/recovery session and actual-model semantic evaluation with the approved budget. No real inference has been exercised in this experiment yet.
 4. Verify VoiceOver, large text, keyboard/focus behavior, interrupted recording, locked-phone return and measured latency. Automated tests are not substitutes for these checks.
 5. The current narrative refresh reuses the established overview generator and protects patient blocks during projection. A fully independent per-block refresh scheduler and exhaustive semantic coverage for ambiguous edits remain follow-up work; do not claim the full target architecture or accuracy/latency gates are complete.
