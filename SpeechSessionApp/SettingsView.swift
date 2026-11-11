@@ -374,13 +374,13 @@ struct SettingsView: View {
                         SettingsDataTransferView(store: store, home: home, health: health, importing: true)
                     }
                     if allowsStoryReset {
-                        Button("Clear Story Lab history…", role: .destructive) { confirmStoryReset = true }
+                        Button("Clear health history…", role: .destructive) { confirmStoryReset = true }
                             .disabled(!canReset)
                             .alert("Clear history on this device?", isPresented: $confirmStoryReset) {
                                 Button("Cancel", role: .cancel) {}
                                 Button("Clear history", role: .destructive) { resetHistory() }
                             } message: {
-                                Text("This removes Story Lab records, attachments, care plans, summaries and chats from this device. You’ll stay signed in. To restore later, first export a ZIP with originals and save it in Files.")
+                                Text("This removes your records, attachments, care plans, summaries and chats from this device. You’ll stay signed in. To restore later, first export a ZIP with originals and save it in Files.")
                             }
                     }
                 } header: { Text("Data transfer") }

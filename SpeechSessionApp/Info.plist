@@ -12,7 +12,7 @@
 	<key>TransactionalRecordStorageEnabled</key>
 	<string>$(CC_SQLITE_ENABLED)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Care Story Lab</string>
+	<string>Collective Care V2</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
