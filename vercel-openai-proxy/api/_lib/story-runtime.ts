@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {database,transaction,submitWithinTransaction} from './ledger';
 import {enqueueJob,jobQueue,jobTopic} from './queue';
 import {isRecordDeploymentActive} from './record-runtime';
-import {storyPayload,storyResult} from './story-contract';
+import {storyPayload,storyResult,storyCandidate} from './story-contract';
 import {runJob} from './worker';
 
 export async function advanceStoryOperation(owner:string,id:string) {
@@ -32,9 +32,9 @@ export async function advanceStoryOperation(owner:string,id:string) {
  const first=await job(op.job_id);
  if(!first)return {state:'blocked'};
  if(first.state==='queued')await enqueueJob(op.job_id);
- if(first.state!=='completed'){if(await retryIfEligible(first,'job_id'))return {state:'retry_scheduled'};return {state:first.state==='uncertain'&&op.attempts<2&&Date.now()-new Date(first.created_at).getTime()<15*60_000?'reconciling':first.state};}
+ if(first.state!=='completed'){if(await retryIfEligible(first,'job_id'))return {state:'retry_scheduled'};return {draftText:op.request.kind==='chat'?first.result?.draftText:undefined,state:first.state==='uncertain'&&op.attempts<2&&Date.now()-new Date(first.created_at).getTime()<15*60_000?'reconciling':first.state};}
  if(!first.result)return {state:'expired'};
- const candidate=storyResult(first.result.output,op.request);
+ const candidate=storyCandidate(first.result.output);
  if(!op.check_job_id){await transaction(async db=>{
   const current=(await db.query('SELECT * FROM ai_story_operations WHERE owner=$1 AND id=$2 FOR UPDATE',[owner,id])).rows[0];
   if(current.cancelled||current.check_job_id||!current.request||!await isRecordDeploymentActive(db))return;
@@ -46,9 +46,10 @@ export async function advanceStoryOperation(owner:string,id:string) {
  const checked=await job(op.check_job_id);
  if(!checked)return {state:'blocked'};
  if(checked.state==='queued')await enqueueJob(op.check_job_id);
- if(checked.state!=='completed'){if(await retryIfEligible(checked,'check_job_id',candidate))return {state:'queued'};return {state:checked.state};}
+ if(checked.state!=='completed'){if(await retryIfEligible(checked,'check_job_id',candidate))return {state:'queued'};return {state:checked.state,phase:'checking',draftText:op.request.kind==='chat'&&typeof (candidate as any)?.text==='string'?(candidate as any).text:undefined};}
  if(!checked.result)return {state:'expired'};
- const result=storyResult(checked.result.output,op.request);
+ let result;
+ try {result=storyResult(checked.result.output,op.request);} catch {return {state:'invalid_result'};}
  const latest=(await database().query('SELECT cancelled FROM ai_story_operations WHERE owner=$1 AND id=$2',[owner,id])).rows[0];
  return latest?.cancelled?{state:'cancelled'}:{state:'completed',result};
 }

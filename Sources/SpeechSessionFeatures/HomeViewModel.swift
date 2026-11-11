@@ -9,6 +9,7 @@ public final class HomeViewModel: ObservableObject {
     @Published public private(set) var sessions: [Session] = []
     @Published public private(set) var folders: [SessionFolder] = []
     @Published public private(set) var revision = 0
+    @Published public private(set) var initialLoadFailed = false
     @Published public var errorMessage: String?
 
     public init(store: SessionStore) {
@@ -16,6 +17,7 @@ public final class HomeViewModel: ObservableObject {
     }
 
     public func loadSessions() async {
+        initialLoadFailed = false
         do {
             let snapshot = try await store.healthSnapshot()
             sessions = snapshot.sessions.sorted { $0.date > $1.date }
@@ -24,6 +26,7 @@ public final class HomeViewModel: ObservableObject {
                 $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             }
         } catch {
+            initialLoadFailed = revision == 0
             errorMessage = "Your records could not be loaded. Please try again."
         }
     }

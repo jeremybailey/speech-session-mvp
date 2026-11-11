@@ -124,7 +124,7 @@ public final class WhisperKitTranscriptionService: @unchecked Sendable, Transcri
 
                 let results = try await wk.transcribe(audioPath: tempURL.path)
                 let text = results
-                    .map { $0.text }
+                    .map { $0.textWithPauses }
                     .joined(separator: " ")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 if !text.isEmpty {

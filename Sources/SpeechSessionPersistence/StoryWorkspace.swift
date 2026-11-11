@@ -46,6 +46,11 @@ public struct StoryCareEvent: Codable, Equatable, Identifiable, Sendable {
     public var factIDs: [String]? = nil
 }
 public struct StoryMessage: Codable, Equatable, Identifiable, Sendable {
+    public static func queuedQuestion(_ text: String) -> Self {
+        StoryMessage(role: "user", text: text, state: "queued")
+    }
+
+    public var summaryParentID:UUID? = nil
     public var id: UUID = UUID()
     public var role: String
     public var text: String
@@ -58,6 +63,11 @@ public struct StoryMessage: Codable, Equatable, Identifiable, Sendable {
     public var createdAt: Date = Date()
 }
 public struct StoryWorkspace: Codable, Equatable, Sendable {
+    public var sharedSummary:StorySharedSummary? = nil
+    public var narrativeText: String? = nil
+    public var narrativeRevision: Int? = nil
+    public var narrativeEdited: Bool? = nil
+    public var narrativeEvidence: [StoryEvidence]? = nil
     public var sources: [StorySourceRevision] = []
     public var sourceDrafts: [String:String]? = nil
     public var blocks: [StoryBlock] = []
@@ -75,10 +85,38 @@ public struct StoryEvidence: Codable, Equatable, Identifiable, Sendable {
     public var recordID: UUID?
     public var sourceRevisionID: UUID?
     public var title: String
+    public init(id:String,text:String,recordID:UUID?,sourceRevisionID:UUID?=nil,title:String) {
+        self.id=id;self.text=text;self.recordID=recordID;self.sourceRevisionID=sourceRevisionID;self.title=title
+    }
 }
 public enum StoryEditError: Error { case staleRevision, invalidMutation, notFound }
 
 extension SessionStore {
+    public func storyNarrativeText() throws -> String {
+        let env=try loadEnvelope()
+        if let text=env.story.narrativeText {return text}
+        let written=env.story.blocks.filter{$0.patientWritten && !$0.suppressed}.map(\.text).joined(separator:"\n\n")
+        if !written.isEmpty {return written}
+        let facts=HealthMemoryProjection.facts(in:try healthSnapshot())
+        return storyOverview(for:facts)?.text ?? env.wholeHistoryOverview ?? lastStoryOverviewForDisplay()?.text ?? ""
+    }
+    public func saveStoryNarrativeText(_ text:String) throws {
+        var env=try loadEnvelope()
+        guard env.story.narrativeText != text else {return}
+        env.story.narrativeText=text;env.story.narrativeEdited=true
+        env.story.narrativeRevision=(env.story.narrativeRevision ?? 0)+1
+        // Presentation-only editing while structured mutation is deferred.
+        env.story.narrativeEvidence=nil
+        try saveEnvelope(env)
+    }
+    public func publishStoryNarrative(_ text:String,revision:Int,evidence:[StoryEvidence],expectedSources:[StoryEvidence]?=nil) throws {
+        if let expectedSources, try storyOverviewEvidence() != expectedSources { throw StoryEditError.staleRevision }
+        var env=try loadEnvelope()
+        guard (env.story.narrativeRevision ?? 0)==revision else {throw StoryEditError.staleRevision}
+        env.story.narrativeText=text;env.story.narrativeEdited=false
+        env.story.narrativeRevision=revision+1;env.story.narrativeEvidence=evidence
+        try saveEnvelope(env)
+    }
     public func storyWorkspace() throws -> StoryWorkspace { try loadEnvelope().story }
     public func synchronizeStory() throws {
         var env = try loadEnvelope()
@@ -109,6 +147,7 @@ extension SessionStore {
             }
             env.story.blocks=merged+remaining
         } else if env.story.blocks.isEmpty {
+            // Retain legacy editable-block compatibility; the narrative UI never uses these labels.
             env.story.blocks=facts.prefix(5).map{StoryBlock(text:$0.displayEntry.title,factIDs:[$0.id])}
         }
         for i in env.story.blocks.indices where env.story.blocks[i].factIDs.contains(where: {byID[$0] == nil}) {
@@ -202,8 +241,10 @@ extension SessionStore {
         var drafts = env.story.sourceDrafts ?? [:]; drafts[recordID.uuidString] = text
         env.story.sourceDrafts = drafts; try saveEnvelope(env)
     }
-    public func reviseStorySource(_ recordID: UUID, text: String) throws {
+    public func reviseStorySource(_ recordID: UUID, text: String, expectedTranscript: String? = nil, title: String? = nil) throws {
         var env = try loadEnvelope();guard let i = env.sessions.firstIndex(where: {$0.id == recordID}) else {throw StoryEditError.notFound}
+        if let expectedTranscript, env.sessions[i].transcript != expectedTranscript { throw StoryEditError.staleRevision }
+        if let title { env.sessions[i].editedRecordTitle = title.trimmingCharacters(in: .whitespacesAndNewlines) }
         env.story.sourceDrafts?.removeValue(forKey: recordID.uuidString)
         let previous = env.sessions[i].transcript;guard text != previous else {try saveEnvelope(env);return}
         if env.story.sources.last(where: {$0.recordID == recordID})?.text != previous {env.story.sources.append(StorySourceRevision(recordID:recordID,text:previous))}
@@ -253,7 +294,10 @@ extension SessionStore {
         if let day {env.story.lastCheckInDay = day};try saveEnvelope(env)
     }
     @discardableResult public func addStoryMessage(role:String,text:String,citations:[String] = [],state:String = "saved") throws -> UUID {
-        var env = try loadEnvelope();let message = StoryMessage(role:role,text:text,citationIDs:citations,state:state)
+        try addStoryMessage(StoryMessage(role:role,text:text,citationIDs:citations,state:state))
+    }
+    @discardableResult public func addStoryMessage(_ message: StoryMessage) throws -> UUID {
+        var env = try loadEnvelope()
         env.story.messages.append(message);try saveEnvelope(env);return message.id
     }
     public func saveStoryMessageAsRecord(_ id:UUID) throws {
@@ -286,6 +330,9 @@ extension SessionStore {
         var env=try loadEnvelope()
         if let i=env.story.edits.firstIndex(where:{$0.id==id}) {env.story.edits[i].state="cancelled";env.story.edits[i].cancellationPending=true}
         if let i=env.story.messages.firstIndex(where:{$0.id==id}) {env.story.messages[i].state="cancelled";env.story.messages[i].cancellationPending=true}
+        for i in env.story.messages.indices where env.story.messages[i].summaryParentID == id && env.story.messages[i].state == "queued" {
+            env.story.messages[i].state="cancelled";env.story.messages[i].cancellationPending=true
+        }
         try saveEnvelope(env)
     }
     public func acknowledgeStoryCancellation(_ id:UUID) throws {
@@ -304,6 +351,131 @@ extension SessionStore {
             let source=env.story.sources.last(where:{$0.recordID==entry.sourceSessionID && $0.text.contains(quote)})
             return StoryEvidence(id:fact.id+":"+entry.id.uuidString,text:quote,recordID:entry.sourceSessionID,sourceRevisionID:source?.id,title:entry.sourceTitle ?? "Saved source")
         }}
+    }
+    public func failStorySharedSummary(_ operationID:UUID) throws {
+        var env=try loadEnvelope()
+        if let index=env.story.messages.firstIndex(where:{$0.id==operationID && $0.role=="system" && $0.state=="queued"}) {
+            env.story.messages[index].state="failed";try saveEnvelope(env)
+        }
+    }
+    public func recordedSummaryPatientName(for summary: StorySharedSummary?) throws -> String? {
+        let env = try loadEnvelope()
+        let ids = summary.map { Set($0.evidence.compactMap(\.recordID)) }
+        let revisions = Dictionary(env.story.sources.map { ($0.recordID, $0.text) }, uniquingKeysWith: { _, latest in latest })
+        let documents = env.sessions.filter { ids?.contains($0.id) ?? true }.map { revisions[$0.id] ?? $0.transcript }
+        return StorySummaryDocument.recordedPatientName(in: documents)
+    }
+    public func setSharedSummaryPatientName(_ name:String) throws {
+        var env=try loadEnvelope()
+        guard env.story.sharedSummary != nil else{return}
+        let value=name.trimmingCharacters(in:.whitespacesAndNewlines)
+        env.story.sharedSummary?.patientNameEdited=true
+        env.story.sharedSummary?.patientName=value.isEmpty ? nil:value
+        try saveEnvelope(env)
+    }
+    public func completeStorySharedSummary(_ operationID:UUID,summary:StorySharedSummary) throws {
+        guard let template=StorySummaryTemplate(rawValue:summary.templateID),template.validatedText(summary.text) != nil else {throw StoryEditError.invalidMutation}
+        var env=try loadEnvelope()
+        guard let index=env.story.messages.firstIndex(where:{$0.id==operationID && $0.role=="system" && $0.state=="queued"}) else {throw StoryEditError.staleRevision}
+        env.story.sharedSummary=summary;env.story.messages[index].state="completed";try saveEnvelope(env)
+    }
+    public func prepareSummaryStage(parentID:UUID,stage:String) throws -> StoryMessage {
+        var env=try loadEnvelope()
+        guard env.story.messages.contains(where:{$0.id==parentID && $0.state=="queued"}) else {throw StoryEditError.staleRevision}
+        let id=IncrementalRecordUpdate.stableID("summary-stage:"+parentID.uuidString+":"+stage)
+        if let existing=env.story.messages.first(where:{$0.id==id}) {return existing}
+        var message=StoryMessage(role:"system",text:"Summary stage",state:"queued")
+        message.id=id;message.summaryParentID=parentID
+        env.story.messages.append(message);try saveEnvelope(env);return message
+    }
+    public func completeSummaryStage(_ id:UUID,text:String,evidence:[StoryEvidence]) throws {
+        var env=try loadEnvelope()
+        guard let i=env.story.messages.firstIndex(where:{$0.id==id && $0.state=="queued"}),
+              let parent=env.story.messages[i].summaryParentID,
+              env.story.messages.contains(where:{$0.id==parent && $0.state=="queued"}),
+              StorySummaryTemplate.practitioner.validatedText(text) != nil else {throw StoryEditError.staleRevision}
+        env.story.messages[i].text=text;env.story.messages[i].evidence=evidence
+        env.story.messages[i].state="completed";try saveEnvelope(env)
+    }
+    /// Full eligible structured snapshot, packed by source. No relevance ranking or silent prefix truncation.
+    /// Balance a selective overview across categories; include complete assertions
+    /// with their qualifiers. A very long passage cannot crowd out other records.
+    public func storyOverviewEvidence() throws -> [StoryEvidence] {
+        let snapshot = try healthSnapshot()
+        let facts = HealthMemoryProjection.facts(in: snapshot).filter {
+            !$0.preference.hidden && HealthStoryEligibility.includes($0.displayEntry)
+        }
+        let groups = Dictionary(grouping: ConditionSummaryProjection.sorted(facts), by: { $0.category })
+        var selected: [StoryEvidence] = []
+        var bytes = 0
+        func append(_ text: String, title: String, record: UUID?, revision: UUID? = nil) {
+            guard !text.isEmpty, text.utf8.count <= 8000, bytes + text.utf8.count <= 32000, selected.count < 72 else { return }
+            bytes += text.utf8.count
+            selected.append(StoryEvidence(id: "E" + String(selected.count + 1), text: text, recordID: record,
+                                          sourceRevisionID: revision, title: String(title.prefix(160))))
+        }
+        for index in 0..<(groups.values.map { $0.count }.max() ?? 0) {
+            for category in SummaryEntryCategory.allCases {
+                guard let group = groups[category], index < group.count else { continue }
+                let fact = group[index], entry = fact.displayEntry
+                let parts = [entry.title, entry.details, entry.supportingExcerpt, entry.evidence?.eventDate,
+                             entry.evidence?.sourceAttribution, "Status: " + (fact.hasKnownStatus ? fact.statusTitle : "Unknown")]
+                let text = (parts.compactMap { $0 }.filter { !$0.isEmpty } + entry.fields.map { $0.label + ": " + $0.value }).joined(separator: "\n")
+                append(text, title: entry.sourceTitle ?? category.displayTitle, record: entry.sourceSessionID)
+            }
+            if selected.count >= 72 { break }
+        }
+        if selected.isEmpty && snapshot.sessions.allSatisfy({ $0.summaryEntries?.isEmpty != false }) {
+            for session in snapshot.sessions.sorted(by: { $0.date > $1.date }) {
+                for paragraph in session.transcript.split(whereSeparator: { $0.isNewline }) {
+                    if paragraph.utf8.count <= 8000 {
+                        append(String(paragraph), title: session.displayTitle, record: session.id)
+                    } else {
+                        let passage = String(paragraph)
+                        passage.enumerateSubstrings(in: passage.startIndex..<passage.endIndex, options:.bySentences) { sentence, _, _, stop in
+                            if let sentence { append(sentence, title: session.displayTitle, record: session.id) }
+                            stop = selected.count >= 72 || bytes >= 32000
+                        }
+                    }
+                }
+            }
+        }
+        return selected
+    }
+
+    public func storySummaryEvidence(legacyDates:Bool=false) throws -> [StoryEvidence] {
+        let facts=HealthMemoryProjection.facts(in:try healthSnapshot()).filter{!$0.preference.hidden && HealthStoryEligibility.includes($0.displayEntry)}
+        let sessions=try loadAll()
+        var output:[StoryEvidence]=[]
+        for fact in facts.sorted(by:{($0.displayEntry.sourceSessionID?.uuidString ?? "",$0.id)<($1.displayEntry.sourceSessionID?.uuidString ?? "",$1.id)}) {
+            let entry=fact.displayEntry
+            var lines=[entry.title,entry.details,"Category: "+fact.category.rawValue,"Recorded status: "+(fact.hasKnownStatus ? fact.statusTitle:"Unknown"),"Patient action status: "+(fact.preference.actionStatus?.rawValue ?? "Not explicitly adopted")]
+            if legacyDates {
+                if let date=entry.sourceDate {lines.append("Clinical date: "+date.formatted(.iso8601))}
+            } else if !entry.dateNeedsReview {
+                if let recorded=entry.evidence?.eventDate {lines.append("Recorded date: "+recorded)}
+                else if let date=entry.relevantDate {lines.append("Clinical date: "+date.formatted(.iso8601))}
+            }
+            lines += entry.fields.map{$0.label+": "+$0.value}
+            if let evidence=entry.evidence,let data=try? JSONEncoder().encode(evidence),var fields=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any] {
+                // Keep clinical qualifiers, medications, instructions and source excerpts; omit only processing/identity metadata.
+                for key in ["medicationProductID","artifactSchema","wholeHistoryTopicIDs","conditionGroupReason","conditionSynthesisUnassigned","careOrganizationVersion","instructionIdentity","factIdentity","combinationExcluded","combinationPrimary"] {fields.removeValue(forKey:key)}
+                if var assertion=fields["sourceAssertion"] as? [String:Any] {
+                    for key in ["start","sourceHash","signature"] {assertion.removeValue(forKey:key)}
+                    fields["sourceAssertion"]=assertion
+                }
+                if let compact=try? JSONSerialization.data(withJSONObject:fields,options:.sortedKeys),let json=String(data:compact,encoding:.utf8) {lines.append("Clinical evidence: "+json)}
+            }
+            let content=lines.filter{!$0.isEmpty}.joined(separator:"\n")
+            let sourceID=entry.sourceSessionID
+            let title=sessions.first(where:{$0.id==sourceID})?.displayTitle ?? "Saved health details"
+            if let index=output.indices.last,output[index].recordID==sourceID,output[index].text.count+content.count<6000 {
+                output[index].text += "\n\n"+content
+            } else {
+                output.append(StoryEvidence(id:"E"+String(output.count+1),text:content,recordID:sourceID,title:title))
+            }
+        }
+        return output
     }
     public func storyTargetEvidence(_ ids:[String]) throws -> [StoryEvidence] {
         HealthMemoryProjection.facts(in:try healthSnapshot()).filter{ids.contains($0.id)}.map{StoryEvidence(id:$0.id,text:([$0.displayEntry.title,$0.displayEntry.details,"Category: "+$0.category.rawValue,"Status: "+($0.hasKnownStatus ? $0.statusTitle:"Unknown")]+$0.displayEntry.fields.map{$0.label+": "+$0.value}).joined(separator:"\n"),recordID:$0.latest.sourceSessionID,title:$0.displayEntry.title)}

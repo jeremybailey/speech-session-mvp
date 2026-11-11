@@ -1,6 +1,34 @@
 import XCTest
 @testable import SpeechSessionPersistence
 final class StoryWorkspaceTests:XCTestCase {
+    func testOverviewCanCiteASingleLongUnprocessedTranscript() async throws {
+        let store = try store()
+        let sentence = "This is a complete synthetic observation. "
+        let record = Session(transcript:String(repeating:sentence,count:500))
+        try await store.save([record])
+        let evidence = try await store.storyOverviewEvidence()
+        XCTAssertFalse(evidence.isEmpty)
+        XCTAssertLessThanOrEqual(evidence.count,72)
+        XCTAssertEqual(Set(evidence.map(\.id)).count,evidence.count)
+        XCTAssertTrue(evidence.allSatisfy { $0.recordID == record.id && record.transcript.contains($0.text) })
+    }
+    func testNarrativeUsesSavedOverviewAndLocalEditsDoNotChangeFacts() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {try? FileManager.default.removeItem(at:root)}
+        let store=try SessionStore(storageDirectory:root)
+        var env=try await store.loadEnvelope()
+        env.wholeHistoryOverview="A saved, connected account of the patient's history."
+        try await store.saveEnvelope(env)
+        let seeded=try await store.storyNarrativeText()
+        XCTAssertEqual(seeded,env.wholeHistoryOverview)
+        try await store.saveStoryNarrativeText("My own account of what matters.")
+        try await store.synchronizeStory()
+        let written=try await store.storyNarrativeText(), workspace=try await store.storyWorkspace()
+        XCTAssertEqual(written,"My own account of what matters.")
+        XCTAssertTrue(workspace.edits.isEmpty)
+        let records=try await store.loadAll();XCTAssertTrue(records.isEmpty)
+        do {try await store.publishStoryNarrative("Late generation",revision:0,evidence:[]);XCTFail("Overwrote newer writing")} catch StoryEditError.staleRevision {}
+    }
     func store() throws -> SessionStore {try SessionStore(storageDirectory:FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),sqliteEnabled:true)}
     func seed(_ store:SessionStore) async throws {
         let record=Session(transcript:"I have neck pain.",summaryEntries:[SummaryEntry(category:.symptoms,title:"I have neck pain.",origin:.userAdded)])

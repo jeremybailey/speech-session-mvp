@@ -17,7 +17,7 @@ struct RecordingLiveActivityWidget: Widget {
                             .foregroundStyle(LiveActivityBrand.plumAccent)
 
                         VStack(alignment: .leading, spacing: 1) {
-                            Text("Transcribing…")
+                            Text(context.attributes.sessionTitle)
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(LiveActivityBrand.plumAccent)
                             timerText(for: context.state)
@@ -101,7 +101,7 @@ private struct RecordingLiveActivityLockView: View {
                 .foregroundStyle(LiveActivityBrand.plumAccent)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Transcribing…")
+                Text(context.attributes.sessionTitle)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(LiveActivityBrand.plumAccent)
                 timerLine

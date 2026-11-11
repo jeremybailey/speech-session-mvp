@@ -539,21 +539,21 @@ struct WholeHistoryBTrialView: View {
     var body: some View {
         List {
             Section {
-                Text("Whole-history B · experimental").font(.headline)
+                Text("Whole-history B · experimental").font(StoryDesignTokens.font(.headline, weight: .semibold))
                 Text("B organizes copies of selected saved text, then a separate writing pass creates a short overview. Results stay in this unverified preview; your saved details and care plans are unchanged.")
-                Text("The 20-record benchmark took 3m49s. Phone time depends on the records and connection.").font(.footnote).foregroundStyle(.secondary)
+                Text("The 20-record benchmark took 3m49s. Phone time depends on the records and connection.").font(StoryDesignTokens.font(.footnote)).foregroundStyle(.secondary)
             }
             if !model.configured { Text("This build has no active phone-trial configuration.") }
             else {
                 Section("Trial") {
                     Text("State: \(model.state)")
-                    Text("Access expires: \(model.expiry)").font(.caption)
+                    Text("Access expires: \(model.expiry)").font(StoryDesignTokens.font(.caption))
                     if let elapsed = model.elapsed { LabeledContent("Server processing", value: String(format: "%.0f seconds", elapsed)) }
                     if let cost = model.cost { LabeledContent("Estimated API cost", value: String(format: "$%.5f USD", cost)) }
                     if !model.hasRun {
                         Button("Run B on \(model.selected.count) records") { Task { await model.start() } }.disabled(model.selected.isEmpty)
                     } else if !model.terminal {
-                        if model.busy { ProgressView("Processing the same request…") }
+                        if model.busy { StoryThinkingStatus("Processing the same request…").frame(maxWidth:.infinity,alignment:.leading) }
                         Button("Resume this run") { Task { await model.resume() } }.disabled(model.busy)
                         Button("Stop this run", role: .destructive) { Task { await model.stop() } }
                     }
@@ -564,7 +564,7 @@ struct WholeHistoryBTrialView: View {
                         Button(model.selected.count == model.records.count ? "Deselect all" : "Select all") { model.selected = model.selected.count == model.records.count ? [] : Set(model.records.map(\.id)) }
                         ForEach(model.records) { r in
                             Toggle(isOn: Binding(get: { model.selected.contains(r.id) }, set: { if $0 { model.selected.insert(r.id) } else { model.selected.remove(r.id) } })) {
-                                VStack(alignment: .leading) { Text(r.sourceAssets?.first?.displayName ?? r.date.formatted(date: .abbreviated, time: .shortened)); Text(r.transcript.prefix(90)).font(.caption).foregroundStyle(.secondary) }
+                                VStack(alignment: .leading) { Text(r.sourceAssets?.first?.displayName ?? r.date.formatted(date: .abbreviated, time: .shortened)); Text(r.transcript.prefix(90)).font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary) }
                             }
                         }
                     }
@@ -581,8 +581,8 @@ struct WholeHistoryBTrialView: View {
                     }
                 }
                 Section("Two-pass overview · unverified") {
-                    Text("Uses B’s existing details and condition links. The writer weighs major history, lasting effects and ongoing care across all concerns. This does not independently verify them.").font(.footnote)
-                    Text("State: \(model.narrativeState)").font(.caption)
+                    Text("Uses B’s existing details and condition links. The writer weighs major history, lasting effects and ongoing care across all concerns. This does not independently verify them.").font(StoryDesignTokens.font(.footnote))
+                    Text("State: \(model.narrativeState)").font(StoryDesignTokens.font(.caption))
                     if let text = model.narrative { Text(text).textSelection(.enabled) }
                     if let elapsed = model.narrativeElapsed { LabeledContent("Writing pass", value: String(format: "%.0f seconds", elapsed)) }
                     if let cost = model.narrativeCost { LabeledContent("Writing cost", value: String(format: "$%.5f USD", cost)) }
@@ -594,14 +594,14 @@ struct WholeHistoryBTrialView: View {
                             ForEach(model.concerns) { concern in
                                 VStack(alignment: .leading) {
                                     Text(concern.name)
-                                    Text((model.narrativeCoverage[concern.id] ?? "").replacingOccurrences(of: "_", with: " ")).font(.caption).foregroundStyle(.secondary)
+                                    Text((model.narrativeCoverage[concern.id] ?? "").replacingOccurrences(of: "_", with: " ")).font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
                                 }
                             }
                         }
                     }
                     if model.hasNarrativeJob && !model.narrativeTerminal {
                         Button(model.hasNarrativeJob ? "Resume overview writing" : "Write improved overview") { Task { await model.writeOverview() } }.disabled(model.busy)
-                        if model.busy { ProgressView("Writing a short overview…") }
+                        if model.busy { StoryThinkingStatus("Writing a short overview…").frame(maxWidth:.infinity,alignment:.leading) }
                         if model.hasNarrativeJob { Button("Stop overview writing", role: .destructive) { Task { await model.stopOverview() } } }
                     }
                 }
@@ -622,14 +622,14 @@ struct BTrialFactsView: View {
         List(facts) { fact in
             VStack(alignment: .leading, spacing: 8) {
                 Text(fact.text)
-                Text("\(fact.category) · \(fact.status) · \(fact.by)").font(.caption).foregroundStyle(.secondary)
-                if !fact.event.isEmpty { Text(fact.event).font(.caption) }
+                Text("\(fact.category) · \(fact.status) · \(fact.by)").font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+                if !fact.event.isEmpty { Text(fact.event).font(StoryDesignTokens.font(.caption)) }
                 if let p = fact.plan {
-                    if let a = p["a"], !a.isEmpty { Text("Responsible: " + a).font(.footnote) }
-                    if let t = p["t"], !t.isEmpty { Text("Timing: " + t).font(.footnote) }
-                    if let q = p["q"], !q.isEmpty { Text(q).font(.footnote) }
+                    if let a = p["a"], !a.isEmpty { Text("Responsible: " + a).font(StoryDesignTokens.font(.footnote)) }
+                    if let t = p["t"], !t.isEmpty { Text("Timing: " + t).font(StoryDesignTokens.font(.footnote)) }
+                    if let q = p["q"], !q.isEmpty { Text(q).font(StoryDesignTokens.font(.footnote)) }
                 }
-                DisclosureGroup("Original source quotations") { ForEach(Array(fact.quotes.enumerated()), id: \.offset) { _, quote in Text(quote).font(.footnote).textSelection(.enabled) } }
+                DisclosureGroup("Original source quotations") { ForEach(Array(fact.quotes.enumerated()), id: \.offset) { _, quote in Text(quote).font(StoryDesignTokens.font(.footnote)).textSelection(.enabled) } }
             }.padding(.vertical, 4)
         }
     }
@@ -648,9 +648,9 @@ struct BTrialBodySystemRows: View {
                         .frame(width: 44, height: 44)
                         .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(area.id.title).font(.headline)
-                        Text("\(area.concerns.count) concern\(area.concerns.count == 1 ? "" : "s")").font(.subheadline).foregroundStyle(.secondary)
-                        Text(area.concerns.map(\.name).joined(separator: " · ")).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                        Text(area.id.title).font(StoryDesignTokens.font(.headline, weight: .semibold))
+                        Text("\(area.concerns.count) concern\(area.concerns.count == 1 ? "" : "s")").font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+                        Text(area.concerns.map(\.name).joined(separator: " · ")).font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary).lineLimit(2)
                     }
                 }.padding(.vertical, 4)
             }
@@ -669,7 +669,7 @@ struct BTrialBodySystemsView: View {
     var body: some View {
         List {
             Section {
-                Text("B’s saved condition labels, grouped for navigation. These are unverified proposals. A concern can appear in more than one body system; sharing a system does not establish a clinical relationship.").font(.footnote).foregroundStyle(.secondary)
+                Text("B’s saved condition labels, grouped for navigation. These are unverified proposals. A concern can appear in more than one body system; sharing a system does not establish a clinical relationship.").font(StoryDesignTokens.font(.footnote)).foregroundStyle(.secondary)
             }
             Section { BTrialBodySystemRows(areas: areas, facts: facts) }
         }.navigationTitle("B body systems")
@@ -686,7 +686,7 @@ struct BTrialConditionListView: View {
             } label: {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(concern.name)
-                    Text("\(linked.count) linked detail\(linked.count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                    Text("\(linked.count) linked detail\(linked.count == 1 ? "" : "s")").font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
                 }
             }
         }

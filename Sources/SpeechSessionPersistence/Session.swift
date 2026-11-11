@@ -317,6 +317,18 @@ public struct SummaryEntry: Codable, Equatable, Hashable, Identifiable, Sendable
     }
 }
 
+/// Patient writing and per-original extraction checkpoints for a mixed-media record.
+public struct RecordCapture: Codable, Hashable, Sendable {
+    public var patientTitle = ""
+    public var notes = ""
+    public var isDraft = true
+    public var pending = false
+    public var textByAsset: [UUID: String] = [:]
+    public var failedAssets: Set<UUID> = []
+    public var duration: TimeInterval = 0
+    public init() {}
+}
+
 /// A persisted recording session: metadata, full transcript, and optional AI-generated fields.
 public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
     public let id: UUID
@@ -335,18 +347,24 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
     /// User-selected intent for audio (and audio file) entries; defaults to clinical visit for legacy data.
     public var entryIntent: SessionEntryIntent
     /// Optional folder assignment; `nil` means the entry is only listed under “All entries.”
+    /// nil follows automatic filing. An empty set is an explicit patient choice.
+    public var selectedFolderIDs: Set<UUID>?
     public var folderID: UUID?
     /// Original uploaded or recorded files; `nil`/empty for legacy transcript-only sessions.
     public var sourceAssets: [SessionSourceAsset]?
     public var processingState: RecordProcessingState?
     public var processingError: String?
     public var extractionVersion: Int?
+    public var visitTime: Date?
+    public var linkedMemberIDs: Set<UUID>?
+    public var editedRecordTitle: String?
+    public var capture: RecordCapture?
     public var summaryRun: SummaryRun?
     public var summaryDrafts: [SummaryEntry]?
     public var summaryRevisions: [SummaryRevision]?
 
     enum CodingKeys: String, CodingKey {
-        case id, date, transcript, title, summary, summaryEntries, inputType, entryIntent, folderID, sourceAssets, processingState, processingError, extractionVersion, summaryRun, summaryRevisions, summaryDrafts
+        case visitTime, linkedMemberIDs, editedRecordTitle, capture, id, date, transcript, title, summary, summaryEntries, inputType, entryIntent, folderID, selectedFolderIDs, sourceAssets, processingState, processingError, extractionVersion, summaryRun, summaryRevisions, summaryDrafts
     }
 
     public init(
@@ -381,12 +399,17 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id        = try c.decode(UUID.self,   forKey: .id)
         date      = try c.decode(Date.self,   forKey: .date)
+        visitTime = try c.decodeIfPresent(Date.self, forKey: .visitTime)
+        linkedMemberIDs = try c.decodeIfPresent(Set<UUID>.self, forKey: .linkedMemberIDs)
+        editedRecordTitle = try c.decodeIfPresent(String.self, forKey: .editedRecordTitle)
+        capture = try c.decodeIfPresent(RecordCapture.self, forKey: .capture)
         transcript = try c.decode(String.self, forKey: .transcript)
         title     = try c.decodeIfPresent(String.self, forKey: .title)
         summary   = try c.decodeIfPresent(String.self, forKey: .summary)
         summaryEntries = try c.decodeIfPresent([SummaryEntry].self, forKey: .summaryEntries)
         inputType = try c.decodeIfPresent(SessionInputType.self, forKey: .inputType) ?? .audio
         entryIntent = try c.decodeIfPresent(SessionEntryIntent.self, forKey: .entryIntent) ?? .clinicalVisit
+        selectedFolderIDs = try c.decodeIfPresent(Set<UUID>.self, forKey: .selectedFolderIDs)
         folderID = try c.decodeIfPresent(UUID.self, forKey: .folderID)
         sourceAssets = try c.decodeIfPresent([SessionSourceAsset].self, forKey: .sourceAssets)
         processingState = try c.decodeIfPresent(RecordProcessingState.self, forKey: .processingState)

@@ -162,11 +162,11 @@ struct ScopedHealthSummaryView: View {
                     .font(.system(size: 52))
                     .foregroundStyle(.secondary)
                 Text(scope == .all ? "No entries yet" : "No entries in this folder")
-                    .font(.headline)
+                    .font(StoryDesignTokens.font(.headline, weight: .semibold))
                 Text(scope == .all
                     ? "Record an appointment to build a health summary."
                     : "Move or create entries here, then open Summary again.")
-                    .font(.subheadline)
+                    .font(StoryDesignTokens.font(.subheadline))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 12)
@@ -181,12 +181,7 @@ struct ScopedHealthSummaryView: View {
     }
 
     private var loadingCard: some View {
-        HStack(spacing: 12) {
-            ProgressView().scaleEffect(0.9)
-            Text("Building health summary across \(scopedSessions.count) entr\(scopedSessions.count == 1 ? "y" : "ies")…")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
+        StoryThinkingStatus("Building health summary across \(scopedSessions.count) entr\(scopedSessions.count == 1 ? "y" : "ies")…")
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
         .summaryGlassCard(cornerRadius: 14)
@@ -204,13 +199,13 @@ struct ScopedHealthSummaryView: View {
                         .foregroundStyle(BrandPalette.systemRed)
                 }
                 Text("SUMMARY UNAVAILABLE")
-                    .font(.caption)
+                    .font(StoryDesignTokens.font(.caption))
                     .fontWeight(.semibold)
                     .foregroundStyle(.secondary)
                     .kerning(0.5)
             }
             Text(message)
-                .font(.body)
+                .font(StoryDesignTokens.font(.body))
                 .foregroundStyle(.secondary)
             Button("Try Again") {
                 summaryState = .idle

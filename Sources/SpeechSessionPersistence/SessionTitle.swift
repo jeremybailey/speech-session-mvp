@@ -3,6 +3,11 @@ import Foundation
 extension Session {
     /// Use accepted summary details for untitled imports; never replace a meaningful saved title.
     public var displayTitle: String {
+        if let editedRecordTitle, !editedRecordTitle.isEmpty { return editedRecordTitle }
+        if let capture {
+            if !capture.patientTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return capture.patientTitle }
+            if capture.isDraft { return "Untitled record" }
+        }
         let existing = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let placeholders = ["", "health record", "audio record", "recording", "appointment", "journal", "photo", "document", "scanned document"]
         guard placeholders.contains(existing.lowercased()) else { return existing }

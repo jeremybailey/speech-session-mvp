@@ -2,11 +2,18 @@ import SwiftUI
 import SpeechSessionFeatures
 import SpeechSessionPersistence
 
+extension Notification.Name {
+    static let storyHistoryCleared = Notification.Name("StoryLabHistoryCleared")
+}
+
 struct ContentView: View {
+    @State private var storyGeneration = UUID()
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var appModel: AppModel
     var body: some View {
         StoryLabView(appModel:appModel)
+        .id(storyGeneration)
+        .onReceive(NotificationCenter.default.publisher(for: .storyHistoryCleared)) { _ in storyGeneration = UUID() }
         .environmentObject(appModel.health)
         .onChange(of: scenePhase) { _, phase in
             appModel.recording.setAppInBackground(phase != .active)

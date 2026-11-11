@@ -21,7 +21,7 @@ struct CareTeamEditor: View {
                     TextField("Email", text: $member.email).textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
                     TextField("Phone", text: $member.phone).textContentType(.telephoneNumber).keyboardType(.phonePad)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Address").font(.subheadline).bold()
+                        Text("Address").font(StoryDesignTokens.font(.subheadline)).bold()
                         TextField("Not recorded", text: Binding(get: { member.address ?? "" }, set: { member.address = $0 }), axis: .vertical)
                             .textContentType(.fullStreetAddress)
                     }
@@ -161,7 +161,7 @@ struct PractitionerPicker: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(member.name).foregroundStyle(.primary)
                                 Text([member.role, member.organization].filter { !$0.isEmpty }.joined(separator: " · "))
-                                    .font(.subheadline).foregroundStyle(.secondary)
+                                    .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
                             }
                         }
                     }

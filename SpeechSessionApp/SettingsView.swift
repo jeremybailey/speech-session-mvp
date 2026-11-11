@@ -33,16 +33,18 @@ private struct SettingsDataTransferView: View {
         Form {
             Section {
                 Text("This ZIP file contains sensitive health information. Only share it with people you authorize, use restricted Drive sharing, and send the password separately. Your password cannot be recovered.")
-                    .font(.footnote)
+                    .font(StoryDesignTokens.font(.footnote))
             }
             if importing {
                 Section {
                     Button(selectedFile == nil ? "Choose ZIP file" : "Choose a different ZIP file") { showPicker = true }
                     if selectedFile != nil { Text("ZIP file selected").foregroundStyle(.secondary) }
                     Text("Enter the password used when this ZIP file was created. Passwords are case-sensitive.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .font(StoryDesignTokens.font(.footnote)).foregroundStyle(.secondary)
                     SecureField("File password", text: $password)
                         .textContentType(.password)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                     Button("Review import") { inspectImport() }
                         .disabled(selectedFile == nil || password.isEmpty)
                 }
@@ -55,7 +57,7 @@ private struct SettingsDataTransferView: View {
                                 Toggle(record.title ?? "Untitled record",isOn:Binding(get:{selectedImportRecords.contains(record.id)},set:{if $0 {selectedImportRecords.insert(record.id)} else {selectedImportRecords.remove(record.id)}}))
                             }
                         }
-                        Text("An untouched copy of the imported ZIP is retained. A partial import includes selected records and their corrections; the previous cross-record narrative and chat are not imported.").font(.footnote)
+                        Text("An untouched copy of the imported ZIP is retained. A partial import includes selected records and their corrections; the previous cross-record narrative and chat are not imported.").font(StoryDesignTokens.font(.footnote))
                         LabeledContent("File created", value: prepared.manifest.exportedAt.formatted(date: .abbreviated, time: .shortened))
                         LabeledContent("Original files", value: prepared.manifest.includesOriginals ? "Included where available" : "Not included")
                         if prepared.manifest.missingOriginalCount > 0 {
@@ -71,20 +73,20 @@ private struct SettingsDataTransferView: View {
                 Section {
                     LabeledContent("Records", value: String(home.sessions.count))
                     Toggle("Include original files", isOn: $includeOriginals)
-                    Text("Add original audio, PDFs, scans, and photos. Transcripts, extracted text, and saved results are always included.").font(.footnote)
+                    Text("Add original audio, PDFs, scans, and photos. Transcripts, extracted text, and saved results are always included.").font(StoryDesignTokens.font(.footnote))
                     Text("Use at least \(DataTransferArchive.minimumPasswordLength) characters. Words and spaces are fine; numbers and symbols are optional.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .font(StoryDesignTokens.font(.footnote)).foregroundStyle(.secondary)
                     SecureField("Choose a password", text: $password)
                         .textContentType(.newPassword)
                     if !password.isEmpty && password.count < DataTransferArchive.minimumPasswordLength {
                         Text("\(DataTransferArchive.minimumPasswordLength - password.count) more characters needed.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
                     }
                     SecureField("Confirm password", text: $confirmation)
                         .textContentType(.newPassword)
                     if !confirmation.isEmpty && password != confirmation {
                         Text("Passwords don’t match yet.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
                     }
                     Button("Create encrypted ZIP") { export() }
                         .disabled(password.count < DataTransferArchive.minimumPasswordLength || password != confirmation)
@@ -93,7 +95,7 @@ private struct SettingsDataTransferView: View {
                 if let _ = shareURL {
                     Section {
                         Button("Share export") { showShare = true }
-                        Text("Save or share before leaving this screen. The temporary export is removed when you leave.").font(.footnote)
+                        Text("Save or share before leaving this screen. The temporary export is removed when you leave.").font(StoryDesignTokens.font(.footnote))
                     }
                 }
             }
@@ -238,6 +240,33 @@ struct SettingsView: View {
     @ObservedObject var home: HomeViewModel
     @ObservedObject var health: HealthSummaryModel
     var transferIsAvailable: Bool
+    var allowsStoryReset = false
+    @State private var confirmStoryReset = false
+    @ObservedObject private var captureWork = CaptureProcessing.shared
+    private var canReset: Bool {
+        allowsStoryReset && transferIsAvailable && !health.isProcessing && !health.isUpdatingStory && !health.isTransferringData && captureWork.active.isEmpty
+    }
+
+    private func resetHistory() {
+        guard canReset else { return }
+        health.isTransferringData = true
+        Task { @MainActor in
+            defer { health.isTransferringData = false }
+            do {
+                let ids = health.snapshot.preferences.filter(\.reminderEnabled).map(\.id)
+                try await store.clearLocalStoryHistory()
+                UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+                UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids)
+                for key in ["speechSession.pendingSummaryJob", "speechSession.globalSummaryJSON", "speechSession.globalSummaryBackend", "speechSession.globalSummaryFingerprint", "storyLab.lastViewedPractitionerSummary"] {
+                    UserDefaults.standard.removeObject(forKey: key)
+                }
+                await health.resetAfterDataImport()
+                await home.loadSessions()
+                isPresented = false
+                NotificationCenter.default.post(name: .storyHistoryCleared, object: nil)
+            } catch { accountActionError = error.localizedDescription }
+        }
+    }
 
     @AppStorage("speechSession.transcriptionBackend") private var backendRaw = TranscriptionBackend.onDeviceWhisperKit.rawValue
     @AppStorage("speechSession.openaiAPIKey") private var openAIAPIKey = ""
@@ -300,7 +329,7 @@ struct SettingsView: View {
                     } icon: {
                         Image(systemName: "heart.text.square")
                     }
-                    .font(.footnote)
+                    .font(StoryDesignTokens.font(.footnote))
                     .foregroundStyle(.secondary)
                 } header: {
                     Text("Beta Notice")
@@ -343,6 +372,16 @@ struct SettingsView: View {
                     }
                     NavigationLink("Import data") {
                         SettingsDataTransferView(store: store, home: home, health: health, importing: true)
+                    }
+                    if allowsStoryReset {
+                        Button("Clear Story Lab history…", role: .destructive) { confirmStoryReset = true }
+                            .disabled(!canReset)
+                            .alert("Clear history on this device?", isPresented: $confirmStoryReset) {
+                                Button("Cancel", role: .cancel) {}
+                                Button("Clear history", role: .destructive) { resetHistory() }
+                            } message: {
+                                Text("This removes Story Lab records, attachments, care plans, summaries and chats from this device. You’ll stay signed in. To restore later, first export a ZIP with originals and save it in Files.")
+                            }
                     }
                 } header: { Text("Data transfer") }
                 footer: {
@@ -401,7 +440,7 @@ struct SettingsView: View {
                                     } else { Text("No tracked processing yet") }
                                 }
                                 Section("By stage and model — since tracking began") {
-                                    ForEach(usage.breakdown, id: \.self) { Text($0).font(.footnote) }
+                                    ForEach(usage.breakdown, id: \.self) { Text($0).font(StoryDesignTokens.font(.footnote)) }
                                 }
                                 Section("Shared pilot budgets") {
                                     ForEach(usage.budgets, id: \.id) { budget in
@@ -437,7 +476,7 @@ struct SettingsView: View {
                 if let reason = capabilityProfile.whisperKitHardBlockReason(experimentalUnlocked: whisperKitExperimentalUnlock) {
                     Section {
                         Label(reason, systemImage: "exclamationmark.triangle")
-                            .font(.footnote)
+                            .font(StoryDesignTokens.font(.footnote))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -473,6 +512,8 @@ struct SettingsView: View {
                     Section {
                         SecureField("sk-… (debug only)", text: $openAIAPIKey)
                             .textContentType(.password)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                             .autocorrectionDisabled()
                     } header: {
                         Text("OpenAI API Key (Debug)")
@@ -510,7 +551,7 @@ struct SettingsView: View {
                         if !OnDeviceSummaryService.isAvailable {
                             Section {
                                 Label(OnDeviceSummaryService.unavailabilityReason, systemImage: "exclamationmark.triangle")
-                                    .font(.footnote)
+                                    .font(StoryDesignTokens.font(.footnote))
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -636,7 +677,7 @@ struct SettingsView: View {
                 Label("Download failed", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(BrandPalette.systemRed)
                 Text(message)
-                    .font(.caption)
+                    .font(StoryDesignTokens.font(.caption))
                     .foregroundStyle(.secondary)
                 Button("Retry") {
                     Task { await startDownload() }
@@ -845,7 +886,7 @@ struct WholeHistoryUpdateReviewView: View {
         List {
             Section {
                 Text("Compare the previous details with the new version before changing how a record is organized. This does not mark its contents as clinically verified.")
-                    .font(.subheadline).foregroundStyle(.secondary)
+                    .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
             }
             if health.categoryReviews.isEmpty {
                 Text("There are no retained category changes to review.").foregroundStyle(.secondary)
@@ -857,7 +898,7 @@ struct WholeHistoryUpdateReviewView: View {
                     VStack(alignment:.leading,spacing:4) {
                         Text(review.session.title ?? "Original record")
                         Text(review.missingCategories.map(\.displayTitle).sorted().joined(separator:", "))
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -877,7 +918,7 @@ private struct WholeHistoryRecordReviewView: View {
         List {
             Section {
                 Text("These categories appeared in the previous version but are absent from the new one: "+review.missingCategories.map(\.displayTitle).sorted().joined(separator:", ")+". Check that their information is still represented correctly before using the new details.")
-                    .font(.subheadline).foregroundStyle(.secondary)
+                    .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
                 DisclosureGroup("Original record") {Text(review.session.transcript).textSelection(.enabled)}
             }
             Section("Previous details in those categories") {
@@ -917,11 +958,11 @@ private struct WholeHistoryRecordReviewView: View {
             ForEach(entry.fields.filter{!$0.isMissing && !$0.value.isEmpty}) {field in
                 LabeledContent(field.label,value:field.value)
             }
-            if let quote=entry.sourceExcerpt,!quote.isEmpty {Text(quote).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)}
+            if let quote=entry.sourceExcerpt,!quote.isEmpty {Text(quote).font(StoryDesignTokens.font(.footnote)).foregroundStyle(.secondary).textSelection(.enabled)}
         } label: {
             VStack(alignment:.leading,spacing:4) {
                 Text(entry.title)
-                Text(entry.category.displayTitle).font(.caption).foregroundStyle(.secondary)
+                Text(entry.category.displayTitle).font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
             }
         }
     }

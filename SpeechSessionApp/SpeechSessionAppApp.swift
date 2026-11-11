@@ -9,6 +9,7 @@ struct SpeechSessionAppApp: App {
     @StateObject private var kindeAuth = KindeAuthManager()
 
     init() {
+        StoryDesignTokens.configureNavigationTypography()
         do {
             let store = try SessionStore.appDefault()
             _appModel = StateObject(wrappedValue: AppModel(store: store))

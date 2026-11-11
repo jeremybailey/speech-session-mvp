@@ -19,6 +19,7 @@
 		BF05 /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR05 /* RecordingView.swift */; };
 		BF06 /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR06 /* SessionDetailView.swift */; };
 		BF07 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FR07 /* Assets.xcassets */; };
+		CCFONTRES /* BrandFonts in Resources */ = {isa = PBXBuildFile; fileRef = CCFONTREF /* BrandFonts */; };
 		BF08 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR08 /* SettingsView.swift */; };
 		BF09 /* OnDeviceSummaryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR09 /* OnDeviceSummaryService.swift */; };
 		BF10 /* GlobalHealthSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR10 /* GlobalHealthSummaryView.swift */; };
@@ -41,8 +42,12 @@
 		BF27 /* AppShellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR30 /* AppShellView.swift */; };
 		BF28 /* AddEntryFlowSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR31 /* AddEntryFlowSheet.swift */; };
 		BF29 /* CameraCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR32 /* CameraCaptureView.swift */; };
+		BFStoryCapture106 /* StoryCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FRStoryCapture106 /* StoryCaptureView.swift */; };
 		BF30 /* GlobalSummaryMapReduceSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR33 /* GlobalSummaryMapReduceSupport.swift */; };
 		BF31 /* BrandPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR34 /* BrandPalette.swift */; };
+		CCTB00 /* StoryDesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCTR00 /* StoryDesignTokens.swift */; };
+		CCTB01 /* StoryComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCTR01 /* StoryComponents.swift */; };
+		CCFB02 /* StoryFolderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCFR02 /* StoryFolderView.swift */; };
 		BF32 /* PractitionerContactsFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR35 /* PractitionerContactsFormatting.swift */; };
 		BF33 /* SummaryEntryClustering.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR36 /* SummaryEntryClustering.swift */; };
 		BF34 /* SummaryEntryPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR37 /* SummaryEntryPresentation.swift */; };
@@ -105,6 +110,7 @@
 		FR05 /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
 		FR06 /* SessionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailView.swift; sourceTree = "<group>"; };
 		FR07 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		CCFONTREF /* BrandFonts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = BrandFonts; sourceTree = "<group>"; };
 		FR08 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		FR09 /* OnDeviceSummaryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceSummaryService.swift; sourceTree = "<group>"; };
 		FR10 /* GlobalHealthSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHealthSummaryView.swift; sourceTree = "<group>"; };
@@ -130,8 +136,12 @@
 		FR30 /* AppShellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellView.swift; sourceTree = "<group>"; };
 		FR31 /* AddEntryFlowSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddEntryFlowSheet.swift; sourceTree = "<group>"; };
 		FR32 /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
+		FRStoryCapture106 /* StoryCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryCaptureView.swift; sourceTree = "<group>"; };
 		FR33 /* GlobalSummaryMapReduceSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSummaryMapReduceSupport.swift; sourceTree = "<group>"; };
 		FR34 /* BrandPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandPalette.swift; sourceTree = "<group>"; };
+		CCTR00 /* StoryDesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryDesignTokens.swift; sourceTree = "<group>"; };
+		CCTR01 /* StoryComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryComponents.swift; sourceTree = "<group>"; };
+		CCFR02 /* StoryFolderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryFolderView.swift; sourceTree = "<group>"; };
 		FR35 /* PractitionerContactsFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PractitionerContactsFormatting.swift; sourceTree = "<group>"; };
 		FR36 /* SummaryEntryClustering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryEntryClustering.swift; sourceTree = "<group>"; };
 		FR37 /* SummaryEntryPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryEntryPresentation.swift; sourceTree = "<group>"; };
@@ -203,8 +213,12 @@
 				FR51 /* HealthSummaryView.swift */,
 				FR50 /* HealthSummaryModel.swift */,
 				FR34 /* BrandPalette.swift */,
+				CCTR00 /* StoryDesignTokens.swift */,
+				CCTR01 /* StoryComponents.swift */,
+				CCFR02 /* StoryFolderView.swift */,
 				FR30 /* AppShellView.swift */,
 				FR32 /* CameraCaptureView.swift */,
+				FRStoryCapture106 /* StoryCaptureView.swift */,
 				FR02 /* SpeechSessionAppApp.swift */,
 				FR03 /* ContentView.swift */,
                 FRSTORY,
@@ -213,6 +227,7 @@
 				FR05 /* RecordingView.swift */,
 				FR06 /* SessionDetailView.swift */,
 				FR07 /* Assets.xcassets */,
+				CCFONTREF /* BrandFonts */,
 				FR08 /* SettingsView.swift */,
 				BPHONE02 /* WholeHistoryBTrial.swift */,
 				FR09 /* OnDeviceSummaryService.swift */,
@@ -418,6 +433,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BF07 /* Assets.xcassets in Resources */,
+				CCFONTRES /* BrandFonts in Resources */,
 				BF19 /* LaunchScreen.storyboard in Resources */,
 				BF24 /* kinde-auth.json in Resources */,
 			);
@@ -455,8 +471,12 @@
 				BF51 /* HealthSummaryView.swift in Sources */,
 				BF50 /* HealthSummaryModel.swift in Sources */,
 				BF31 /* BrandPalette.swift in Sources */,
+				CCTB00 /* StoryDesignTokens.swift in Sources */,
+				CCTB01 /* StoryComponents.swift in Sources */,
+				CCFB02 /* StoryFolderView.swift in Sources */,
 				BF27 /* AppShellView.swift in Sources */,
 				BF29 /* CameraCaptureView.swift in Sources */,
+				BFStoryCapture106 /* StoryCaptureView.swift in Sources */,
 				BF02 /* SpeechSessionAppApp.swift in Sources */,
 				BF03 /* ContentView.swift in Sources */,
                 BFSTORY,
@@ -558,7 +578,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-                CC_INCREMENTAL_RECORDS_ENABLED = NO;
+                CC_INCREMENTAL_RECORDS_ENABLED = YES;
                 CC_BACKEND_BASE_URL = "https://collectivecare-story-lab.vercel.app/api";
                 CC_SQLITE_ENABLED = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
@@ -616,7 +636,7 @@
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-                CC_INCREMENTAL_RECORDS_ENABLED = NO;
+                CC_INCREMENTAL_RECORDS_ENABLED = YES;
                 CC_BACKEND_BASE_URL = "https://collectivecare-story-lab.vercel.app/api";
                 CC_SQLITE_ENABLED = YES;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -641,7 +661,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = SpeechSessionApp/SpeechSessionApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 61;
+				CURRENT_PROJECT_VERSION = 122;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SpeechSessionApp/Info.plist;
@@ -671,7 +691,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = SpeechSessionApp/SpeechSessionApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 61;
+				CURRENT_PROJECT_VERSION = 122;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SpeechSessionApp/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
@@ -699,7 +719,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = VoiceMemoShareExtension/VoiceMemoShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 61;
+				CURRENT_PROJECT_VERSION = 122;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VoiceMemoShareExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -725,7 +745,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = VoiceMemoShareExtension/VoiceMemoShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 61;
+				CURRENT_PROJECT_VERSION = 122;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VoiceMemoShareExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -751,7 +771,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = RecordingLiveActivityExtension/RecordingLiveActivityExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 61;
+				CURRENT_PROJECT_VERSION = 122;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RecordingLiveActivityExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -777,7 +797,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = RecordingLiveActivityExtension/RecordingLiveActivityExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 61;
+				CURRENT_PROJECT_VERSION = 122;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RecordingLiveActivityExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;

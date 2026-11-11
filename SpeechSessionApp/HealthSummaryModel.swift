@@ -48,6 +48,7 @@ final class HealthSummaryProgress: ObservableObject {
 final class HealthSummaryModel: ObservableObject {
     @Published var careOrganizationNotice: String?
     @Published var careCards: [CarePlanCard] = []
+    @Published private(set) var snapshotReadFailed = false
     @Published private(set) var hasLoaded = false
     @Published var isTransferringData = false
     @Published private(set) var isImportedHistory = false
@@ -62,6 +63,7 @@ final class HealthSummaryModel: ObservableObject {
     func resetAfterDataImport() async {
         refreshRevision += 1
         hasLoaded = false
+        recordFolders = RecordFolderLibrary(snapshot: HealthMemorySnapshot(), conditions: [])
         conditionGroups = []; healthAreas = []
         snapshot = HealthMemorySnapshot(); facts = []; conditionFacts = []; carePlans = []
         overview = nil; displayedOverview = nil; overviewIsCurrent = false
@@ -76,6 +78,7 @@ final class HealthSummaryModel: ObservableObject {
         processingIssue = nil; updateError = nil; error = nil
         await refresh()
     }
+    private(set) var recordFolders = RecordFolderLibrary(snapshot: HealthMemorySnapshot(), conditions: [])
     @Published private(set) var snapshot = HealthMemorySnapshot()
     @Published private(set) var facts: [HealthFact] = []
     @Published private(set) var carePlans: [HealthCarePlan] = []
@@ -491,6 +494,8 @@ final class HealthSummaryModel: ObservableObject {
         defer { Logger(subsystem: "com.CollectiveCare.storylab", category: "SummaryPerformance").info("refresh seconds=\(Date().timeIntervalSince(started), privacy: .public)") }
         refreshRevision += 1
         let revision = refreshRevision
+        if snapshotReadFailed && snapshot.sessions.isEmpty { hasLoaded = false }
+        snapshotReadFailed = false
         defer { if revision == refreshRevision { hasLoaded = true } }
         do {
             isImportedHistory = await store.isImportedHistory
@@ -565,12 +570,13 @@ final class HealthSummaryModel: ObservableObject {
                 let ranked = useWholeHistory ? areas.enumerated().sorted {
                     $0.element.conditions.count == $1.element.conditions.count ? $0.offset < $1.offset : $0.element.conditions.count > $1.element.conditions.count
                 }.map(\.element) : areas
-                return (keys: keys, conditions: conditions, areas: ranked)
+                return (keys: keys, conditions: conditions, areas: ranked, folders: RecordFolderLibrary(snapshot: projectionSnapshot, conditions: conditions))
             }.value
             guard revision == refreshRevision else { return }
             let savedCareCards = await store.carePlanCards()
             guard revision == refreshRevision else { return }
             careCards = savedCareCards
+            recordFolders = presentation.folders
             conditionGroups = presentation.conditions
             healthAreas = presentation.areas
             snapshot = saved
@@ -608,7 +614,7 @@ final class HealthSummaryModel: ObservableObject {
             if stoppedForCurrentSources && !isUpdatingStory && !isProcessing && updateStates.isEmpty {
                 updateStates = [.details: .interrupted, .conditions: .interrupted, .overview: .interrupted]
             }
-        } catch { self.error = "Your records could not be loaded. \(error.localizedDescription)" }
+        } catch { guard revision == refreshRevision else {return}; snapshotReadFailed = true; self.error = "Your records could not be loaded. \(error.localizedDescription)" }
     }
 
     func combine(_ root: HealthFact, with other: HealthFact) async {

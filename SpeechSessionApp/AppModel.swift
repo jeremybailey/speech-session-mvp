@@ -172,6 +172,7 @@ final class AppModel: ObservableObject {
     func handleLiveActivityStopIfNeeded() async {
         guard !isHandlingLiveActivityStop else { return }
         guard RecordingLiveActivityBridge.consumeStopRequest() else { return }
+        if let capture = CaptureEditor.active { capture.pause(); return }
         guard recording.isRecording else { return }
 
         isHandlingLiveActivityStop = true

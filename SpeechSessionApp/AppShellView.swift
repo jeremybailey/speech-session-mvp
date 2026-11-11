@@ -29,9 +29,8 @@ struct AppShellView: View {
             }
         }
         .environmentObject(kindeAuth)
-        // Keep ordinary interactive controls and links consistently blue even when the
-        // marketing accent color changes. Destructive controls retain their explicit role.
-        .tint(BrandPalette.systemBlue)
+        .font(StoryDesignTokens.body)
+        .tint(StoryDesignTokens.action)
         .onOpenURL { url in
             guard !KindeAuthManager.isKindeOAuthCallbackURL(url) else { return }
             if url.scheme == "collectivecare-storylab", url.host == "record-start" {
@@ -102,14 +101,14 @@ private struct IntroAgreementView: View {
                     if let document = state.document {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Before you begin")
-                                .font(.title2.bold()).accessibilityAddTraits(.isHeader)
+                                .font(StoryDesignTokens.heading(.title2)).accessibilityAddTraits(.isHeader)
                             Text(document.introduction)
                                 .foregroundStyle(.secondary)
                         }
                         VStack(alignment: .leading, spacing: 0) {
                             ForEach(Array(document.paragraphs.enumerated()), id: \.offset) { index, paragraph in
                                 Text(.init(paragraph))
-                                    .font(.body).lineSpacing(5)
+                                    .font(StoryDesignTokens.font(.body)).lineSpacing(5)
                                     .fixedSize(horizontal: false, vertical: true)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(20)
@@ -121,13 +120,13 @@ private struct IntroAgreementView: View {
                         .background(BrandPalette.surface, in: RoundedRectangle(cornerRadius: 24))
                         VStack(spacing: 14) {
                             Label("Your acceptance is recorded with your account, date, and agreement version.", systemImage: "checkmark.shield")
-                                .font(.footnote).foregroundStyle(.secondary)
+                                .font(StoryDesignTokens.font(.footnote)).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                             Button { Task { await state.accept(auth: auth) } } label: {
                                 HStack(spacing: 10) {
                                     if state.busy { ProgressView().tint(.white) }
                                     Text(state.busy ? "Confirming…" : document.action)
-                                        .font(.headline)
+                                        .font(StoryDesignTokens.font(.headline, weight: .semibold))
                                 }
                                 .frame(maxWidth: .infinity).padding(.vertical, 12)
                             }
@@ -135,7 +134,7 @@ private struct IntroAgreementView: View {
                             .buttonBorderShape(.roundedRectangle(radius: 16))
                             .disabled(state.busy)
                             Text("Agreement \(document.version)")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
                         }
                     } else if state.busy {
                         ProgressView("Loading agreement…")
@@ -144,7 +143,7 @@ private struct IntroAgreementView: View {
                     if let error = state.error {
                         VStack(alignment: .leading, spacing: 12) {
                             Label(error, systemImage: "exclamationmark.circle")
-                                .font(.subheadline).foregroundStyle(.secondary)
+                                .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
                             Button("Retry") { Task { await state.load(auth: auth) } }.disabled(state.busy)
                         }
                         .padding(20)
@@ -152,7 +151,7 @@ private struct IntroAgreementView: View {
                         .background(BrandPalette.surface, in: RoundedRectangle(cornerRadius: 20))
                     }
                     Button("Sign out") { Task { await auth.logout() } }
-                        .font(.subheadline).frame(maxWidth: .infinity).disabled(state.busy)
+                        .font(StoryDesignTokens.font(.subheadline)).frame(maxWidth: .infinity).disabled(state.busy)
                 }
                 .frame(maxWidth: 640).padding(.horizontal, 20).padding(.vertical, 24)
                 .frame(maxWidth: .infinity)
@@ -167,19 +166,19 @@ private struct IntroAgreementView: View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("PILOT UPDATE")
-                    .font(.caption.weight(.semibold)).tracking(2)
+                    .font(StoryDesignTokens.font(.caption, weight: .semibold)).tracking(2)
                     .foregroundStyle(BrandPalette.icon)
                 Text("Your health story,\nbrought together.")
-                    .font(.largeTitle.bold()).fixedSize(horizontal: false, vertical: true)
+                    .font(StoryDesignTokens.heading(.largeTitle)).fixedSize(horizontal: false, vertical: true)
                 Text("Collect your records, organize your conditions, and see the bigger picture.")
-                    .font(.body).foregroundStyle(.secondary)
+                    .font(StoryDesignTokens.font(.body)).foregroundStyle(.secondary)
             }
             releasePreview
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("In this update").font(.title3.bold())
+                    Text("In this update").font(StoryDesignTokens.heading(.title3))
                     Spacer()
-                    Text(releaseLabel).font(.caption).foregroundStyle(.secondary)
+                    Text(releaseLabel).font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
                 }
                 releaseFeature("arrow.triangle.2.circlepath", "A connected update", "Details, conditions, and overview update in sequence.")
                 releaseFeature("waveform", "Clearer recordings", "Journal and appointment titles make recordings easier to find.")
@@ -200,8 +199,8 @@ private struct IntroAgreementView: View {
                 .frame(width: 38, height: 38)
                 .background(BrandPalette.conditionIconBackground, in: RoundedRectangle(cornerRadius: 12))
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.subheadline.bold())
-                Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                Text(title).font(StoryDesignTokens.font(.subheadline, weight: .bold))
+                Text(detail).font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -215,14 +214,14 @@ private struct IntroAgreementView: View {
                     Image(systemName: "heart.text.clipboard").foregroundStyle(BrandPalette.icon)
                     Spacer()
                     Image(systemName: "person.crop.circle").foregroundStyle(.secondary)
-                }.font(.title2)
-                Text("My health story").font(.title2.bold())
+                }.font(StoryDesignTokens.heading(.title2))
+                Text("My health story").font(StoryDesignTokens.heading(.title2))
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Updating your health story").font(.subheadline.bold())
+                    Text("Updating your health story").font(StoryDesignTokens.font(.subheadline, weight: .bold))
                     ForEach(["Read records", "Organize conditions", "Update overview"], id: \.self) { title in
                         HStack(spacing: 10) {
                             Image(systemName: "checkmark.circle.fill").foregroundStyle(BrandPalette.icon)
-                            Text(title).font(.subheadline)
+                            Text(title).font(StoryDesignTokens.font(.subheadline))
                             Spacer()
                         }
                     }
@@ -332,7 +331,7 @@ struct SignInGateView: View {
                 Spacer(minLength: 24)
 
                 Text("CollectiveCare")
-                    .font(.largeTitle.weight(.bold))
+                    .font(StoryDesignTokens.heading(.largeTitle))
                     .multilineTextAlignment(.center)
 
                 Spacer(minLength: 32)
@@ -348,7 +347,7 @@ struct SignInGateView: View {
                                     .frame(maxWidth: .infinity)
                             } else {
                                 Text("Sign in or sign up")
-                                    .font(.headline)
+                                    .font(StoryDesignTokens.font(.headline, weight: .semibold))
                                     .frame(maxWidth: .infinity)
                             }
                         }

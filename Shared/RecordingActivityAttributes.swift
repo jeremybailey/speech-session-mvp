@@ -2,12 +2,12 @@ import Foundation
 
 /// Cross-process flags for Live Activity buttons (App Group + Darwin notify).
 enum RecordingLiveActivityBridge {
-    static let appGroupID = "group.com.CollectiveCare.pilot"
+    static let appGroupID = "group.com.CollectiveCare.storylab"
     private static let stopRequestedKey = "recordingLiveActivity.stopRequested"
     private static let startRequestedKey = "recordingLiveActivity.startRequested"
 
-    static let stopNotificationName = "com.CollectiveCare.pilot.recording.stop" as CFString
-    static let startNotificationName = "com.CollectiveCare.pilot.recording.start" as CFString
+    static let stopNotificationName = "com.CollectiveCare.storylab.recording.stop" as CFString
+    static let startNotificationName = "com.CollectiveCare.storylab.recording.start" as CFString
 
     private static var defaults: UserDefaults? {
         UserDefaults(suiteName: appGroupID)

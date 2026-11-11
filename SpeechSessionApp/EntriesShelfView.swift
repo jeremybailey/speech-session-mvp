@@ -44,7 +44,7 @@ struct EntriesShelfView: View {
             Section("My folders") {
                 if home.folders.isEmpty {
                     Text("No folders yet. Open an entry list and use the plus button to add entries, or create a folder here.")
-                        .font(.subheadline)
+                        .font(StoryDesignTokens.font(.subheadline))
                         .foregroundStyle(.secondary)
                         .listRowBackground(BrandPalette.surface)
                 }

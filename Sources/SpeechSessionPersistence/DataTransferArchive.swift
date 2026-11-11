@@ -5,10 +5,14 @@ import TransferZip
 
 public enum DataTransferError: LocalizedError {
     case invalidArchive, unsupportedVersion, wrongPassword, passwordTooShort, tooLarge, insufficientSpace, missingOriginals(Int), busy
+    case archiveReadFailed(Int32)
+    case sourceUnavailable
     public var errorDescription: String? {
         switch self {
         case .invalidArchive: return "This ZIP file is damaged or contains invalid data. Your current history has not been replaced."
         case .unsupportedVersion: return "This ZIP file requires a newer version of CollectiveCare."
+        case .archiveReadFailed(let code): return "The encrypted ZIP could not be read or verified (code \(code)). Download a fresh local copy and retry. Your history is unchanged."
+        case .sourceUnavailable: return "The selected ZIP could not be copied from Files. Download it to this device and choose it again."
         case .wrongPassword: return "The password is incorrect, or the encrypted ZIP file is damaged."
         case .passwordTooShort: return "Use at least \(DataTransferArchive.minimumPasswordLength) characters. Words and spaces are fine; numbers and symbols are optional."
         case .tooLarge: return "This ZIP file exceeds the limit of 20,000 files or 5 GiB of uncompressed data."
@@ -170,7 +174,7 @@ public enum DataTransferArchive {
               story.careEvents.allSatisfy({$0.recordID.map {sessions.contains($0)} ?? true}),
               story.messages.allSatisfy({$0.savedRecordID.map {sessions.contains($0)} ?? true}) else {throw DataTransferError.invalidArchive}
         for session in envelope.sessions {
-            guard session.folderID.map({ folders.contains($0) }) ?? true else { throw DataTransferError.invalidArchive }
+            guard session.selectedFolderIDs?.isSubset(of: folders) != false, session.folderID.map({ folders.contains($0) }) ?? true else { throw DataTransferError.invalidArchive }
             let assets = session.sourceAssets ?? []
             guard Set(assets.map(\.id)).count == assets.count,
                   Set(assets.map { $0.relativePath.lowercased() }).count == assets.count,
@@ -201,7 +205,8 @@ public enum DataTransferArchive {
         while status == 0 {
             let info = try entryInfo(archive)
             let target = output.appendingPathComponent(info.name)
-            guard cc_zip_read_open(archive, password) == 0 else { throw DataTransferError.wrongPassword }
+            let openResult = cc_zip_read_open(archive, password)
+            guard openResult == 0 else { throw openResult == -108 ? DataTransferError.wrongPassword : DataTransferError.archiveReadFailed(openResult) }
             var closed = false
             defer { if !closed { cc_zip_read_close(archive) } }
             try write(Data(), to: target)
@@ -210,14 +215,15 @@ public enum DataTransferArchive {
             while true {
                 try Task.checkCancellation()
                 let count = cc_zip_read(archive, &buffer, UInt32(buffer.count))
-                guard count >= 0 else { throw DataTransferError.wrongPassword }
+                guard count >= 0 else { throw DataTransferError.archiveReadFailed(count) }
                 if count == 0 { break }
                 written += UInt64(count); actual += UInt64(count)
                 guard written <= info.size, actual <= maxBytes else { throw DataTransferError.tooLarge }
                 try file.write(contentsOf: Data(buffer.prefix(Int(count))))
             }
             let closeResult = cc_zip_read_close(archive); closed = true
-            guard closeResult == 0, written == info.size else { throw DataTransferError.wrongPassword }
+            guard closeResult == 0 else { throw DataTransferError.archiveReadFailed(closeResult) }
+            guard written == info.size else { throw DataTransferError.invalidArchive }
             status = cc_zip_next(archive)
         }
         guard status == -100 else { throw DataTransferError.invalidArchive }
@@ -422,12 +428,22 @@ extension SessionStore {
         let payload = work.appendingPathComponent("payload")
         try DataTransferArchive.createDirectory(payload)
         do {
-            try DataTransferArchive.extract(zip, password: password, to: payload)
-            let (manifest, _) = try DataTransferArchive.validate(payload)
+            // Coordinate provider access once, then decrypt only the protected local copy.
             let backup=work.appendingPathComponent("untouched-import.zip")
-            try FileManager.default.copyItem(at:zip,to:backup)
-            try DataTransferArchive.protect(backup)
-            guard try DataTransferArchive.digest(zip).1 == DataTransferArchive.digest(backup).1 else {throw DataTransferError.invalidArchive}
+            var coordinationError: NSError?
+            var copyError: Error?
+            NSFileCoordinator().coordinate(readingItemAt:zip,options:[],error:&coordinationError) { readable in
+                do {
+                    try FileManager.default.copyItem(at:readable,to:backup)
+                    try DataTransferArchive.protect(backup)
+                    guard try DataTransferArchive.digest(readable).1 == DataTransferArchive.digest(backup).1 else {throw DataTransferError.invalidArchive}
+                } catch {copyError=error}
+            }
+            if copyError is CancellationError {throw CancellationError()}
+            if let transferError=copyError as? DataTransferError {throw transferError}
+            guard coordinationError == nil,copyError == nil else {throw DataTransferError.sourceUnavailable}
+            try DataTransferArchive.extract(backup, password: password, to: payload)
+            let (manifest, _) = try DataTransferArchive.validate(payload)
             return PreparedDataImport(manifest: manifest, directory: payload)
         } catch {
             try? FileManager.default.removeItem(at: work)
@@ -479,6 +495,21 @@ extension SessionStore {
         // Persist provenance and the no-auto-processing policy with the replacement,
         // not in account preferences, so interruption cannot enable processing.
         try DataTransferArchive.write(DataTransferArchive.encoder().encode(importedManifest), to: incoming.appendingPathComponent(DataTransferArchive.importedMarker))
+        try commitIncomingHistory(incoming, work: work)
+    }
+
+    /// Replace only this app's local health-history store, using import's crash recovery.
+    public func clearLocalStoryHistory() throws {
+        try discardDataTransfer()
+        let work = DataTransferArchive.workRoot(storageDirectory)
+        let incoming = work.appendingPathComponent("incoming")
+        try DataTransferArchive.createDirectory(incoming)
+        try DataTransferArchive.write(DataTransferArchive.encoder().encode(SessionsEnvelope(sessions: [], folders: [])),
+                                      to: incoming.appendingPathComponent(Self.sessionsFileName))
+        try commitIncomingHistory(incoming, work: work)
+    }
+
+    private func commitIncomingHistory(_ incoming: URL, work: URL) throws {
         try Task.checkCancellation()
         let rollback = DataTransferArchive.rollbackRoot(storageDirectory)
         guard !FileManager.default.fileExists(atPath: rollback.path) else { throw DataTransferError.busy }

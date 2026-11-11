@@ -31,6 +31,26 @@ final class DataTransferTests: XCTestCase {
         return (store, session, directory)
     }
 
+    func testClearLocalHistorySurvivesReopenAndCanRestoreExport() async throws {
+        let (_, record, dir) = try await fixture("reset")
+        let store = try SessionStore(storageDirectory: dir, sqliteEnabled: true)
+        try await store.saveStoryNarrativeText("Synthetic narrative")
+        let zip = try await store.exportData(password: password, includeOriginals: true, appVersion: "test")
+        let backup = root.appendingPathComponent("saved.zip")
+        try FileManager.default.copyItem(at: zip, to: backup)
+        try await store.clearLocalStoryHistory()
+        let cleared = try await store.loadAll()
+        XCTAssertTrue(cleared.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("sources").path))
+        let reopened = try SessionStore(storageDirectory: dir, sqliteEnabled: true)
+        let narrative = try await reopened.storyNarrativeText()
+        XCTAssertEqual(narrative, "")
+        let prepared = try await reopened.prepareDataImport(from: backup, password: password)
+        try await reopened.replaceWithImportedData(prepared)
+        let restored = try await reopened.loadAll()
+        XCTAssertEqual(restored.map(\.id), [record.id])
+    }
+
     func testSelectedImportPreservesCorrectionAndUntouchedArchive() async throws {
         let (source, first, _) = try await fixture("selected-source")
         let second=Session(transcript:"Different synthetic record",title:"Excluded")
@@ -103,7 +123,7 @@ final class DataTransferTests: XCTestCase {
         let (source, _, _) = try await fixture("source")
         let (destination, existing, _) = try await fixture("destination")
         let zip = try await source.exportData(password: password, includeOriginals: false, appVersion: "test")
-        do { _ = try await destination.prepareDataImport(from: zip, password: "wrong"); XCTFail("Accepted wrong password") } catch {}
+        do { _ = try await destination.prepareDataImport(from: zip, password: "wrong"); XCTFail("Accepted wrong password") } catch DataTransferError.wrongPassword {} catch { XCTFail("Wrong failure classification: \(error)") }
         let bad = root.appendingPathComponent("corrupt.zip")
         try Data("not a zip".utf8).write(to: bad)
         do { _ = try await destination.prepareDataImport(from: bad, password: password); XCTFail("Accepted corruption") } catch {}

@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import {storyDraftText} from "./story-stream";
 import { claim, cleanup, database, settle } from "./ledger";
 import { modelOptions } from "./model-policy";
 import { reservedOutputTokenLimit } from './output-policy';
@@ -31,7 +32,8 @@ export async function runJob(id?: string): Promise<number> {
     }
     return 0;
   }
-  const background = ["whole-history-generation","whole-history-overview","whole-history-unit-extraction","whole-history-unit-verification"].includes(job.payload.stage)
+  const conversational = (job.payload.response_format.json_schema as {name?:string})?.name === "story_chat_stream_v1";
+  const background = !conversational && ["whole-history-generation","whole-history-overview","whole-history-unit-extraction","whole-history-unit-verification"].includes(job.payload.stage)
     && process.env.AI_WHOLE_HISTORY_PROVIDER_BACKGROUND === "true";
   try {
     if (process.env.AI_MOCK_INFERENCE === "true") {
@@ -47,14 +49,33 @@ export async function runJob(id?: string): Promise<number> {
         );
       }
       const providerStarted = performance.now();
-      const result = await client.responses.create({ model: job.model, store: false, service_tier: "default",
+      const parameters = { model: job.model, store: false, service_tier: "default",
         ...(background ? { background: true, metadata: { health_job_id: job.id } } : {}),
         max_output_tokens: outputLimit,
         ...modelOptions(job.model, job.reasoning_effort),
         input: [{ role: "system", content: job.payload.instructions }, { role: "user", content: job.payload.input }],
         text: { format: job.payload.response_format.type === "json_schema"
           ? { type: "json_schema", name: schema.name, strict: true, schema: schema.schema }
-          : { type: "json_object" } } } as never);
+          : { type: "json_object" } } };
+      let result: any;
+      if (conversational) {
+        const stream = await client.responses.create({...parameters,stream:true} as never) as unknown as AsyncIterable<any>;
+        let accumulated="",lastWrite=0;
+        for await (const event of stream) {
+          if(event.type === "response.created") await database().query("UPDATE ai_jobs SET provider_id=$2 WHERE id=$1 AND state='running'",[job.id,event.response.id]);
+          if(event.type === "response.output_text.delta") {
+            accumulated+=event.delta;
+            const draft=storyDraftText(accumulated);
+            if(draft && Date.now()-lastWrite>350) {
+              lastWrite=Date.now();
+              await database().query("UPDATE ai_payloads SET result=$2 WHERE job_id=$1 AND expires_at>now()",[job.id,{draftText:draft}]);
+            }
+          }
+          if(["response.completed","response.incomplete","response.failed"].includes(event.type)) result=event.response;
+        }
+        if(!result)throw new Error("stream_interrupted");
+        result.output_text=accumulated;
+      } else {result=await client.responses.create(parameters as never);}
       if (background) {
         await database().query(
           "UPDATE ai_jobs SET provider_id=$2 WHERE id=$1 AND state='running' AND provider_id IS NULL",

@@ -64,7 +64,7 @@ struct RecordingView: View {
 
             if let status = vm.recordingStatusMessage {
                 Text(status)
-                    .font(.subheadline)
+                    .font(StoryDesignTokens.font(.subheadline))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
             }
@@ -79,23 +79,19 @@ struct RecordingView: View {
 
             if !batchInfoText.isEmpty && phase == .recording {
                 Text(batchInfoText)
-                    .font(.caption)
+                    .font(StoryDesignTokens.font(.caption))
                     .foregroundStyle(.secondary)
                     .transition(.opacity)
             }
 
             if phase == .transcribing {
-                HStack(spacing: 10) {
-                    ProgressView()
-                    Text("Transcribing…")
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity)
+                StoryThinkingStatus("Transcribing…")
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .transition(.opacity)
             }
 
             if let err = vm.errorMessage {
-                Text(err).foregroundStyle(BrandPalette.systemRed).font(.footnote)
+                Text(err).foregroundStyle(BrandPalette.systemRed).font(StoryDesignTokens.font(.footnote))
             }
 
             Button {
@@ -144,7 +140,7 @@ struct RecordingView: View {
                         }
                     }
                 Text("Recording saved")
-                    .font(.headline)
+                    .font(StoryDesignTokens.font(.headline, weight: .semibold))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 28)
@@ -155,7 +151,7 @@ struct RecordingView: View {
             // Transcript preview
             ScrollView {
                 Text(session.transcript.isEmpty ? "(No speech detected)" : session.transcript)
-                    .font(.body)
+                    .font(StoryDesignTokens.font(.body))
                     .foregroundStyle(session.transcript.isEmpty ? .secondary : .primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()

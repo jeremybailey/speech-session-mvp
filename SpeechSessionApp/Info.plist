@@ -2,6 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>UIAppFonts</key>
+	<array>
+		<string>BrandFonts/ebgaramond.ttf</string>
+		<string>BrandFonts/inter.ttf</string>
+	</array>
 	<key>IncrementalRecordsEnabled</key>
 	<string>$(CC_INCREMENTAL_RECORDS_ENABLED)</string>
 	<key>TransactionalRecordStorageEnabled</key>

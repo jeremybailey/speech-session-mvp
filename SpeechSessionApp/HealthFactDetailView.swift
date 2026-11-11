@@ -48,6 +48,7 @@ private struct HealthFactEditor: View {
     @State private var saving = false
     @State private var practitionerID: UUID?
     @State private var choosingPractitioner = false
+    @Environment(\.storyRouter) private var storyRouter
     @State private var source: Session?
     @State private var remove = false
 
@@ -81,7 +82,7 @@ private struct HealthFactEditor: View {
     var body: some View {
         Form {
             Section(fact.category.displayTitle) {
-                TextField(CareInstructionPresentation.applies(entry) ? "Instruction" : "Title", text: $entry.title, axis: .vertical).font(.headline)
+                TextField(CareInstructionPresentation.applies(entry) ? "Instruction" : "Title", text: $entry.title, axis: .vertical).font(StoryDesignTokens.font(.headline, weight: .semibold))
                 careField(CareInstructionPresentation.applies(entry) ? "Additional directions" : "Details", text: $entry.details)
                 if CareInstructionPresentation.applies(entry) {
                     careField("Goal", text: $careGoal)
@@ -99,7 +100,7 @@ private struct HealthFactEditor: View {
                 ForEach($entry.fields) { $field in
                     if !HealthDetailPresentation.isPractitionerField(field.label) && !HealthStoryText.isInternalField(field.label) && !(field.label.lowercased() == "details" && originalEntry.fields.first(where: { $0.id == field.id })?.value == originalEntry.details) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(field.label).font(.subheadline).foregroundStyle(.secondary)
+                        Text(field.label).font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
                         TextField("Not recorded", text: $field.value, axis: .vertical)
                     }
                     }
@@ -114,7 +115,7 @@ private struct HealthFactEditor: View {
                         + originalEntry.fields.filter { HealthDetailPresentation.isPractitionerField($0.label) }.map(\.value))
                         .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                     ForEach(Array(Set(sourceNames)).sorted(), id: \.self) { name in
-                        Text("From source: \(name)").font(.subheadline).foregroundStyle(.secondary)
+                        Text("From source: \(name)").font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
                     }
                 }
                 Section("Status") {
@@ -161,10 +162,18 @@ private struct HealthFactEditor: View {
                             Text(occurrence.details.isEmpty ? occurrence.title : occurrence.details)
                         }
                         if let record = model.snapshot.sessions.first(where: { $0.id == occurrence.sourceSessionID }) {
-                            Button("Open \(record.title ?? "original record")") { source = record }
+                            Button("Open \(record.title ?? "original record")") {
+                                if let storyRouter {
+                                    if let quote = occurrence.supportingExcerpt, record.capture != nil {
+                                        storyRouter.captureExcerpt = (record.id, quote)
+                                    }
+                                    storyRouter.open(.record(record.id))
+                                }
+                                else { source = record }
+                            }
                                 .frame(minHeight: 44)
                             Text("Added \(record.date.formatted(date: .abbreviated, time: .omitted))")
-                                .font(.subheadline).foregroundStyle(.secondary)
+                                .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
                         }
                     }.padding(.vertical, 4)
                 }
@@ -204,7 +213,7 @@ private struct HealthFactEditor: View {
 
     private func careField(_ label: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(label).font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             TextField("Not recorded", text: text, axis: .vertical).accessibilityLabel(label)
         }
     }

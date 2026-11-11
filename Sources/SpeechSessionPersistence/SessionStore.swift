@@ -149,7 +149,7 @@ public actor SessionStore {
     }
 
     public func loadFolders() throws -> [SessionFolder] {
-        try loadEnvelope().folders
+        try loadEnvelope().folders.filter { $0.isDeleted != true }
     }
 
     /// Replaces the on-disk session list with `sessions`, preserving folders.
@@ -185,7 +185,12 @@ public actor SessionStore {
             invalidateFolderSummary(&env, folderID: session.folderID)
         }
         if let index = env.sessions.firstIndex(where: { $0.id == session.id }) {
-            env.sessions[index] = session
+            var updated = session
+            if let selection = env.sessions[index].selectedFolderIDs {
+                updated.selectedFolderIDs = selection
+                updated.folderID = env.sessions[index].folderID
+            }
+            env.sessions[index] = updated
         } else {
             env.sessions.append(session)
         }
@@ -208,6 +213,11 @@ public actor SessionStore {
 
     public func deleteFolder(id: UUID) throws {
         var env = try loadEnvelope()
+        if let folder = env.folders.first(where: { $0.id == id }), folder.conditionID != nil {
+            try setRecordFolderDeleted(true, folder: folder)
+            return
+        }
+        for i in env.sessions.indices { env.sessions[i].selectedFolderIDs?.remove(id) }
         env.folders.removeAll { $0.id == id }
         invalidateFolderSummary(&env, folderID: id)
         for idx in env.sessions.indices where env.sessions[idx].folderID == id {
@@ -530,6 +540,7 @@ public actor SessionStore {
         for index in env.preferences.indices where env.preferences[index].practitionerContactID.map(removed.contains) == true {
             env.preferences[index].practitionerContactID = nil
         }
+        for i in env.sessions.indices { env.sessions[i].linkedMemberIDs?.subtract(removed) }
         env.careTeam.removeAll { removed.contains($0.id) }
         try saveEnvelope(env)
     }
@@ -931,9 +942,57 @@ public actor SessionStore {
         var env = try loadEnvelope()
         guard let index = env.sessions.firstIndex(where: { $0.id == id }) else { return }
         invalidateFolderSummary(&env, folderID: env.sessions[index].folderID)
+        env.sessions[index].selectedFolderIDs = folderID.map { [$0] } ?? []
         env.sessions[index].folderID = folderID
         invalidateFolderSummary(&env, folderID: folderID)
         try saveEnvelope(env)
+    }
+
+    public func editRecordMetadata(id: UUID, title: String? = nil, time: Date? = nil, members: Set<UUID>? = nil) throws {
+        var env = try loadEnvelope()
+        guard let i = env.sessions.firstIndex(where: { $0.id == id }) else { throw StoryEditError.notFound }
+        if let title { env.sessions[i].editedRecordTitle = title.trimmingCharacters(in: .whitespacesAndNewlines) }
+        if let time { env.sessions[i].visitTime = time }
+        if let members { env.sessions[i].linkedMemberIDs = members }
+        try saveEnvelope(env)
+    }
+
+    /// Commit one extraction checkpoint against the current row, preserving simultaneous filing and detail edits.
+    public func checkpointCapture(id: UUID, asset: UUID?, text: String?, publish: Bool) throws {
+        var envelope = try loadEnvelope()
+        guard let index = envelope.sessions.firstIndex(where: { $0.id == id }),
+              var capture = envelope.sessions[index].capture, !capture.isDraft else { return }
+        if let asset {
+            if let text {
+                if capture.textByAsset[asset] == nil,
+                   envelope.story.sources.contains(where: { $0.recordID == id && $0.patientEdited }),
+                   let source = envelope.sessions[index].sourceAssets?.first(where: { $0.id == asset }) {
+                    envelope.sessions[index].transcript += "\n\n" + source.displayName + "\n" + text
+                }
+                capture.textByAsset[asset] = text
+                capture.failedAssets.remove(asset)
+            } else {
+                capture.failedAssets.insert(asset)
+            }
+        }
+        if !envelope.story.sources.contains(where: { $0.recordID == id && $0.patientEdited }) {
+            var passages: [String] = []
+            if !capture.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                passages.append("Patient notes\n" + capture.notes)
+            }
+            for source in envelope.sessions[index].sourceAssets ?? [] {
+                if let text = capture.textByAsset[source.id] {
+                    passages.append(source.displayName + "\n" + text)
+                }
+            }
+            envelope.sessions[index].transcript = passages.joined(separator: "\n\n")
+        }
+        if publish {
+            envelope.sessions[index].processingState = .ready
+            capture.pending = false
+        }
+        envelope.sessions[index].capture = capture
+        try saveEnvelope(envelope)
     }
 
     public func updateTranscript(sessionID: UUID, transcript: String?, error: String?) throws {

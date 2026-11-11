@@ -75,7 +75,7 @@ struct OverviewSummaryCard: View {
                         .foregroundStyle(BrandPalette.systemBlue)
                 }
                 Text("OVERVIEW")
-                    .font(.subheadline)
+                    .font(StoryDesignTokens.font(.subheadline))
                     .fontWeight(.bold)
                     .foregroundStyle(.primary)
                     .kerning(0.5)
@@ -84,7 +84,7 @@ struct OverviewSummaryCard: View {
             }
 
             Text(paragraph)
-                .font(.body)
+                .font(StoryDesignTokens.font(.body))
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -124,7 +124,7 @@ struct SummaryCategoryCard: View {
                             .foregroundStyle(categoryColor)
                     }
                     Text(title.uppercased())
-                        .font(.subheadline)
+                        .font(StoryDesignTokens.font(.subheadline))
                         .fontWeight(.bold)
                         .foregroundStyle(.primary)
                         .kerning(0.5)
@@ -151,7 +151,7 @@ struct SummaryCategoryCard: View {
                 Group {
                     let lines = Self.normalizedSummaryLines(from: content)
                     if lines.isEmpty {
-                        Text(content).font(.body)
+                        Text(content).font(StoryDesignTokens.font(.body))
                     } else {
                         dividedSummaryItemList(items: lines)
                     }
@@ -212,23 +212,23 @@ struct SummaryCategoryCard: View {
         if let (primary, detail) = Self.splitPrimaryAndDetail(from: item) {
             if let detail, !detail.isEmpty {
                 (Text(primary)
-                    .font(.body)
+                    .font(StoryDesignTokens.font(.body))
                     .fontWeight(.semibold)
                     + Text(" — ")
-                    .font(.body)
+                    .font(StoryDesignTokens.font(.body))
                     .foregroundStyle(.primary)
                     + Text(detail)
-                    .font(.body)
+                    .font(StoryDesignTokens.font(.body))
                     .foregroundStyle(.secondary))
                 .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text(primary)
-                    .font(.body)
+                    .font(StoryDesignTokens.font(.body))
                     .fontWeight(.semibold)
             }
         } else {
             Text(item)
-                .font(.body)
+                .font(StoryDesignTokens.font(.body))
         }
     }
 
@@ -388,14 +388,14 @@ private struct AtomicSummaryCategorySection: View {
                 HStack(spacing: 10) {
                     SummaryCategoryIcon(title: category.displayTitle)
                     Text(category.displayTitle.uppercased())
-                        .font(.subheadline)
+                        .font(StoryDesignTokens.font(.subheadline))
                         .fontWeight(.bold)
                         .foregroundStyle(.primary)
                         .kerning(0.5)
                         .accessibilityAddTraits(.isHeader)
                     Spacer()
                     Text("\(entries.count)")
-                        .font(.caption)
+                        .font(StoryDesignTokens.font(.caption))
                         .foregroundStyle(.secondary)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
@@ -449,7 +449,7 @@ private struct AtomicSummaryCategorySection: View {
             ForEach(statusSections, id: \.status) { section in
                 VStack(alignment: .leading, spacing: 8) {
                     Text(section.status.displayTitle)
-                        .font(.caption.weight(.semibold))
+                        .font(StoryDesignTokens.font(.caption, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
                         .kerning(0.4)
@@ -561,11 +561,11 @@ private struct SummaryEntryStatusToggle: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: status == .current ? "checkmark.circle.fill" : "circle")
-                    .font(.caption2)
+                    .font(StoryDesignTokens.font(.caption2))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(status == .current ? .secondary : .tertiary)
                 Text("Current")
-                    .font(.caption2)
+                    .font(StoryDesignTokens.font(.caption2))
                     .foregroundStyle(.tertiary)
             }
         }
@@ -586,15 +586,15 @@ private struct SummaryEntryMetadataRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(dateText)
-                .font(.caption)
+                .font(StoryDesignTokens.font(.caption))
                 .foregroundStyle(dateNeedsAttention ? BrandPalette.systemBlue : .secondary)
             Text(practitionerText)
-                .font(.caption)
+                .font(StoryDesignTokens.font(.caption))
                 .foregroundStyle(practitionerNeedsAttention ? BrandPalette.systemBlue : .secondary)
                 .lineLimit(1)
             if let trailingCaption {
                 Text(trailingCaption)
-                    .font(.caption)
+                    .font(StoryDesignTokens.font(.caption))
                     .foregroundStyle(.tertiary)
             }
             Spacer(minLength: 0)
@@ -611,7 +611,7 @@ private struct SummaryEntryRowContent: View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(SummaryEntryPresentation.sentenceSummary(for: entry))
-                    .font(.subheadline)
+                    .font(StoryDesignTokens.font(.subheadline))
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -665,7 +665,7 @@ private struct SummaryEntryStackRowContent: View {
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text(cluster.sentenceSummary)
-                            .font(.body)
+                            .font(StoryDesignTokens.font(.body))
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
@@ -747,7 +747,7 @@ private struct SummaryEntryEditor: View {
                 Section("Relevant date") {
                     DatePicker("Date", selection: $editableDate, displayedComponents: .date)
                     Text("Use the actual date this information happened or became relevant.")
-                        .font(.caption)
+                        .font(StoryDesignTokens.font(.caption))
                         .foregroundStyle(.secondary)
                 }
 
@@ -755,7 +755,7 @@ private struct SummaryEntryEditor: View {
                     ForEach($entry.fields) { $field in
                         VStack(alignment: .leading, spacing: 6) {
                             Text(field.label)
-                                .font(.caption)
+                                .font(StoryDesignTokens.font(.caption))
                                 .foregroundStyle(.secondary)
                             if isPractitionerField(field) {
                                 practitionerPicker(for: $field)
@@ -989,7 +989,7 @@ struct CareTimelineCard: View {
                             .foregroundStyle(BrandPalette.systemBlue)
                     }
                     Text("CARE TIMELINE")
-                        .font(.subheadline)
+                        .font(StoryDesignTokens.font(.subheadline))
                         .fontWeight(.bold)
                         .foregroundStyle(.primary)
                         .kerning(0.5)
@@ -1031,20 +1031,20 @@ struct CareTimelineCard: View {
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(session.date.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.caption)
+                                    .font(StoryDesignTokens.font(.caption))
                                     .foregroundStyle(.secondary)
                                 if let title = session.title {
                                     Text(title)
-                                        .font(.subheadline)
+                                        .font(StoryDesignTokens.font(.subheadline))
                                         .fontWeight(.medium)
                                 } else if !session.transcript.isEmpty {
                                     Text(session.transcript)
-                                        .font(.subheadline)
+                                        .font(StoryDesignTokens.font(.subheadline))
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                 } else {
                                     Text("Untitled entry")
-                                        .font(.subheadline)
+                                        .font(StoryDesignTokens.font(.subheadline))
                                         .foregroundStyle(.secondary)
                                         .italic()
                                 }
@@ -1114,7 +1114,10 @@ struct SessionSourceView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if !hasPersistedSources {
+                if let capture = session.capture, !capture.notes.isEmpty {
+                    Text(capture.notes).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if !hasPersistedSources && session.capture == nil {
                     legacyBanner
                 }
 
@@ -1130,19 +1133,15 @@ struct SessionSourceView: View {
                         assetViewer(for: asset)
                     }
                 }
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(session.inputType == .audio ? "Transcript" : "Extracted text").font(.headline)
-                    transcriptFallback.textSelection(.enabled)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+
             }
             .padding()
         }
         .background(BrandPalette.canvas.ignoresSafeArea())
         .onAppear {
-            selectedAssetID = assets.first?.id
-            updateShareableURL()
+            selectSupportingSource()
         }
+        .onChange(of: highlightedExcerpt) { _, _ in selectSupportingSource() }
         .onChange(of: selectedAssetID) { _, _ in
             updateShareableURL()
         }
@@ -1151,6 +1150,17 @@ struct SessionSourceView: View {
             audioPlayer = nil
             shareableFileURL = nil
         }
+    }
+
+    private func selectSupportingSource() {
+        let matches: [SessionSourceAsset]
+        if let quote = highlightedExcerpt, !quote.isEmpty, let capture = session.capture {
+            matches = assets.filter { capture.textByAsset[$0.id]?.localizedStandardContains(quote) == true }
+        } else {
+            matches = []
+        }
+        selectedAssetID = matches.count == 1 ? matches[0].id : assets.first?.id
+        updateShareableURL()
     }
 
     private func updateShareableURL() {
@@ -1166,8 +1176,8 @@ struct SessionSourceView: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "info.circle")
                 .foregroundStyle(.secondary)
-            Text("Original file not available for this entry. Showing extracted text.")
-                .font(.subheadline)
+            Text("This record has no saved original file.")
+                .font(StoryDesignTokens.font(.subheadline))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1179,11 +1189,11 @@ struct SessionSourceView: View {
     private func excerptCallout(_ excerpt: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Referenced excerpt")
-                .font(.caption.weight(.semibold))
+                .font(StoryDesignTokens.font(.caption, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
             Text(excerpt)
-                .font(.subheadline)
+                .font(StoryDesignTokens.font(.subheadline))
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1195,7 +1205,7 @@ struct SessionSourceView: View {
     private var assetPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Source files")
-                .font(.caption.weight(.semibold))
+                .font(StoryDesignTokens.font(.caption, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
 
@@ -1209,7 +1219,7 @@ struct SessionSourceView: View {
                             updateShareableURL()
                         } label: {
                             Text(asset.displayName)
-                                .font(.caption.weight(.medium))
+                                .font(StoryDesignTokens.font(.caption, weight: .medium))
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
                                 .background(
@@ -1229,7 +1239,7 @@ struct SessionSourceView: View {
         let fileURL = sourceStore.url(for: asset, sessionID: session.id)
 
         if !FileManager.default.fileExists(atPath: fileURL.path) {
-            Text("Original file not included. The saved source text is available below.")
+            Text("The original file was not included with this record.")
                 .foregroundStyle(.secondary)
         } else { switch asset.kind {
         case .pdf:
@@ -1253,14 +1263,7 @@ struct SessionSourceView: View {
         }
     }
 
-    private var transcriptFallback: some View {
-        Text(session.transcript.isEmpty ? "(No source text recorded)" : session.transcript)
-            .font(.body)
-            .foregroundStyle(.primary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .liquidGlassCard(cornerRadius: 14)
-    }
+
 }
 
 // MARK: - PDF
@@ -1354,7 +1357,7 @@ private struct SessionAudioSourceView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(url.lastPathComponent)
-                .font(.subheadline.weight(.semibold))
+                .font(StoryDesignTokens.font(.subheadline, weight: .semibold))
 
             Button {
                 guard let player else { return }
@@ -1366,7 +1369,7 @@ private struct SessionAudioSourceView: View {
                 isPlaying.toggle()
             } label: {
                 Label(isPlaying ? "Pause" : "Play", systemImage: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.title2)
+                    .font(StoryDesignTokens.heading(.title2))
             }
             .buttonStyle(.plain)
             .disabled(player == nil)
@@ -1388,7 +1391,7 @@ private struct SessionPlainTextSourceView: View {
 
     var body: some View {
         Text(text.isEmpty ? "(Empty file)" : text)
-            .font(.body)
+            .font(StoryDesignTokens.font(.body))
             .foregroundStyle(.primary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)

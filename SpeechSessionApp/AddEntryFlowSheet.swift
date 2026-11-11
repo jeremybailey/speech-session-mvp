@@ -70,7 +70,7 @@ struct AddEntryFlowSheet: View {
     private func choice(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: icon)
-                .font(.body).frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                .font(StoryDesignTokens.font(.body)).frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
                 .contentShape(Rectangle())
         }
     }

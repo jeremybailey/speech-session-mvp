@@ -18,6 +18,14 @@ struct HomeView: View {
     let store: SessionStore
     var listScope: EntryListScope = .all
     var storyRecords = false
+    var storyNarrative: String? = nil
+    var retryStoryLoad: (() -> Void)? = nil
+    var storyBusy = false
+    var summaryStatus:String? = nil
+    var summaryDrawer: (() -> AnyView)? = nil
+    @State private var showSummaryDrawer = false
+    var askStory: () -> Void = {}
+    var refreshStory: () -> Void = {}
     @Binding var pendingSharedImportURL: URL?
     /// Called after consuming (or rejecting) one App Group handoff so queued files + folder scan can drain.
     var advanceSharedImportQueue: () -> Void = {}
@@ -32,6 +40,9 @@ struct HomeView: View {
     @AppStorage("speechSession.whisperKitExperimentalUnlock") private var whisperKitExperimentalUnlock = false
 
     @State private var showSettings = false
+    @State private var accountActionPending = false
+    @State private var accountActionError:String?
+    @AppStorage("speechSession.skippedSignInGate") private var skippedSignInGate = false
     @State private var pulseAnimation = false
     @State private var showDocumentScanner = false
     @State private var showCameraCapture = false
@@ -40,6 +51,7 @@ struct HomeView: View {
     @State private var showFileImporter = false
     /// Intent captured before presenting the audio file importer.
     @State private var pendingImportAudioEntryIntent: SessionEntryIntent?
+    @Environment(\.storyRouter) private var captureRouter
     @State private var showAddEntrySheet = false
     @State private var showManualDetail = false
     @State private var showContact = false
@@ -77,13 +89,63 @@ struct HomeView: View {
         return .idle
     }
 
+    private var showFirstRecordGuide: Bool {
+        storyRecords && home.revision > 0 && home.sessions.isEmpty && storyNarrative?.isEmpty == true && !home.initialLoadFailed
+    }
+
     var body: some View {
         Group {
-            if storyRecords {StoryRecordsList(store:store,home:home)}
+            if showFirstRecordGuide {
+                ContentUnavailableView {
+                    Label("Start with your story", systemImage: "book.pages")
+                } description: {
+                    Text("Tap + to record or write a little about your health history. We’ll organize it so it’s easier to remember and share.")
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if storyRecords {
+                StoryRecordsList(home:home,narrative:storyNarrative,retryStoryLoad:retryStoryLoad,summaryStatus:summaryStatus,shareStory:{showSummaryDrawer=true})
+            }
             else {HealthSummaryView(model: health, home: home, store: store, canOpenSettings: phase == .idle, openSettings: { showSettings = true })}
         }
         .background(BrandPalette.canvas)
-        .navigationTitle(storyRecords ? "Records":"My health story")
+        .toolbar {
+            if storyRecords {
+                ToolbarItem(placement:.topBarLeading) {
+                    NavigationLink(value: StoryRoute.folders) { Image(systemName: "folder") }
+                        .accessibilityLabel("Conditions")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showSummaryDrawer = true } label: {
+                        Label("Share", systemImage: "square.and.arrow.up").labelStyle(.iconOnly)
+                    }
+                        .accessibilityHint("Open your practitioner summary")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Section(kindeAuth.isSignedIn ? (kindeAuth.userPreview.map {"Signed in · "+$0} ?? "Signed in"):"Signed out") {
+                            Button("Settings",systemImage:"gearshape") {showSettings=true}.disabled(phase != .idle)
+                            Button("Refresh overview",systemImage:"arrow.clockwise",action:refreshStory).disabled(storyBusy)
+                            if kindeAuth.isSignedIn {
+                                Button("Sign out",systemImage:"rectangle.portrait.and.arrow.right") {
+                                    accountActionPending=true
+                                    Task {defer{accountActionPending=false};skippedSignInGate=false;await kindeAuth.logout()}
+                                }.disabled(accountActionPending || phase != .idle)
+                            } else {
+                                Button("Sign in",systemImage:"person.crop.circle.badge.checkmark") {
+                                    accountActionPending=true
+                                    Task {defer{accountActionPending=false};do{try await kindeAuth.login()}catch{accountActionError=error.localizedDescription}}
+                                }.disabled(accountActionPending || phase != .idle)
+                            }
+                        }
+                    } label:{Image(systemName:kindeAuth.isSignedIn ? "person.crop.circle.fill":"person.crop.circle")}
+                    .accessibilityLabel("Profile")
+                }
+            }
+        }
+        .sheet(isPresented:$showSummaryDrawer) {
+            summaryDrawer?().presentationDetents([.large]).presentationDragIndicator(.visible)
+        }
+        .navigationTitle("My health story")
         .navigationBarTitleDisplayMode(.large)
         .sheet(isPresented: $showAddEntrySheet) {
             AddEntryFlowSheet(
@@ -131,9 +193,12 @@ struct HomeView: View {
             scanErrorMessage = nil
             Task { await processPhotoPickerItems(newItems) }
         }
+        .alert("Could not sign in",isPresented:Binding(get:{accountActionError != nil},set:{if !$0 {accountActionError=nil}})) {
+            Button("OK",role:.cancel){accountActionError=nil}
+        } message:{Text(accountActionError ?? "Please try again.")}
         .sheet(isPresented: $showSettings) {
             SettingsView(isPresented: $showSettings, store: store, home: home, health: health,
-                         transferIsAvailable: phase == .idle && !isConsumingPendingSharedImport && pendingSharedImportURL == nil)
+                         transferIsAvailable: phase == .idle && !isConsumingPendingSharedImport && pendingSharedImportURL == nil, allowsStoryReset: storyRecords && !storyBusy && summaryStatus != "Preparing summary…")
         }
         .fullScreenCover(isPresented: $showCameraCapture) {
             CameraCaptureView { image in
@@ -193,9 +258,9 @@ struct HomeView: View {
             await home.loadSessions()
             await consumePendingSharedImportIfNeeded()
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StoryLabAddRecord"))) { _ in if storyRecords {showAddEntrySheet=true} }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StoryLabAddRecord"))) { _ in if storyRecords && phase == .idle { captureRouter?.newCapture() } }
         .onReceive(NotificationCenter.default.publisher(for: .liveActivityStartRecording)) { _ in
-            guard !recording.isRecording, !recording.isFinishingWhisper, !recording.isTranscribingFile else { return }
+            guard captureRouter?.capture == nil, !recording.isRecording, !recording.isFinishingWhisper, !recording.isTranscribingFile else { return }
             startLiveRecording(intent: .clinicalVisit)
         }
         .task(id: "\(backendRaw)|\(whisperKitModel)|\(whisperKitExperimentalUnlock)") {
@@ -226,13 +291,16 @@ struct HomeView: View {
         VStack(spacing: 10) {
             if phase == .idle {
                 idleErrorBanners
-                addEntryFloatingButton
-                    .padding(.top, 4)
-                    .padding(.bottom, 10)
+                if storyRecords {
+                    StoryActionDock(ask: askStory, add: { captureRouter?.newCapture() }, guideToAdd: showFirstRecordGuide)
+                        .padding(.horizontal).padding(.bottom, 8)
+                } else {
+                    addEntryFloatingButton.padding(.top,4).padding(.bottom,10)
+                }
             } else {
                 if phase == .recording, let status = recording.recordingStatusMessage {
                     Text(status)
-                        .font(.caption)
+                        .font(StoryDesignTokens.font(.caption))
                         .foregroundStyle(.secondary)
                 }
                 activePhasePill
@@ -253,7 +321,7 @@ struct HomeView: View {
                     }
                     .accessibilityLabel("Dismiss transcription message")
                 }
-                .font(.subheadline)
+                .font(StoryDesignTokens.font(.subheadline))
                 .foregroundStyle(BrandPalette.systemRed)
                 .padding(12)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
@@ -261,14 +329,14 @@ struct HomeView: View {
             }
             if let error = scanErrorMessage {
                 Text(error)
-                    .font(.subheadline)
+                    .font(StoryDesignTokens.font(.subheadline))
                     .foregroundStyle(BrandPalette.systemRed)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
             }
             if let error = fileErrorMessage {
                 Text(error)
-                    .font(.subheadline)
+                    .font(StoryDesignTokens.font(.subheadline))
                     .foregroundStyle(BrandPalette.systemRed)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
@@ -284,7 +352,7 @@ struct HomeView: View {
             showAddEntrySheet = true
         } label: {
             Label("Add record", systemImage: "plus")
-                .font(.headline)
+                .font(StoryDesignTokens.font(.headline, weight: .semibold))
                 .padding(.horizontal, 12)
                 .frame(minHeight: 44)
         }
@@ -313,12 +381,7 @@ struct HomeView: View {
 
     // Scanning document pill — OCR in progress
     private var scanTranscribingPill: some View {
-        HStack(spacing: 10) {
-            ProgressView().scaleEffect(0.85)
-            Text("Extracting text…")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
+        StoryThinkingStatus("Extracting text…")
         .padding(.horizontal, 28)
         .frame(height: 56)
         .liquidGlassCapsule()
@@ -369,13 +432,7 @@ struct HomeView: View {
 
     // Transcribing pill — spinner
     private var transcribingPill: some View {
-        HStack(spacing: 10) {
-            ProgressView()
-                .scaleEffect(0.85)
-            Text("Transcribing…")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
+        StoryThinkingStatus("Transcribing…")
         .padding(.horizontal, 28)
         .frame(height: 56)
         .liquidGlassCapsule()
@@ -384,13 +441,7 @@ struct HomeView: View {
 
     // Imported audio file pill — transcription in progress
     private var fileTranscribingPill: some View {
-        HStack(spacing: 10) {
-            ProgressView()
-                .scaleEffect(0.85)
-            Text("Transcribing file…")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
+        StoryThinkingStatus("Transcribing file…")
         .padding(.horizontal, 28)
         .frame(height: 56)
         .liquidGlassCapsule()

@@ -47,7 +47,7 @@ struct HealthShareView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(category.displayTitle)
                                     Text("\(selectedCount) of \(facts.count) selected")
-                                        .font(.caption)
+                                        .font(StoryDesignTokens.font(.caption))
                                         .foregroundStyle(.secondary)
                                 }
                             }

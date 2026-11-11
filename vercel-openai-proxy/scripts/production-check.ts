@@ -1,5 +1,6 @@
 // Read-only deployment gate: no clinical payloads, migrations, or inference.
 import assert from 'node:assert/strict';
+import {pilotAgreement} from '../api/_lib/pilot-agreement';
 import {database} from '../api/_lib/ledger';
 import {conditionModel,conditionReasoning,summaryModelPolicy} from '../api/_lib/model-policy';
 let checkpoint = 'configuration';
@@ -13,8 +14,11 @@ async function main() {
   assert.deepEqual(summaryModelPolicy('classification'),{model:'gpt-4o-mini',effort:'low'});
   assert.equal(conditionModel(),'gpt-6-luna');assert.equal(conditionReasoning(),'medium');
   for(const name of ['DATABASE_URL','AI_DEDUPE_SECRET','CRON_SECRET','KINDE_ISSUER_URL','KINDE_AUDIENCE','OPENAI_API_KEY']) assert.ok(process.env[name],`Missing ${name}`);
+  assert.equal(process.env.PILOT_AGREEMENT_VERSION,pilotAgreement.version,'Published agreement version must be enabled');
   const db=database();
   try {
+    checkpoint = 'agreement-table';
+    assert.ok((await db.query("SELECT to_regclass('public.pilot_agreement_acceptances') AS name")).rows[0].name,'Agreement migration missing');
     checkpoint = 'chunked-upload-table';
     assert.ok((await db.query("SELECT to_regclass('public.ai_condition_upload_parts') AS name")).rows[0].name,'Chunked-upload migration missing');
     if(process.env.AI_INCREMENTAL_RECORDS_ENABLED==='true') {

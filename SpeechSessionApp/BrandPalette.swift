@@ -4,17 +4,17 @@ import UIKit
 /// Semantic colors from UIKit — adapt automatically to Light/Dark mode and accessibility settings.
 enum BrandPalette {
     /// Screen chrome behind plain lists and sheets (`systemGroupedBackground`).
-    static var canvas: Color { Color(uiColor: .systemGroupedBackground) }
+    static var canvas: Color { StoryDesignTokens.canvas }
 
     /// Elevated rows / secondary plates (`secondarySystemGroupedBackground`).
-    static var surface: Color { Color(uiColor: .secondarySystemGroupedBackground) }
+    static var surface: Color { StoryDesignTokens.surface }
 
     /// Primary actions (FAB, tint-aligned controls). Uses the app’s accent color.
-    static var brand: Color { Color.accentColor }
+    static var brand: Color { StoryDesignTokens.action }
 
     /// Brand artwork uses the named asset, independent of inherited control tint.
-    static var icon: Color { Color("AccentColor") }
-    static var conditionIconBackground: Color { Color(red: 1, green: 244.0 / 255, blue: 223.0 / 255) }
+    static var icon: Color { StoryDesignTokens.copper }
+    static var conditionIconBackground: Color { StoryDesignTokens.softSurface }
 
     // MARK: System UI colors (dynamic)
 

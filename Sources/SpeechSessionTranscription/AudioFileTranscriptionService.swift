@@ -155,7 +155,7 @@ public enum AudioFileTranscriptionService {
                 guard let result else { return }
                 guard result.isFinal else { return }
 
-                let text = result.bestTranscription.formattedString
+                let text = result.bestTranscription.textWithPauses
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 if text.isEmpty {
                     resumeOnce(.failure(AudioFileTranscriptionError.emptyTranscript))
@@ -244,7 +244,7 @@ public enum AudioFileTranscriptionService {
         let whisperKit = try await SharedWhisperKitModel.shared.load(modelName)
         let results = try await whisperKit.transcribe(audioPath: fileURL.path)
         let text = results
-            .map { $0.text }
+            .map { $0.textWithPauses }
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
@@ -283,5 +283,42 @@ public enum AudioFileTranscriptionService {
         default:
             return "application/octet-stream"
         }
+    }
+}
+
+// Insert only whitespace, retaining the recognizer's spelling and punctuation.
+extension SFTranscription {
+    var textWithPauses: String {
+        let text = NSMutableString(string: formattedString)
+        let words = segments
+        for (previous, next) in zip(words, words.dropFirst()).reversed() {
+            guard next.timestamp - previous.timestamp - previous.duration >= 1.5 else { continue }
+            let offset = next.substringRange.location
+            guard offset > 0, offset < text.length else { continue }
+            text.insert("\n\n", at: offset)
+        }
+        return text as String
+    }
+}
+
+extension TranscriptionResult {
+    var textWithPauses: String {
+        var result = text
+        var cursor = result.startIndex
+        var previousEnd: Float?
+        for segment in segments {
+            let phrase = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !phrase.isEmpty,
+                  let range = result.range(of: phrase, range: cursor..<result.endIndex) else { continue }
+            let end = result.distance(from: result.startIndex, to: range.upperBound)
+            if let previousEnd, segment.start - previousEnd >= 1.5 {
+                result.insert(contentsOf: "\n\n", at: range.lowerBound)
+                cursor = result.index(result.startIndex, offsetBy: end + 2)
+            } else {
+                cursor = range.upperBound
+            }
+            previousEnd = segment.end
+        }
+        return result
     }
 }

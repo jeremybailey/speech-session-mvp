@@ -23,6 +23,15 @@ test('story verification chains once, preserves cancellation and expires source 
   assert.ok(op.check_job_id);assert.equal(new Set(sent).size,1);assert.equal((await db.query('SELECT count(*)::int AS n FROM ai_jobs')).rows[0].n,2);
   await claim(op.check_job_id);await settle(op.check_job_id,'completed',{input_tokens:10,output_tokens:10},output);
   const completed=await advanceStoryOperation('synthetic',input.id);assert.equal(completed.state,'completed');assert.equal(completed.result?.baseRevision,3);
+  const chatInput=storyRequest({...input,id:randomUUID(),kind:'chat',conversation:[],targetIDs:[],after:'What did my note say?'});
+  const chatJob=await transaction(async tx=>{const receipt=await submitWithinTransaction(tx,'synthetic',storyPayload(chatInput),undefined,'gpt-6-luna','medium');await tx.query('INSERT INTO ai_story_operations(owner,id,request_hash,request,job_id) VALUES($1,$2,$3,$4,$5)',['synthetic',chatInput.id,'chat-hash',chatInput,receipt.id]);return receipt;});
+  await claim(chatJob.id);
+  const badChat=JSON.stringify({kind:'answer',text:'The note says pain daily.',targetIDs:[],citationIDs:['invented'],question:''});
+  await settle(chatJob.id,'completed',{input_tokens:10,output_tokens:10},badChat);
+  const checking=await advanceStoryOperation('synthetic',chatInput.id);assert.equal(checking.phase,'checking');
+  const chatOp=(await db.query('SELECT check_job_id FROM ai_story_operations WHERE id=$1',[chatInput.id])).rows[0];assert.ok(chatOp.check_job_id);
+  await claim(chatOp.check_job_id);await settle(chatOp.check_job_id,'completed',{input_tokens:10,output_tokens:10},JSON.stringify({kind:'answer',text:'The note says pain daily.',targetIDs:[],citationIDs:['a'],question:''}));
+  const repaired=await advanceStoryOperation('synthetic',chatInput.id);assert.equal(repaired.state,'completed');assert.deepEqual(repaired.result?.citationIDs,['a']);
   const retryInput={...input,id:randomUUID()};
   const retryJob=await transaction(async tx=>{const receipt=await submitWithinTransaction(tx,'synthetic',storyPayload(retryInput),undefined,'gpt-6-luna','medium');await tx.query('INSERT INTO ai_story_operations(owner,id,request_hash,request,job_id) VALUES($1,$2,$3,$4,$5)',['synthetic',retryInput.id,'retry-hash',retryInput,receipt.id]);return receipt;});
   await claim(retryJob.id);await settle(retryJob.id,'incomplete',{input_tokens:0,output_tokens:0},undefined,undefined,{outputTokenLimit:100,providerStatus:'rejected',providerHTTPStatus:429});

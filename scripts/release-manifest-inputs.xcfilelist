@@ -90,6 +90,7 @@ $(SRCROOT)/SpeechSessionApp/Assets.xcassets/AppIcon.appiconset/Contents.json
 $(SRCROOT)/SpeechSessionApp/Assets.xcassets/Contents.json
 $(SRCROOT)/SpeechSessionApp/BrandPalette.swift
 $(SRCROOT)/SpeechSessionApp/CameraCaptureView.swift
+$(SRCROOT)/SpeechSessionApp/StoryCaptureView.swift
 $(SRCROOT)/SpeechSessionApp/CareTeamView.swift
 $(SRCROOT)/SpeechSessionApp/CloudOpenAIConfiguration.swift
 $(SRCROOT)/SpeechSessionApp/ContentView.swift
@@ -188,6 +189,7 @@ $(SRCROOT)/vercel-openai-proxy/vercel.json
 
 $(SRCROOT)/vercel-openai-proxy/api/_lib/record-runtime.ts
 $(SRCROOT)/vercel-openai-proxy/migrations/011_record_runtime.sql
+$(SRCROOT)/Sources/SpeechSessionPersistence/StoryOverviewRefresh.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StoryWorkspace.swift
 $(SRCROOT)/SpeechSessionApp/StoryLabView.swift
 $(SRCROOT)/vercel-openai-proxy/api/_lib/story-contract.ts
@@ -195,3 +197,15 @@ $(SRCROOT)/vercel-openai-proxy/api/v1/health-processing/story-operations.ts
 $(SRCROOT)/vercel-openai-proxy/migrations/012_story_operations.sql
 
 $(SRCROOT)/vercel-openai-proxy/api/_lib/story-runtime.ts
+$(SRCROOT)/vercel-openai-proxy/api/_lib/story-stream.ts
+
+$(SRCROOT)/Sources/TransferZip
+
+$(SRCROOT)/Sources/SpeechSessionPersistence/StorySummaryPDF.swift
+
+$(SRCROOT)/Sources/SpeechSessionPersistence/StorySummaryTemplate.swift
+$(SRCROOT)/Sources/SpeechSessionPersistence/StoryLabResults.swift
+$(SRCROOT)/SpeechSessionApp/StoryDesignTokens.swift
+$(SRCROOT)/SpeechSessionApp/StoryComponents.swift
+$(SRCROOT)/SpeechSessionApp/StoryFolderView.swift
+$(SRCROOT)/SpeechSessionApp/BrandFonts

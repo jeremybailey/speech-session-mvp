@@ -150,7 +150,7 @@ public final class TranscriptionService: @unchecked Sendable {
     private func handleRecognition(result: SFSpeechRecognitionResult?, error: Error?) {
         if awaitingTeardown {
             if let result {
-                let text = result.bestTranscription.formattedString
+                let text = result.bestTranscription.textWithPauses
                 rememberHypothesisIfNonEmpty(text)
                 if result.isFinal {
                     awaitingTeardown = false
@@ -169,7 +169,7 @@ public final class TranscriptionService: @unchecked Sendable {
         }
 
         if let result {
-            let text = result.bestTranscription.formattedString
+            let text = result.bestTranscription.textWithPauses
             rememberHypothesisIfNonEmpty(text)
             if result.isFinal {
                 if !text.isEmpty {
