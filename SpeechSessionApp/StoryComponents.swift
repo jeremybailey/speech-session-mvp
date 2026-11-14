@@ -104,7 +104,7 @@ struct StoryActionDock: View {
     var body: some View {
         VStack(spacing: 4) {
             if guideToAdd {
-                StorySpeechBubble(text: "Add a voice journal, photo or file. We’ll automatically pull the key details into your health story…", trailingTargetWidth: addButtonWidth, symbols: ["note.text", "waveform", "photo", "doc"], heading: "Add your first record")
+                StorySpeechBubble(text: "Transcribe a visit, record a voice journal, or add a photo or file. We’ll pull the key details into your health story…", trailingTargetWidth: addButtonWidth, symbols: ["note.text", "waveform", "photo", "doc"], heading: "Add your first record")
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(.top, 12)
             }

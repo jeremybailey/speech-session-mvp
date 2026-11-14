@@ -425,12 +425,12 @@ struct StoryCaptureView: View {
             : AnyLayout(HStackLayout(alignment: .bottom, spacing: 10))
         return layout {
             VStack(spacing: 8) {
-                StorySpeechBubble(text: "Transcribe a visit or record a voice journal about your conditions…", symbols: ["waveform"])
+                StorySpeechBubble(text: "Record a visit or voice journal. We’ll transcribe it and summarize the key details…", symbols: ["waveform"])
                 recordControl
             }
 
             VStack(spacing: 8) {
-                StorySpeechBubble(text: "Extract facts from lab reports, photos of medications and care plans…", symbols: ["photo", "doc"])
+                StorySpeechBubble(text: "Add a lab report, medication photo or care plan. We’ll summarize what’s in it…", symbols: ["photo", "doc"])
                 attachmentControl
             }
             .buttonStyle(.plain)
