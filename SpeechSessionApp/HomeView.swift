@@ -105,12 +105,14 @@ struct HomeView: View {
             if storyRecords {
                 ToolbarItem(placement:.topBarLeading) {
                     NavigationLink(value: StoryRoute.folders) { Image(systemName: "folder") }
+                        .tint(StoryDesignTokens.ink)
                         .accessibilityLabel("Conditions")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showSummaryDrawer = true } label: {
                         Label("Share", systemImage: "square.and.arrow.up").labelStyle(.iconOnly)
                     }
+                        .tint(StoryDesignTokens.ink)
                         .accessibilityHint("Open your practitioner summary")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -131,6 +133,7 @@ struct HomeView: View {
                             }
                         }
                     } label:{Image(systemName:kindeAuth.isSignedIn ? "person.crop.circle.fill":"person.crop.circle")}
+                    .tint(StoryDesignTokens.ink)
                     .accessibilityLabel("Profile")
                 }
             }
@@ -294,7 +297,7 @@ struct HomeView: View {
                 if phase == .recording, let status = recording.recordingStatusMessage {
                     Text(status)
                         .font(StoryDesignTokens.font(.caption))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
                 activePhasePill
                     .padding(.bottom, 16)
@@ -315,7 +318,7 @@ struct HomeView: View {
                     .accessibilityLabel("Dismiss transcription message")
                 }
                 .font(StoryDesignTokens.font(.subheadline))
-                .foregroundStyle(BrandPalette.systemRed)
+                .foregroundStyle(StoryDesignTokens.action)
                 .padding(12)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                 .padding(.horizontal, 24)
@@ -323,14 +326,14 @@ struct HomeView: View {
             if let error = scanErrorMessage {
                 Text(error)
                     .font(StoryDesignTokens.font(.subheadline))
-                    .foregroundStyle(BrandPalette.systemRed)
+                    .foregroundStyle(StoryDesignTokens.action)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
             }
             if let error = fileErrorMessage {
                 Text(error)
                     .font(StoryDesignTokens.font(.subheadline))
-                    .foregroundStyle(BrandPalette.systemRed)
+                    .foregroundStyle(StoryDesignTokens.action)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
             }
@@ -352,7 +355,7 @@ struct HomeView: View {
         .summarySecondaryButtonStyle()
         .buttonBorderShape(.capsule)
         .controlSize(.large)
-        .tint(BrandPalette.systemBlue)
+        .tint(StoryDesignTokens.action)
         .padding(.horizontal)
     }
 
@@ -392,7 +395,7 @@ struct HomeView: View {
             HStack(spacing: 14) {
                 // Pulsing red dot
                 Circle()
-                    .fill(BrandPalette.systemRed)
+                    .fill(StoryDesignTokens.action)
                     .frame(width: 9, height: 9)
                     .scaleEffect(pulseAnimation ? 1.4 : 1.0)
                     .opacity(pulseAnimation ? 0.5 : 1.0)
@@ -405,7 +408,7 @@ struct HomeView: View {
 
                 Text(formattedElapsed(recording.elapsed))
                     .font(.title3.monospacedDigit().weight(.medium))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(StoryDesignTokens.ink)
                     .contentTransition(.numericText())
 
                 Divider()
@@ -413,7 +416,7 @@ struct HomeView: View {
 
                 Label("Stop recording", systemImage: "stop.fill")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(BrandPalette.systemRed)
+                    .foregroundStyle(StoryDesignTokens.action)
             }
             .padding(.horizontal, 28)
             .frame(height: 56)

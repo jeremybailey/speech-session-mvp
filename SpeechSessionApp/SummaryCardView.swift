@@ -68,16 +68,16 @@ struct OverviewSummaryCard: View {
             HStack(spacing: 10) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(BrandPalette.systemBlue.opacity(0.18))
+                        .fill(StoryDesignTokens.action.opacity(0.18))
                         .frame(width: 34, height: 34)
                     Image(systemName: "text.alignleft")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(BrandPalette.systemBlue)
+                        .foregroundStyle(StoryDesignTokens.action)
                 }
                 Text("OVERVIEW")
                     .font(StoryDesignTokens.font(.subheadline))
                     .fontWeight(.bold)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(StoryDesignTokens.ink)
                     .kerning(0.5)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 0)
@@ -85,7 +85,7 @@ struct OverviewSummaryCard: View {
 
             Text(paragraph)
                 .font(StoryDesignTokens.font(.body))
-                .foregroundStyle(.primary)
+                .foregroundStyle(StoryDesignTokens.ink)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
@@ -117,22 +117,22 @@ struct SummaryCategoryCard: View {
                 HStack(spacing: 10) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(categoryColor.opacity(0.18))
+                            .fill(StoryDesignTokens.softSurface)
                             .frame(width: 34, height: 34)
                         Image(systemName: categoryIcon)
                             .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(categoryColor)
+                            .foregroundStyle(StoryDesignTokens.onSoftSurface)
                     }
                     Text(title.uppercased())
                         .font(StoryDesignTokens.font(.subheadline))
                         .fontWeight(.bold)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(StoryDesignTokens.ink)
                         .kerning(0.5)
                         .accessibilityAddTraits(.isHeader)
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(StoryDesignTokens.secondaryInk)
                         .accessibilityHidden(true)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 }
@@ -216,10 +216,10 @@ struct SummaryCategoryCard: View {
                     .fontWeight(.semibold)
                     + Text(" — ")
                     .font(StoryDesignTokens.font(.body))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(StoryDesignTokens.ink)
                     + Text(detail)
                     .font(StoryDesignTokens.font(.body))
-                    .foregroundStyle(.secondary))
+                    .foregroundStyle(StoryDesignTokens.secondaryInk))
                 .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text(primary)
@@ -273,27 +273,6 @@ struct SummaryCategoryCard: View {
         return "doc.text.fill"
     }
 
-    var categoryColor: Color {
-        let l = title.lowercased()
-        if l.contains("care team") || l.contains("practitioner") || (l.contains("provider") && l.contains("contact")) {
-            return BrandPalette.systemIndigo
-        }
-        if l.contains("chief") || l.contains("complaint") { return BrandPalette.systemBlue }
-        if l.contains("symptom") { return BrandPalette.systemOrange }
-        if l.contains("finding") { return BrandPalette.systemRed }
-        if l.contains("diagnos") || l.contains("condition") { return BrandPalette.systemRed }
-        if l.contains("medication") { return BrandPalette.systemPurple }
-        if l.contains("care plan") || l.contains("treatment") { return BrandPalette.systemGreen }
-        if l.contains("vaccination") { return BrandPalette.systemTeal }
-        if l.contains("allerg") { return BrandPalette.systemYellow }
-        if l.contains("test") || l.contains("lab") { return BrandPalette.systemIndigo }
-        if l.contains("follow") { return BrandPalette.systemCyan }
-        if l.contains("other notes") || l.contains("misc") { return BrandPalette.systemGray }
-        if l.contains("biopsychosocial") || l.contains("psychosocial") || l.contains("context") {
-            return BrandPalette.systemPink
-        }
-        return BrandPalette.systemGray
-    }
 }
 
 // MARK: AtomicSummaryCardsView
@@ -390,16 +369,16 @@ private struct AtomicSummaryCategorySection: View {
                     Text(category.displayTitle.uppercased())
                         .font(StoryDesignTokens.font(.subheadline))
                         .fontWeight(.bold)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(StoryDesignTokens.ink)
                         .kerning(0.5)
                         .accessibilityAddTraits(.isHeader)
                     Spacer()
                     Text("\(entries.count)")
                         .font(StoryDesignTokens.font(.caption))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(StoryDesignTokens.secondaryInk)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(StoryDesignTokens.secondaryInk)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 }
                 .padding(16)
@@ -450,7 +429,7 @@ private struct AtomicSummaryCategorySection: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(section.status.displayTitle)
                         .font(StoryDesignTokens.font(.caption, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(StoryDesignTokens.secondaryInk)
                         .textCase(.uppercase)
                         .kerning(0.4)
                     clusterRowsView(section.clusters)
@@ -587,10 +566,10 @@ private struct SummaryEntryMetadataRow: View {
         HStack(spacing: 8) {
             Text(dateText)
                 .font(StoryDesignTokens.font(.caption))
-                .foregroundStyle(dateNeedsAttention ? BrandPalette.systemBlue : .secondary)
+                .foregroundStyle(dateNeedsAttention ? StoryDesignTokens.action : .secondary)
             Text(practitionerText)
                 .font(StoryDesignTokens.font(.caption))
-                .foregroundStyle(practitionerNeedsAttention ? BrandPalette.systemBlue : .secondary)
+                .foregroundStyle(practitionerNeedsAttention ? StoryDesignTokens.action : .secondary)
                 .lineLimit(1)
             if let trailingCaption {
                 Text(trailingCaption)
@@ -612,7 +591,7 @@ private struct SummaryEntryRowContent: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(SummaryEntryPresentation.sentenceSummary(for: entry))
                     .font(StoryDesignTokens.font(.subheadline))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(StoryDesignTokens.ink)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -659,14 +638,14 @@ private struct SummaryEntryStackRowContent: View {
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(StoryDesignTokens.secondaryInk)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         .padding(.top, 4)
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text(cluster.sentenceSummary)
                             .font(StoryDesignTokens.font(.body))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(StoryDesignTokens.ink)
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
 
@@ -748,7 +727,7 @@ private struct SummaryEntryEditor: View {
                     DatePicker("Date", selection: $editableDate, displayedComponents: .date)
                     Text("Use the actual date this information happened or became relevant.")
                         .font(StoryDesignTokens.font(.caption))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
 
                 Section("Fields") {
@@ -756,7 +735,7 @@ private struct SummaryEntryEditor: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(field.label)
                                 .font(StoryDesignTokens.font(.caption))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(StoryDesignTokens.secondaryInk)
                             if isPractitionerField(field) {
                                 practitionerPicker(for: $field)
                             } else if isBodySystemField(field) {
@@ -792,7 +771,7 @@ private struct SummaryEntryEditor: View {
                         }
                         if let excerpt = entry.sourceExcerpt {
                             Text(excerpt)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(StoryDesignTokens.secondaryInk)
                         }
                         if let onViewSource {
                             Button {
@@ -806,6 +785,7 @@ private struct SummaryEntryEditor: View {
                     }
                 }
             }
+            .storyListCanvas()
             .navigationTitle("Edit Card")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -918,11 +898,11 @@ struct SummaryCategoryIcon: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(color.opacity(0.18))
+                .fill(StoryDesignTokens.softSurface)
                 .frame(width: 34, height: 34)
             Image(systemName: icon)
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(color)
+                .foregroundStyle(StoryDesignTokens.onSoftSurface)
         }
     }
 
@@ -945,23 +925,6 @@ struct SummaryCategoryIcon: View {
         return "doc.text.fill"
     }
 
-    private var color: Color {
-        let l = title.lowercased()
-        if l.contains("care team") || l.contains("practitioner") || (l.contains("provider") && l.contains("contact")) {
-            return BrandPalette.systemIndigo
-        }
-        if l.contains("chief") || l.contains("complaint") { return BrandPalette.systemBlue }
-        if l.contains("symptom") { return BrandPalette.systemOrange }
-        if l.contains("finding") || l.contains("diagnos") || l.contains("condition") { return BrandPalette.systemRed }
-        if l.contains("medication") { return BrandPalette.systemPurple }
-        if l.contains("care plan") || l.contains("treatment") { return BrandPalette.systemGreen }
-        if l.contains("vaccination") { return BrandPalette.systemTeal }
-        if l.contains("allerg") { return BrandPalette.systemYellow }
-        if l.contains("test") || l.contains("lab") { return BrandPalette.systemIndigo }
-        if l.contains("follow") { return BrandPalette.systemCyan }
-        if l.contains("biopsychosocial") || l.contains("psychosocial") || l.contains("context") { return BrandPalette.systemPink }
-        return BrandPalette.systemGray
-    }
 }
 
 // MARK: - CareTimelineCard
@@ -982,22 +945,22 @@ struct CareTimelineCard: View {
                 HStack(spacing: 10) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(BrandPalette.systemBlue.opacity(0.15))
+                            .fill(StoryDesignTokens.action.opacity(0.15))
                             .frame(width: 34, height: 34)
                         Image(systemName: "clock.arrow.circlepath")
                             .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(BrandPalette.systemBlue)
+                            .foregroundStyle(StoryDesignTokens.action)
                     }
                     Text("CARE TIMELINE")
                         .font(StoryDesignTokens.font(.subheadline))
                         .fontWeight(.bold)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(StoryDesignTokens.ink)
                         .kerning(0.5)
                         .accessibilityAddTraits(.isHeader)
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(StoryDesignTokens.secondaryInk)
                         .accessibilityHidden(true)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 }
@@ -1017,12 +980,12 @@ struct CareTimelineCard: View {
                         HStack(alignment: .top, spacing: 14) {
                             VStack(spacing: 0) {
                                 Circle()
-                                    .fill(BrandPalette.systemBlue)
+                                    .fill(StoryDesignTokens.action)
                                     .frame(width: 9, height: 9)
                                     .padding(.top, 4)
                                 if index < sessions.count - 1 {
                                     Rectangle()
-                                        .fill(BrandPalette.systemBlue.opacity(0.2))
+                                        .fill(StoryDesignTokens.action.opacity(0.2))
                                         .frame(width: 2)
                                         .frame(minHeight: 28)
                                 }
@@ -1032,7 +995,7 @@ struct CareTimelineCard: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(session.date.formatted(date: .abbreviated, time: .shortened))
                                     .font(StoryDesignTokens.font(.caption))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(StoryDesignTokens.secondaryInk)
                                 if let title = session.title {
                                     Text(title)
                                         .font(StoryDesignTokens.font(.subheadline))
@@ -1040,12 +1003,12 @@ struct CareTimelineCard: View {
                                 } else if !session.transcript.isEmpty {
                                     Text(session.transcript)
                                         .font(StoryDesignTokens.font(.subheadline))
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(StoryDesignTokens.secondaryInk)
                                         .lineLimit(1)
                                 } else {
                                     Text("Untitled entry")
                                         .font(StoryDesignTokens.font(.subheadline))
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(StoryDesignTokens.secondaryInk)
                                         .italic()
                                 }
                             }
@@ -1175,10 +1138,10 @@ struct SessionSourceView: View {
     private var legacyBanner: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "info.circle")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StoryDesignTokens.secondaryInk)
             Text("This record has no saved original file.")
                 .font(StoryDesignTokens.font(.subheadline))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StoryDesignTokens.secondaryInk)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(12)
@@ -1190,11 +1153,11 @@ struct SessionSourceView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Referenced excerpt")
                 .font(StoryDesignTokens.font(.caption, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StoryDesignTokens.secondaryInk)
                 .textCase(.uppercase)
             Text(excerpt)
                 .font(StoryDesignTokens.font(.subheadline))
-                .foregroundStyle(.primary)
+                .foregroundStyle(StoryDesignTokens.ink)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(12)
@@ -1206,7 +1169,7 @@ struct SessionSourceView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Source files")
                 .font(StoryDesignTokens.font(.caption, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StoryDesignTokens.secondaryInk)
                 .textCase(.uppercase)
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -1223,7 +1186,7 @@ struct SessionSourceView: View {
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
                                 .background(
-                                    (selectedAsset?.id == asset.id ? BrandPalette.systemBlue.opacity(0.15) : Color.secondary.opacity(0.12)),
+                                    (selectedAsset?.id == asset.id ? StoryDesignTokens.action.opacity(0.15) : StoryDesignTokens.secondaryInk.opacity(0.12)),
                                     in: Capsule()
                                 )
                         }
@@ -1240,7 +1203,7 @@ struct SessionSourceView: View {
 
         if !FileManager.default.fileExists(atPath: fileURL.path) {
             Text("The original file was not included with this record.")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StoryDesignTokens.secondaryInk)
         } else { switch asset.kind {
         case .pdf:
             SessionPDFSourceView(url: fileURL)
@@ -1301,7 +1264,7 @@ private struct SessionPDFSourceView: View {
                 .frame(maxWidth: .infinity, minHeight: 240)
         } else {
             Text("Unable to open PDF")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StoryDesignTokens.secondaryInk)
                 .frame(maxWidth: .infinity, minHeight: 240)
         }
     }
@@ -1369,7 +1332,7 @@ private struct SessionAudioSourceView: View {
                 isPlaying.toggle()
             } label: {
                 Label(isPlaying ? "Pause" : "Play", systemImage: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(StoryDesignTokens.heading(.title2))
+                    .font(StoryDesignTokens.label)
             }
             .buttonStyle(.plain)
             .disabled(player == nil)
@@ -1392,7 +1355,7 @@ private struct SessionPlainTextSourceView: View {
     var body: some View {
         Text(text.isEmpty ? "(Empty file)" : text)
             .font(StoryDesignTokens.font(.body))
-            .foregroundStyle(.primary)
+            .foregroundStyle(StoryDesignTokens.ink)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
             .task(id: url) {

@@ -46,6 +46,7 @@
 		BF30 /* GlobalSummaryMapReduceSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR33 /* GlobalSummaryMapReduceSupport.swift */; };
 		BF31 /* BrandPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR34 /* BrandPalette.swift */; };
 		CCTB00 /* StoryDesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCTR00 /* StoryDesignTokens.swift */; };
+		CCTEXT01 /* StoryDesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCTR00 /* StoryDesignTokens.swift */; };
 		CCTB01 /* StoryComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCTR01 /* StoryComponents.swift */; };
 		CCFB02 /* StoryFolderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCFR02 /* StoryFolderView.swift */; };
 		BF32 /* PractitionerContactsFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR35 /* PractitionerContactsFormatting.swift */; };
@@ -515,6 +516,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BF15 /* ShareViewController.swift in Sources */,
+				CCTEXT01 /* StoryDesignTokens.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -661,7 +663,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = SpeechSessionApp/SpeechSessionApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 122;
+				CURRENT_PROJECT_VERSION = 176;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SpeechSessionApp/Info.plist;
@@ -691,7 +693,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = SpeechSessionApp/SpeechSessionApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 122;
+				CURRENT_PROJECT_VERSION = 176;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SpeechSessionApp/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
@@ -719,7 +721,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = VoiceMemoShareExtension/VoiceMemoShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 122;
+				CURRENT_PROJECT_VERSION = 176;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VoiceMemoShareExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -745,7 +747,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = VoiceMemoShareExtension/VoiceMemoShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 122;
+				CURRENT_PROJECT_VERSION = 176;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VoiceMemoShareExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -771,7 +773,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = RecordingLiveActivityExtension/RecordingLiveActivityExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 122;
+				CURRENT_PROJECT_VERSION = 176;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RecordingLiveActivityExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -797,7 +799,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = RecordingLiveActivityExtension/RecordingLiveActivityExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 122;
+				CURRENT_PROJECT_VERSION = 176;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RecordingLiveActivityExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;

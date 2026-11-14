@@ -49,6 +49,7 @@ struct CareTeamEditor: View {
                     }
                 }
             }
+            .storyListCanvas()
             .navigationTitle("Care team details")
             .sheet(isPresented: $requestRecords) { RequestRecordsView(member: member) }
             .confirmationDialog("Remove this contact?", isPresented: $remove, titleVisibility: .visible) {
@@ -106,8 +107,9 @@ struct RequestRecordsView: View {
                     Button("Open email draft") { openURL(url) { accepted in mailUnavailable = !accepted } }
                 }
                 Button(copied ? "Draft copied" : "Copy draft") { UIPasteboard.general.string = bodyText; copied = true }
-                if mailUnavailable || member.email.isEmpty { Text("You can copy this draft into your email app or your provider’s patient portal.").foregroundStyle(.secondary) }
+                if mailUnavailable || member.email.isEmpty { Text("You can copy this draft into your email app or your provider’s patient portal.").foregroundStyle(StoryDesignTokens.secondaryInk) }
             }
+            .storyListCanvas()
             .navigationTitle("Request records")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
         }
@@ -159,14 +161,15 @@ struct PractitionerPicker: View {
                             }
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(member.name).foregroundStyle(.primary)
+                                Text(member.name).foregroundStyle(StoryDesignTokens.ink)
                                 Text([member.role, member.organization].filter { !$0.isEmpty }.joined(separator: " · "))
-                                    .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+                                    .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk)
                             }
                         }
                     }
                 }
             }
+            .storyListCanvas()
             .disabled(saving)
             .searchable(text: $search, prompt: "Name, specialty or clinic")
             .navigationTitle("Choose practitioner")

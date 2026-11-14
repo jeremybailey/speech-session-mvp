@@ -47,6 +47,28 @@ final class StoryWorkspaceTests:XCTestCase {
         let records=try await store.loadAll();XCTAssertTrue(records.isEmpty)
         do {try await store.publishStoryNarrative("Late generation",revision:0,evidence:[]);XCTFail("Overwrote newer writing")} catch StoryEditError.staleRevision {}
     }
+    func testSharedOverviewCitationsKeepDistinctBlocksOnReload() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try SessionStore(storageDirectory: root, sqliteEnabled: true)
+        try await seed(store)
+        let facts = HealthMemoryProjection.facts(in: try await store.healthSnapshot())
+        let id = try XCTUnwrap(facts.first?.id)
+        var overview = StoryOverview(sentences: [
+            .init(text: "The patient reports neck pain.", factIDs: [id]),
+            .init(text: "They mentioned it in a note.", factIDs: [id])
+        ])
+        overview.conditionContext = await store.currentOverviewConditionContext(facts)
+        try await store.saveStoryOverview(overview, expected: facts)
+        try await store.synchronizeStory()
+        let initial = try await store.storyWorkspace().blocks
+        XCTAssertEqual(Set(initial.map(\.id)).count, 2)
+        let reopened = try SessionStore(storageDirectory: root, sqliteEnabled: true)
+        try await reopened.synchronizeStory()
+        let restored = try await reopened.storyWorkspace().blocks
+        XCTAssertEqual(restored.map(\.id), initial.map(\.id))
+        XCTAssertEqual(restored.map(\.text), overview.sentences.map(\.text))
+    }
     func store() throws -> SessionStore {try SessionStore(storageDirectory:FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),sqliteEnabled:true)}
     func seed(_ store:SessionStore) async throws {
         let record=Session(transcript:"I have neck pain.",summaryEntries:[SummaryEntry(category:.symptoms,title:"I have neck pain.",origin:.userAdded)])

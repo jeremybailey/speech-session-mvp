@@ -11,15 +11,18 @@ enum StoryDesignTokens {
     // CollectiveCare Copper, Papaya and Mocha. Small text uses deeper copper in light mode.
     static let copper = adaptive(0xDB504A, 0xFF9F96)
     static let action = adaptive(0xA63330, 0xFFAFA5, highLight: 0x80221F, highDark: 0xFFD4CB)
-    static let onAction = adaptive(0xFFFFFF, 0x302325)
+    static let primaryButtonFill = adaptive(0xA63330, 0xA63330, highLight: 0x80221F, highDark: 0x80221F)
+    static let onAction = Color.white
     static let ink = adaptive(0x483D3F, 0xFFF1DC, highLight: 0x211B1D, highDark: 0xFFFFFF)
+    static let secondaryInk = adaptive(0x716468, 0xC8B9B8, highLight: 0x55474B, highDark: 0xEADBD6)
     static let canvas = adaptive(0xFFFCF7, 0x201C1D)
     static let surface = adaptive(0xFFFFFF, 0x302A2B)
     static let softSurface = adaptive(0xFFEECF, 0x413537)
     static let onSoftSurface = adaptive(0x483D3F, 0xFFEECF)
 
-    static let bubbleFill = adaptive(0x483D3F, 0x483D3F, highLight: 0x302A2B, highDark: 0x302A2B)
-    static let bubbleContent = adaptive(0xFFEECF, 0xFFEECF)
+    static let bubbleFill = adaptive(0xEBEDE6, 0xEBEDE6)
+    static let bubbleContent = adaptive(0x36423C, 0x36423C, highLight: 0x202922, highDark: 0x202922)
+    static let bubbleQuote = Font.custom("EBGaramond-Italic", size: 20, relativeTo: .body)
 
     static let controlHeight: CGFloat = 48
     static let iconSize: CGFloat = 44
@@ -52,8 +55,12 @@ enum StoryDesignTokens {
     }
 
     // Both UI frameworks use the same face and variable-font weight (700 = bold).
-    private static func headingFace(size: CGFloat) -> UIFont {
-        guard let face = UIFont(name: headingFamily, size: size) else {
+    static func headingFace(size: CGFloat) -> UIFont {
+        return boldFace(family: headingFamily, size: size)
+    }
+
+    static func boldFace(family: String, size: CGFloat) -> UIFont {
+        guard let face = UIFont(name: family, size: size) else {
             return .boldSystemFont(ofSize: size)
         }
         let descriptor = face.fontDescriptor.addingAttributes([
@@ -66,8 +73,9 @@ enum StoryDesignTokens {
         .custom(headingFamily, size: baseSize(uiStyle(style)), relativeTo: style).bold()
     }
 
-    static let sectionHeading = heading(.title2)
-    static let section = heading(.headline)
+    static let pageTitle = heading(.largeTitle)
+    static let sectionHeading = font(.title2, weight: .bold)
+    static let section = font(.headline, weight: .bold)
     static let title = heading(.title2)
     static let body = font(.body)
     static let label = font(.headline, weight: .semibold)
@@ -80,7 +88,8 @@ enum StoryDesignTokens {
 
     @MainActor static func configureNavigationTypography() {
         let size = UIFont.preferredFont(forTextStyle: .largeTitle).pointSize
-        UINavigationBar.appearance().largeTitleTextAttributes = [.font: headingFace(size: size)]
+        UINavigationBar.appearance().titleTextAttributes = [.foregroundColor: UIColor(ink)]
+        UINavigationBar.appearance().largeTitleTextAttributes = [.font: headingFace(size: size), .foregroundColor: UIColor(ink)]
     }
 
     private static func adaptive(_ light: UInt32, _ dark: UInt32, highLight: UInt32? = nil, highDark: UInt32? = nil) -> Color {

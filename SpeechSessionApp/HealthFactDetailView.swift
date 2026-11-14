@@ -100,7 +100,7 @@ private struct HealthFactEditor: View {
                 ForEach($entry.fields) { $field in
                     if !HealthDetailPresentation.isPractitionerField(field.label) && !HealthStoryText.isInternalField(field.label) && !(field.label.lowercased() == "details" && originalEntry.fields.first(where: { $0.id == field.id })?.value == originalEntry.details) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(field.label).font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+                        Text(field.label).font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk)
                         TextField("Not recorded", text: $field.value, axis: .vertical)
                     }
                     }
@@ -115,7 +115,7 @@ private struct HealthFactEditor: View {
                         + originalEntry.fields.filter { HealthDetailPresentation.isPractitionerField($0.label) }.map(\.value))
                         .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                     ForEach(Array(Set(sourceNames)).sorted(), id: \.self) { name in
-                        Text("From source: \(name)").font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+                        Text("From source: \(name)").font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk)
                     }
                 }
                 Section("Status") {
@@ -148,7 +148,7 @@ private struct HealthFactEditor: View {
             }
             Section {
                 if fact.needsReview {
-                    ForEach(fact.reviewReasons, id: \.self) { Text($0).foregroundStyle(.secondary) }
+                    ForEach(fact.reviewReasons, id: \.self) { Text($0).foregroundStyle(StoryDesignTokens.secondaryInk) }
                 }
                 Toggle("I have checked this detail", isOn: $reviewed)
             } footer: { Text("You can leave information unknown. Checking a detail does not mean a clinician has verified it.") }
@@ -173,7 +173,7 @@ private struct HealthFactEditor: View {
                             }
                                 .frame(minHeight: 44)
                             Text("Added \(record.date.formatted(date: .abbreviated, time: .omitted))")
-                                .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+                                .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk)
                         }
                     }.padding(.vertical, 4)
                 }
@@ -182,6 +182,7 @@ private struct HealthFactEditor: View {
                 Button("Remove from summary", role: .destructive) { remove = true }
             } footer: { Text("Removing a detail keeps your original records.") }
         }
+        .storyListCanvas()
         .navigationTitle("Health detail")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -213,7 +214,7 @@ private struct HealthFactEditor: View {
 
     private func careField(_ label: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(label).font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk).fixedSize(horizontal: false, vertical: true)
             TextField("Not recorded", text: text, axis: .vertical).accessibilityLabel(label)
         }
     }
@@ -308,8 +309,9 @@ struct HealthManualEntryView: View {
                         LabeledContent("Practitioner", value: model.snapshot.careTeam.first(where: { $0.id == practitionerID })?.name ?? "Choose or add")
                     }
                 }
-                Text("This will be saved as information added by you. You can add a date and other details afterwards.").foregroundStyle(.secondary)
+                Text("This will be saved as information added by you. You can add a date and other details afterwards.").foregroundStyle(StoryDesignTokens.secondaryInk)
             }
+            .storyListCanvas()
             .sheet(isPresented: $choosingPractitioner) {
                 PractitionerPicker(model: model) { practitionerID = $0 }
             }

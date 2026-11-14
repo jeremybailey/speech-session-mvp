@@ -301,7 +301,7 @@ struct StoryLabView: View {
                 folderRouter.open(.record(id))
             }
         }) { record in
-            StoryCaptureView(record: record, store: appModel.store, home: appModel.home, importDocument: folderRouter.documentImportID == record.id) { completed in
+            StoryCaptureView(record: record, store: appModel.store, home: appModel.home, auth: auth, importDocument: folderRouter.documentImportID == record.id) { completed in
                 folderRouter.finishedCapture = completed
                 folderRouter.capture = nil
             }
@@ -329,10 +329,10 @@ struct StoryLabView: View {
             appModel.recording.setAppInBackground(phase != .active)
             if phase == .active {appModel.enqueuePendingSharedImportIfAvailable();Task{await model.reload()}}
         }
-        .sheet(isPresented:$showSourceChoices){NavigationStack{List(sourceChoices){source in VStack(alignment:.leading,spacing:8){Text(source.title).font(StoryDesignTokens.section);Text(source.text).textSelection(.enabled);if let record=model.records.first(where:{$0.id==source.recordID}){NavigationLink("Open source record"){SessionDetailView(session:record,store:appModel.store,home:appModel.home,initialTab:.source)}}}}.navigationTitle("Supporting sources")}}
+        .sheet(isPresented:$showSourceChoices){NavigationStack{List(sourceChoices){source in VStack(alignment:.leading,spacing:8){Text(source.title).font(StoryDesignTokens.section);Text(source.text).textSelection(.enabled);if let record=model.records.first(where:{$0.id==source.recordID}){NavigationLink("Open source record"){SessionDetailView(session:record,store:appModel.store,home:appModel.home,initialTab:.source)}}}}.storyListCanvas().navigationTitle("Supporting sources")}}
         .sheet(item:$selectedSource){source in NavigationStack{ScrollView{VStack(alignment:.leading,spacing:16){Text(source.title).font(StoryDesignTokens.section);Text(source.text).textSelection(.enabled);if let record=model.records.first(where:{$0.id == source.recordID}){NavigationLink("Open record and original"){SessionDetailView(session:record,store:appModel.store,home:appModel.home,initialTab:.source)}}}.padding()}.navigationTitle("Source")}}
         .onChange(of:logAction?.id){_,id in if id != nil {progressEventID=UUID();progressText=""}}
-        .sheet(item:$logAction){action in NavigationStack{Form{Text(action.text);TextEditor(text:$progressText).frame(minHeight:160);Button("Save progress"){let text=progressText;Task{await model.action{try await model.store.recordStoryCareEvent(actionID:action.id,kind:"progress",text:text,factIDs:action.factIDs,eventID:progressEventID)};progressText="";logAction=nil;await appModel.health.refresh()}}.disabled(progressText.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)}.navigationTitle("How is it going?")}}
+        .sheet(item:$logAction){action in NavigationStack{Form{Text(action.text);TextEditor(text:$progressText).frame(minHeight:160);Button("Save progress"){let text=progressText;Task{await model.action{try await model.store.recordStoryCareEvent(actionID:action.id,kind:"progress",text:text,factIDs:action.factIDs,eventID:progressEventID)};progressText="";logAction=nil;await appModel.health.refresh()}}.disabled(progressText.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)}.storyListCanvas().navigationTitle("How is it going?")}}
         .alert("Saved writing",isPresented:Binding(get:{model.error != nil},set:{if !$0 {model.error=nil}})){Button("OK"){model.error=nil}} message:{Text(model.error ?? "")}
     }
     private func openChat(record: Session? = nil) {
@@ -393,8 +393,8 @@ struct StoryLabView: View {
                 ScrollView {
                     VStack(alignment:.leading,spacing:24) {
                         if visibleChat.isEmpty {
-                            Text("Ask anything").font(StoryDesignTokens.heading(.largeTitle)).padding(.top,32)
-                            Text(chatRecord.map { "About " + $0.displayTitle } ?? "About your health story and records").font(StoryDesignTokens.body).foregroundStyle(.secondary)
+                            Text("Ask anything").font(StoryDesignTokens.pageTitle).padding(.top,32)
+                            Text(chatRecord.map { "About " + $0.displayTitle } ?? "About your health story and records").font(StoryDesignTokens.body).foregroundStyle(StoryDesignTokens.secondaryInk)
                         }
                         ForEach(visibleChat){item in
                             VStack(alignment:.leading,spacing:12) {
@@ -404,9 +404,9 @@ struct StoryLabView: View {
                                         Text(item.text)
                                             .font(StoryDesignTokens.body)
                                             .lineSpacing(citationTextSize*0.22)
-                                            .foregroundStyle(StoryDesignTokens.bubbleContent)
+                                            .foregroundStyle(StoryDesignTokens.onSoftSurface)
                                             .padding(.horizontal,16).padding(.vertical,12)
-                                            .background(StoryDesignTokens.bubbleFill,in:RoundedRectangle(cornerRadius:22))
+                                            .background(StoryDesignTokens.softSurface,in:RoundedRectangle(cornerRadius:22))
                                             .fixedSize(horizontal:false,vertical:true)
                                             .textSelection(.enabled)
                                             .accessibilityLabel("You: "+item.text)
@@ -442,6 +442,7 @@ struct StoryLabView: View {
                     }
                 }
             }
+            .background(StoryDesignTokens.canvas)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement:.topBarLeading){Button {chatFocused=false;showConversation=false} label:{Image(systemName:"xmark")}.accessibilityLabel("Close chat")}
@@ -463,12 +464,12 @@ struct StoryLabView: View {
                     VStack(spacing:0) {
                         LinearGradient(
                             stops:[
-                                .init(color:StoryDesignTokens.surface.opacity(0),location:0),
-                                .init(color:StoryDesignTokens.surface.opacity(0.55),location:0.5),
-                                .init(color:StoryDesignTokens.surface,location:1)
+                                .init(color:StoryDesignTokens.canvas.opacity(0),location:0),
+                                .init(color:StoryDesignTokens.canvas.opacity(0.55),location:0.5),
+                                .init(color:StoryDesignTokens.canvas,location:1)
                             ],startPoint:.top,endPoint:.bottom
                         ).frame(height:64)
-                        StoryDesignTokens.surface
+                        StoryDesignTokens.canvas
                     }
                     .padding(.top,-64)
                     .ignoresSafeArea(.container,edges:.bottom)
@@ -499,15 +500,15 @@ struct StoryLabView: View {
                             if model.initialStoryLoadFailed { Button("Retry loading history"){Task{await model.reload()}} }
                             else { StoryLoadingPlaceholder(label:"Loading chat history",rows:3) }
                         } else if !model.workspace.messages.contains(where:{$0.role=="user" && $0.scopeRecordID == chatRecord?.id}) {
-                            Text("Your conversations will appear here.").foregroundStyle(Color.secondary)
+                            Text("Your conversations will appear here.").foregroundStyle(StoryDesignTokens.secondaryInk)
                         }
                         ForEach(model.workspace.messages.filter{$0.role=="user" && $0.scopeRecordID == chatRecord?.id}.reversed()) {question in
                             Button {selectHistory(question)} label: {
                                 VStack(alignment:.leading,spacing:6) {
                                     Text(question.text).font(StoryDesignTokens.body)
-                                        .foregroundStyle(Color.primary).lineLimit(2)
+                                        .foregroundStyle(StoryDesignTokens.ink).lineLimit(2)
                                     Text(question.createdAt.formatted(date:.abbreviated,time:.shortened))
-                                        .font(StoryDesignTokens.body).foregroundStyle(Color.secondary)
+                                        .font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
                                 }
                                 .frame(maxWidth:.infinity,minHeight:44,alignment:.leading)
                                 .padding(.vertical,8).contentShape(Rectangle())
@@ -517,7 +518,7 @@ struct StoryLabView: View {
                         }
                     }
                     .listStyle(.plain).scrollContentBackground(.hidden)
-                    .background(StoryDesignTokens.surface)
+                    .background(StoryDesignTokens.canvas)
                     .navigationTitle("Chat history").navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement:.topBarLeading) {
@@ -526,7 +527,7 @@ struct StoryLabView: View {
                         }
                     }
                 }
-                .presentationBackground(StoryDesignTokens.surface)
+                .presentationBackground(StoryDesignTokens.canvas)
                 .presentationDetents([.medium,.large]).presentationDragIndicator(.visible)
             }
         }
@@ -539,7 +540,7 @@ struct StoryLabView: View {
                             TextEditor(text:Binding(get:{model.workspace.blocks.first(where:{$0.id == block.id})?.text ?? block.text},set:{model.edit(block,text:$0,auth:auth)})).frame(minHeight:90).scrollContentBackground(.hidden).accessibilityLabel("Edit story paragraph")
                             HStack {
                                 Button("Sources"){Task{sourceChoices=(try? await model.store.storySources(factIDs:block.factIDs,correctionRecordID:block.correctionRecordID)) ?? [];showSourceChoices=true}}.disabled(block.factIDs.isEmpty && block.correctionRecordID == nil)
-                                if block.patientWritten {Text("Your words").font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)}
+                                if block.patientWritten {Text("Your words").font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)}
                                 if block.evidenceChanged {Text("Sources changed").font(StoryDesignTokens.font(.caption))}
                             }
                         }
@@ -570,14 +571,14 @@ struct StoryLabView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
                 Text("My care plan")
-                    .font(StoryDesignTokens.sectionHeading)
+                    .font(StoryDesignTokens.pageTitle)
                     .accessibilityAddTraits(.isHeader)
 
                 VStack(alignment: .leading, spacing: 12) {
                     careSectionHeading("Following now")
                     if currentCarePlans.isEmpty {
                         Text("Actions you choose to follow will appear here.")
-                            .font(StoryDesignTokens.body).foregroundStyle(.secondary)
+                            .font(StoryDesignTokens.body).foregroundStyle(StoryDesignTokens.secondaryInk)
                     } else {
                         carePlanGroups(currentCarePlans, following: true)
                     }
@@ -589,10 +590,10 @@ struct StoryLabView: View {
                         careSectionHeading("Recorded recommendations")
                         if recordedCarePlans.isEmpty {
                             Text("Upload your care plan to see what your care team recommended.")
-                                .font(StoryDesignTokens.body).foregroundStyle(.secondary)
+                                .font(StoryDesignTokens.body).foregroundStyle(StoryDesignTokens.secondaryInk)
                         } else {
                             Text("Not marked as part of your current plan.")
-                                .font(StoryDesignTokens.caption).foregroundStyle(.secondary)
+                                .font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
                             carePlanGroups(recordedCarePlans, following: false)
                         }
                     }
@@ -618,7 +619,7 @@ struct StoryLabView: View {
     }
 
     private func careSectionHeading(_ title: String) -> some View {
-        Text(title).font(StoryDesignTokens.heading(.title3)).accessibilityAddTraits(.isHeader)
+        Text(title).font(StoryDesignTokens.sectionHeading).accessibilityAddTraits(.isHeader)
     }
 
     private func carePlanGroups(_ plans: [HealthCarePlan], following: Bool) -> some View {
@@ -640,11 +641,11 @@ struct StoryLabView: View {
             VStack(alignment:.leading,spacing:6) {
                 Text(HealthStoryText.displayName(plan.title)).font(StoryDesignTokens.label).accessibilityAddTraits(.isHeader)
                 if let practitioner=plan.practitioner,!practitioner.isEmpty {
-                    Text(practitioner).font(StoryDesignTokens.caption).foregroundStyle(.secondary)
+                    Text(practitioner).font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
                 if !plan.conditionNames.isEmpty {
                     Text(plan.conditionNames.map{HealthStoryText.displayName($0)}.joined(separator:" · "))
-                        .font(StoryDesignTokens.caption).foregroundStyle(.secondary)
+                        .font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
             }
             ForEach(CarePlanBucket.allCases,id:\.self) {bucket in
@@ -676,9 +677,9 @@ struct StoryLabView: View {
                 careContext("Who",value:owner)
             }
             ForEach(action.metadata.filter{$0.hasPrefix("Reminder:")},id:\.self) {
-                Text($0).font(StoryDesignTokens.caption).foregroundStyle(.secondary)
+                Text($0).font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
             }
-            if !following,action.status != "Current" {Text(action.status).font(StoryDesignTokens.caption).foregroundStyle(.secondary)}
+            if !following,action.status != "Current" {Text(action.status).font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)}
             if let id = plan.sourceSessionID, appModel.health.snapshot.sessions.contains(where: { $0.id == id }) {
                 NavigationLink(value: StoryRoute.record(id)) {
                     StorySourceTag(title: "Recommendation")
@@ -690,7 +691,7 @@ struct StoryLabView: View {
     }
     private func careContext(_ label:String,value:String)->some View {
         (Text(label+": ").fontWeight(.medium)+Text(value))
-            .font(StoryDesignTokens.caption).foregroundStyle(.secondary)
+            .font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
             .fixedSize(horizontal:false,vertical:true).textSelection(.enabled)
     }
 
@@ -709,7 +710,7 @@ struct StoryRecordsList:View {
                 .saturation(showFirstRecordGuide ? 0 : 1)
                 .opacity(showFirstRecordGuide ? 0.65 : 1)
             Text("My care plan").font(StoryDesignTokens.label)
-                .foregroundStyle(showFirstRecordGuide ? Color.secondary : StoryDesignTokens.ink)
+                .foregroundStyle(showFirstRecordGuide ? StoryDesignTokens.secondaryInk : StoryDesignTokens.ink)
         }
         .frame(maxWidth: .infinity, minHeight: StoryDesignTokens.controlHeight, alignment: .leading)
         .contentShape(Rectangle())
@@ -719,7 +720,7 @@ struct StoryRecordsList:View {
         List {
             Section {
                 if showFirstRecordGuide { StoryEmptyOverview() }
-                else if let narrative { Text(narrative.isEmpty ? "Your overview will appear here as your records are organized.":narrative).font(StoryDesignTokens.body).lineSpacing(StoryDesignTokens.readingLineSpacing(for: overviewTextSize)).textSelection(.enabled).padding(.vertical,8).listRowSeparator(.hidden).listRowBackground(StoryDesignTokens.canvas)
+                else if let narrative { Text(narrative.isEmpty ? "Your overview will appear here as your records are organized.":narrative).foregroundStyle(StoryDesignTokens.ink).font(StoryDesignTokens.body).lineSpacing(StoryDesignTokens.readingLineSpacing(for: overviewTextSize)).textSelection(.enabled).padding(.vertical,8).listRowSeparator(.hidden).listRowBackground(StoryDesignTokens.canvas)
                 } else if let retryStoryLoad { Button("Retry loading overview",action:retryStoryLoad) }
                 else {StoryLoadingPlaceholder(label:"Loading overview").listRowSeparator(.hidden)}
                 NavigationLink(value: StoryRoute.carePlan) { carePlanLabel }
@@ -732,7 +733,7 @@ struct StoryRecordsList:View {
                         if summaryStatus == StorySummaryGeneration.preparingLabel { StoryThinkingStatus(summaryStatus) }
                         else { Label(summaryStatus,systemImage:"doc.text").font(StoryDesignTokens.label) }
                         Spacer()
-                        Image(systemName:"chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                        Image(systemName:"chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(StoryDesignTokens.secondaryInk)
                     }.frame(minHeight:44).contentShape(Rectangle())
                 }.accessibilityHint("Open share summary")
                     .listRowBackground(StoryDesignTokens.canvas)
@@ -763,12 +764,12 @@ struct StoryRecordEditor:View {
                 guard loaded else {return};saved=false;pendingSave?.cancel()
                 pendingSave=Task{do{try await store.saveStorySourceDraft(record.id,text:value);try await Task.sleep(nanoseconds:2_000_000_000);try Task.checkCancellation();await commit(value)}catch is CancellationError {}catch{self.error=error.localizedDescription}}
             }
-        Text("Writing saves on this device immediately. Health details update after you pause typing.").font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+        Text("Writing saves on this device immediately. Health details update after you pause typing.").font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
         Button("Done editing"){pendingSave?.cancel();let value=text;Task{await commit(value)}}
         if saved {Text("Correction saved. Your original is preserved.")}
         NavigationLink("Open original and attachments"){SessionDetailView(session:record,store:store,home:home,initialTab:.source)}
         DisclosureGroup("Text history"){ForEach(revisions.reversed()){revision in VStack(alignment:.leading){Text(revision.createdAt.formatted()).font(StoryDesignTokens.font(.caption));Text(revision.patientEdited ? "Patient-corrected text":"Original text").font(StoryDesignTokens.font(.caption, weight: .bold));Text(revision.text).textSelection(.enabled);Button("Restore this text"){text=revision.text}}}}
-        if let error {Text(error).foregroundStyle(.red)}
+        if let error {Text(error).foregroundStyle(StoryDesignTokens.action)}
     }.padding()}.navigationTitle(record.displayTitle).task{let workspace=try? await store.storyWorkspace();text=workspace?.sourceDrafts?[record.id.uuidString] ?? record.transcript;revisions=workspace?.sources.filter{$0.recordID==record.id} ?? [];loaded=true}}
     private func commit(_ value:String) async {
         do {
@@ -807,7 +808,7 @@ private struct StoryAnswerText:UIViewRepresentable {
         let paragraph=NSMutableParagraphStyle()
         paragraph.lineSpacing=StoryDesignTokens.readingLineSpacing(for: fontSize)
         paragraph.paragraphSpacing=fontSize*0.4
-        let attributes:[NSAttributedString.Key:Any]=[.font:font,.foregroundColor:UIColor.label.resolvedColor(with:traits),.paragraphStyle:paragraph]
+        let attributes:[NSAttributedString.Key:Any]=[.font:font,.foregroundColor:UIColor(StoryDesignTokens.ink).resolvedColor(with:traits),.paragraphStyle:paragraph]
         let result=NSMutableAttributedString(string:"")
         let raw=text as NSString
         let regex=try! NSRegularExpression(pattern:#"[\[【［]\s*(E\d+(?:\s*[,;]\s*E\d+)*)\s*[\]】］]"#)
@@ -826,10 +827,10 @@ private struct StoryAnswerText:UIViewRepresentable {
                 let diameter=max(24,ceil(max(labelSize.width,labelSize.height)+8))
                 let size=CGSize(width:diameter,height:diameter)
                 let image=UIGraphicsImageRenderer(size:size).image {_ in
-                    UIColor.tertiarySystemFill.resolvedColor(with:traits).setFill()
+                    UIColor(StoryDesignTokens.softSurface).resolvedColor(with:traits).setFill()
                     UIBezierPath(ovalIn:CGRect(origin:.zero,size:size)).fill()
                     label.draw(at:CGPoint(x:(diameter-labelSize.width)/2,y:(diameter-labelSize.height)/2),
-                               withAttributes:[.font:tagFont,.foregroundColor:UIColor.label.resolvedColor(with:traits)])
+                               withAttributes:[.font:tagFont,.foregroundColor:UIColor(StoryDesignTokens.ink).resolvedColor(with:traits)])
                 }
                 let attachment=NSTextAttachment();attachment.image=image
                 attachment.bounds=CGRect(x:0,y:(font.capHeight-diameter)/2,width:diameter,height:diameter)
@@ -886,8 +887,8 @@ private struct StoryTemplateShareView:View {
             ScrollView {
                 VStack(alignment:.leading,spacing:20) {
                     VStack(alignment:.leading,spacing:6) {
-                        Text(template.title).font(StoryDesignTokens.title)
-                        TextField("Patient name",text:Binding(get:{job.patientName},set:{job.patientName=$0;job.nameEdited=true})).font(StoryDesignTokens.heading(.title3))
+                        Text(template.title).font(StoryDesignTokens.pageTitle).accessibilityAddTraits(.isHeader)
+                        TextField("Patient name",text:Binding(get:{job.patientName},set:{job.patientName=$0;job.nameEdited=true})).font(StoryDesignTokens.label)
                             .textContentType(.name).disabled(job.generating)
                             .onSubmit {job.savePatientName()}
                     }
@@ -895,12 +896,12 @@ private struct StoryTemplateShareView:View {
                         StoryThinkingStatus(job.generationStatus)
                         Button("Stop"){Task{await job.stop(auth:auth)}}.disabled(job.operationID == nil)
                     }
-                    if let error=job.error {Text(error).foregroundStyle(.secondary).accessibilityAddTraits(.isStaticText)}
+                    if let error=job.error {Text(error).foregroundStyle(StoryDesignTokens.secondaryInk).accessibilityAddTraits(.isStaticText)}
                     if let summary=job.summary {
                         ForEach(Array(StorySummaryDocument.blocks(summary.text).enumerated()),id:\.offset) {_,block in
                             switch block {
                             case let .heading(title,level):
-                                Text(title).font(level==2 ? StoryDesignTokens.heading(.title3):StoryDesignTokens.section).padding(.top,level==2 ? 12:4).accessibilityAddTraits(.isHeader)
+                                Text(title).font(level==2 ? StoryDesignTokens.sectionHeading:StoryDesignTokens.section).padding(.top,level==2 ? 12:4).accessibilityAddTraits(.isHeader)
                                 if level == 2, title == "Labs & Investigations", let labs = summary.labReadings {
                                     ForEach(StoryLabSeries.grouped(labs)) { series in
                                         NavigationLink {
@@ -916,12 +917,14 @@ private struct StoryTemplateShareView:View {
                                                         }
                                                     }
                                                 }
-                                            }.navigationTitle(series.latest.name)
+                                            }
+                                            .font(StoryDesignTokens.body).foregroundStyle(StoryDesignTokens.ink)
+                                            .storyListCanvas().navigationTitle(series.latest.name)
                                         } label: {
                                             VStack(alignment: .leading, spacing: 6) {
                                                 Text(series.title).font(StoryDesignTokens.section)
                                                 HStack {
-                                                    Text(series.latest.valueLabel).bold()
+                                                    Text(series.latest.valueLabel).font(StoryDesignTokens.label)
                                                     Spacer()
                                                     if !series.points.isEmpty {
                                                         StoryLabSparkline(series).frame(width: 100, height: 34)
@@ -967,11 +970,17 @@ private struct StoryTemplateShareView:View {
                     } else if !job.restored && auth.isSignedIn {
                         StoryLoadingPlaceholder(label:"Loading saved summary",rows:3)
                     } else if !job.generating {
-                        Button("Generate summary") {job.start(auth:auth)}
-                            .buttonStyle(.borderedProminent).disabled(!auth.isSignedIn || !job.restored)
+                        Button { job.start(auth: auth) } label: {
+                            Text("Generate summary").foregroundStyle(StoryDesignTokens.onAction)
+                        }
+                        .storyControlStyle(prominent: true)
+                        .disabled(!auth.isSignedIn || !job.restored)
                     }
                 }.frame(maxWidth:.infinity,alignment:.leading).padding(20)
             }
+            .font(StoryDesignTokens.body)
+            .foregroundStyle(StoryDesignTokens.ink)
+            .background(StoryDesignTokens.canvas)
             .navigationTitle("Share summary").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement:.topBarLeading) {
@@ -1002,7 +1011,7 @@ private struct StoryTemplateShareView:View {
     }
     private func preparePDF(_ summary:StorySharedSummary,share:Bool=false) {
         do {
-            let data=try StorySummaryPDF.renderSummary(summary, title: template.title, patientName: job.patientName.trimmingCharacters(in: .whitespacesAndNewlines))
+            let data=try StorySummaryPDF.renderSummary(summary, title: template.title, patientName: job.patientName.trimmingCharacters(in: .whitespacesAndNewlines), typography: StoryDesignTokens.summaryPDFTypography)
             let folder=FileManager.default.temporaryDirectory.appendingPathComponent("story-summary-"+UUID().uuidString,isDirectory:true)
             try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
             let url=folder.appendingPathComponent("Practitioner Summary.pdf")
@@ -1235,14 +1244,25 @@ struct StoryTimelineSections: View {
                             HStack(alignment:.top,spacing:14) {
                                 StoryRecordIcon(symbol: recordSymbol(record))
                                 VStack(alignment:.leading,spacing:5) {
-                                    Text(record.displayTitle).font(StoryDesignTokens.label).foregroundStyle(.primary).fixedSize(horizontal:false,vertical:true)
-                                    Text((record.capture?.isDraft == true ? "Draft · " : "Added ")+record.date.formatted(date:.abbreviated,time:.shortened)).font(StoryDesignTokens.caption).foregroundStyle(.secondary)
-                                    if record.processingError != nil {Label("Needs another try",systemImage:"exclamationmark.circle").font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)}
+                                    Text(record.displayTitle).font(StoryDesignTokens.label).foregroundStyle(StoryDesignTokens.ink).fixedSize(horizontal:false,vertical:true)
+                                    Text((record.capture?.isDraft == true ? "Draft · " : "Added ")+record.date.formatted(date:.abbreviated,time:.shortened)).font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
+                                    if record.processingError != nil {Label("Needs another try",systemImage:"exclamationmark.circle").font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)}
                                 }
                             }.padding(.vertical,8)
                         }.buttonStyle(.plain).listRowSeparator(.hidden).listRowBackground(StoryDesignTokens.canvas)
                     }
                 } header: {StorySectionHeading(title: month.formatted(.dateTime.month(.wide).year()))}
             }
+    }
+}
+
+private extension StoryDesignTokens {
+    @MainActor static var summaryPDFTypography: StorySummaryPDF.Typography {
+        let paper = UITraitCollection(userInterfaceStyle: .light)
+        return .init(title: headingFace(size: 22) as CTFont,
+                     heading: boldFace(family: bodyFamily, size: 14) as CTFont,
+                     body: readingFont(size: 11) as CTFont,
+                     ink: UIColor(ink).resolvedColor(with: paper).cgColor,
+                     tableFill: UIColor(softSurface).resolvedColor(with: paper).cgColor)
     }
 }

@@ -96,7 +96,7 @@ struct HealthSummaryView: View {
                     ForEach(facts) { fact in factRow(fact) }
                 }
                 if facts.isEmpty && members.isEmpty && (category != .carePlan || model.carePlans.isEmpty) {
-                    Text("No details yet").foregroundStyle(.secondary)
+                    Text("No details yet").foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
                 Button(category == .practitionerContact ? "Add contact" : "Add detail", systemImage: "plus") {
                     taskSheet = category == .practitionerContact ? .contact(.init()) : .add(category)
@@ -111,7 +111,7 @@ struct HealthSummaryView: View {
                 Section {
                     Text("Your health, in one place").font(StoryDesignTokens.font(.headline, weight: .semibold))
                     Text("Add a recording or document, or choose a category below to add a detail yourself.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
             }
             if model.undoRemoval != nil {
@@ -125,11 +125,11 @@ struct HealthSummaryView: View {
                             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: overview)
                     } else {
                         Text("Your overview will appear here as your records are organized.")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(StoryDesignTokens.secondaryInk)
                     }
                     if model.displayedOverview != nil && !model.overviewIsCurrent && model.isUpdatingStory {
                         Text("Updating with your latest records.")
-                            .font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+                            .font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                     }
                     regionRecovery(.overview)
                 } header: { regionHeader("Overview", region: .overview) }
@@ -145,7 +145,7 @@ struct HealthSummaryView: View {
                             categoryRows
                         } label: {
                             Label("All", systemImage: "square.grid.2x2.fill")
-                                .font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(.primary).padding(.vertical, 8)
+                                .font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(StoryDesignTokens.ink).padding(.vertical, 8)
                         }
                     }
                 } header: {
@@ -159,12 +159,12 @@ struct HealthSummaryView: View {
                 }
                 DisclosureGroup(isExpanded: $recordsExpanded) {
                     if model.snapshot.sessions.isEmpty {
-                        Text("No records added yet").foregroundStyle(.secondary)
+                        Text("No records added yet").foregroundStyle(StoryDesignTokens.secondaryInk)
                     }
                     ForEach(model.snapshot.sessions.sorted { $0.date > $1.date }) { session in
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(alignment: .top, spacing: 8) {
-                                Text(session.displayTitle).font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(.primary)
+                                Text(session.displayTitle).font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(StoryDesignTokens.ink)
                                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
                                 Menu {
                                     Button("Open original", systemImage: "doc.text") { taskSheet = .record(session) }
@@ -193,6 +193,7 @@ struct HealthSummaryView: View {
             }
             }
         }
+        .storyListCanvas()
         .listStyle(.insetGrouped)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -531,10 +532,10 @@ struct HealthSummaryView: View {
     @ViewBuilder private func regionRecovery(_ region: SummaryUpdateRegion) -> some View {
         if model.state(for: region) == .needsAttention {
             VStack(alignment: .leading, spacing: 4) {
-                Text(model.retainedRecordNotice == nil ? "Some details couldn’t be added" : "Update needs review").font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+                Text(model.retainedRecordNotice == nil ? "Some details couldn’t be added" : "Update needs review").font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 if region == .conditions {
                     Text("Your saved details are available. Open progress to review this update.")
-                        .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+                        .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
                 Button(model.wholeHistoryRequiresNewAttempt ? "Review update" : "Retry") {
                     if model.wholeHistoryRequiresNewAttempt { taskSheet = .progress }
@@ -549,7 +550,7 @@ struct HealthSummaryView: View {
             }
         } else if model.state(for: region) == .interrupted {
             Text(model.isExplicitlyPaused ? "Update paused. Resume whenever you’re ready." : "Update paused. We’ll continue when you return.")
-                .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+                .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk)
             Button("Resume") { prepare(retryUnfinished: true) }.frame(minHeight: 44)
         }
     }
@@ -563,7 +564,7 @@ struct HealthSummaryView: View {
                     : backend == "onDevice"
                         ? "Your saved details are available in All. Condition organization uses cloud processing."
                         : "Your conditions will appear here as your records are organized.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StoryDesignTokens.secondaryInk)
             }
             regionRecovery(.conditions)
             if let notice = model.careOrganizationNotice {
@@ -572,9 +573,9 @@ struct HealthSummaryView: View {
                         Text("Conditions updated")
                             .font(StoryDesignTokens.font(.subheadline, weight: .semibold))
                         Text("Some care plans still show their original details.")
-                            .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+                            .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk)
                         DisclosureGroup("More information") {
-                            Text(notice).font(StoryDesignTokens.font(.footnote)).foregroundStyle(.secondary)
+                            Text(notice).font(StoryDesignTokens.font(.footnote)).foregroundStyle(StoryDesignTokens.secondaryInk)
                         }
                         .font(StoryDesignTokens.font(.subheadline))
                     }
@@ -583,7 +584,7 @@ struct HealthSummaryView: View {
                     } label: {
                         Image(systemName: "xmark")
                             .font(StoryDesignTokens.font(.footnote, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(StoryDesignTokens.secondaryInk)
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
@@ -600,10 +601,10 @@ struct HealthSummaryView: View {
                             .background(BrandPalette.conditionIconBackground, in: RoundedRectangle(cornerRadius: 10))
                             .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(area.id.title).font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(.primary)
+                            Text(area.id.title).font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(StoryDesignTokens.ink)
                             Text("\(area.conditions.count) \(area.conditions.count == 1 ? "concern" : "concerns")")
-                                .font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
-                            Text(area.preview).font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+                                .font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
+                            Text(area.preview).font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk)
                                 .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
                         }
                     }.padding(.vertical, 4)
@@ -613,14 +614,14 @@ struct HealthSummaryView: View {
             }
             ForEach(HealthAreaProjection.standaloneConcerns(conditions)) { condition in
                 NavigationLink {
-                    List { conditionCategories(condition) }
+                    List { conditionCategories(condition) }.storyListCanvas()
                         .navigationTitle(HealthStoryText.displayName(condition.name))
                         .navigationBarTitleDisplayMode(.inline)
                 } label: {
                     Label {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(HealthStoryText.displayName(condition.name)).font(StoryDesignTokens.font(.headline, weight: .semibold))
-                            Text("\(condition.facts.count) saved details").font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+                            Text("\(condition.facts.count) saved details").font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                         }
                     } icon: { Image(systemName: "heart.text.square").foregroundStyle(BrandPalette.icon) }
                         .padding(.vertical, 4)
@@ -641,13 +642,13 @@ struct HealthSummaryView: View {
             Form {
                 Section("Plan") {
                     Text(HealthStoryText.displayName(plan.title))
-                    Text(plan.sourceLabel).foregroundStyle(.secondary)
+                    Text(plan.sourceLabel).foregroundStyle(StoryDesignTokens.secondaryInk)
                     if !plan.conditionNames.isEmpty {LabeledContent("Conditions",value:plan.conditionNames.map{HealthStoryText.displayName($0)}.joined(separator:" · "))}
                     if plan.fictional {LabeledContent("Source context",value:"Role-play / fictional case")}
                     Button {
                         practitionerFactIDs=plan.factIDs
                     } label: {LabeledContent("Practitioner",value:plan.practitioner ?? "Choose or add")}
-                    Text("Applies to all actions in this plan. Original attribution is preserved.").font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+                    Text("Applies to all actions in this plan. Original attribution is preserved.").font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
                 Section("Actions and original records") {
                     ForEach(plan.actions) { action in
@@ -670,6 +671,7 @@ struct HealthSummaryView: View {
                     }
                 }
             }
+            .storyListCanvas()
             .navigationTitle("Edit care plan")
             .toolbar {ToolbarItem(placement:.confirmationAction){Button("Done"){taskSheet=nil}}}
             .sheet(isPresented:Binding(get:{practitionerFactIDs != nil},set:{if !$0 {practitionerFactIDs=nil}})) {
@@ -729,14 +731,14 @@ struct HealthSummaryView: View {
         } else {
             DisclosureGroup {
                 Text("These entries share a name. Their details and original records are kept separately below.")
-                    .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+                    .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 ForEach(group.facts) { fact in factRow(fact) }
                 ForEach(group.members) { member in contactRow(member) }
             } label: {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(group.title).font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(.primary)
+                    Text(group.title).font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(StoryDesignTokens.ink)
                     Text("\(group.count) saved entries · View details")
-                        .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+                        .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 }.padding(.vertical, 8)
             }
         }
@@ -750,10 +752,10 @@ struct HealthSummaryView: View {
                           statusOverride: statusTitle, showBodySystem: false, practitionerName: model.practitionerName(for: fact))
             if fact.isAction {
                 if model.practitionerName(for: fact) == nil && fact.latest.evidence?.practitioner?.isEmpty != false {
-                    Text("Provider not recorded").font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+                    Text("Provider not recorded").font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
                 if fact.latest.evidence?.eventDate?.isEmpty != false && fact.latest.relevantDate == nil {
-                    Text("Clinical date not recorded").font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+                    Text("Clinical date not recorded").font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
 
             }
@@ -801,21 +803,21 @@ struct HealthSummaryView: View {
     private func categoryLabel(_ title: String, count: Int) -> some View {
         if typeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 8) {
-                Text(title).font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(.primary)
+                Text(title).font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(StoryDesignTokens.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
                     SummaryCategoryIcon(title: title).accessibilityHidden(true)
                     Text("\(count) \(count == 1 ? "detail" : "details")")
-                        .font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+                        .font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
             }.padding(.vertical, 6)
         } else {
             HStack(spacing: 12) {
                 SummaryCategoryIcon(title: title).accessibilityHidden(true)
-                Text(title).font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(.primary)
+                Text(title).font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(StoryDesignTokens.ink)
                     .fixedSize(horizontal: false, vertical: true).layoutPriority(1)
                 Spacer(minLength: 4)
-                Text(count.formatted()).foregroundStyle(.secondary).monospacedDigit()
+                Text(count.formatted()).foregroundStyle(StoryDesignTokens.secondaryInk).monospacedDigit()
                     .accessibilityLabel("\(count) details")
             }.frame(minHeight: 48)
         }
@@ -833,7 +835,7 @@ struct HealthSummaryView: View {
     private func contactRow(_ member: CareTeamMember) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 8) {
-                Text(member.name).font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(.primary)
+                Text(member.name).font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(StoryDesignTokens.ink)
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
                 Menu {
                     Button("Edit", systemImage: "pencil") { taskSheet = .contact(member) }
@@ -999,17 +1001,18 @@ private struct HealthAreaDetailView<Content: View>: View {
                     Section {
                         conditionContent(condition)
                     } header: {
-                        Text(HealthStoryText.displayName(condition.name)).font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(.primary)
+                        Text(HealthStoryText.displayName(condition.name)).font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(StoryDesignTokens.ink)
                             .textCase(nil).accessibilityAddTraits(.isHeader)
                     }
                 }
             } else {
                 Section {
                     Text("No concerns in this area. Your saved details are available in All.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
             }
         }
+        .storyListCanvas()
         .navigationTitle(kind.title)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -1073,21 +1076,21 @@ struct HealthFactRow: View {
                 if let actions { actions }
             }
             if isCare {
-                Text(careDate).font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+                Text(careDate).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 if CareInstructionPresentation.bucket(fact) == .followUp {
                     Text(fact.latest.evidence?.careInstruction?.owner.map { "Next step: " + $0 } ?? "Owner not specified")
-                        .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+                        .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
                 if let practitioner = practitionerName ?? fact.displayEntry.evidence?.practitioner, !practitioner.isEmpty {
-                    Text(practitioner).font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+                    Text(practitioner).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
                 DisclosureGroup("Details and sources", isExpanded: $careExpanded) {
                     ForEach(CareInstructionPresentation.supportingText(fact.latest), id: \.self) { RecordFieldLine(text: $0) }
                     if let kind = fact.latest.evidence?.careInstruction?.consideration { RecordFieldLine(label: "Context", value: kind) }
                     ForEach(fact.occurrences) { occurrence in
                         Text(occurrence.sourceTitle ?? "Original record").font(StoryDesignTokens.font(.subheadline))
-                        Text(dateLabel(occurrence)).font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
-                        if let excerpt = occurrence.supportingExcerpt { Text(excerpt).font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary) }
+                        Text(dateLabel(occurrence)).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
+                        if let excerpt = occurrence.supportingExcerpt { Text(excerpt).font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk) }
                     }
                     if let open { Button("Open detail and original records", action: open) }
                 }
@@ -1108,8 +1111,8 @@ struct HealthFactRow: View {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(occurrence.sourceTitle ?? "Original record").font(StoryDesignTokens.font(.subheadline, weight: .semibold))
                             Text(occurrence.title).font(StoryDesignTokens.font(.subheadline)).textSelection(.enabled)
-                            if !occurrence.details.isEmpty { Text(occurrence.details).font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary).textSelection(.enabled) }
-                            if let quote = occurrence.supportingExcerpt { Text(quote).font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary).textSelection(.enabled) }
+                            if !occurrence.details.isEmpty { Text(occurrence.details).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk).textSelection(.enabled) }
+                            if let quote = occurrence.supportingExcerpt { Text(quote).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk).textSelection(.enabled) }
                         }.padding(.vertical, 4)
                     }
                 }.font(StoryDesignTokens.font(.subheadline))
@@ -1162,11 +1165,10 @@ private struct RecordStatusTag: View {
     @Environment(\.colorScheme) private var colorScheme
     private var tint: Color {
         switch text {
-        case "Verified", "Completed": return colorScheme == .dark ? .green : Color(red: 0.10, green: 0.39, blue: 0.20)
+        case "Verified", "Completed", "Current": return StoryDesignTokens.ink
         case "Unverified", "Paused": return colorScheme == .dark ? .orange : Color(red: 0.58, green: 0.28, blue: 0.02)
         case "Needs another try": return .red
-        case "Current": return .blue
-        default: return .secondary
+        default: return StoryDesignTokens.secondaryInk
         }
     }
     var body: some View {
@@ -1211,7 +1213,7 @@ private struct RecordFieldLine: View {
             if let url = Self.link(label: label, value: value) {
                 let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 6))
                 layout {
-                    Text(label + ":").fontWeight(.semibold).foregroundStyle(.primary)
+                    Text(label + ":").fontWeight(.semibold).foregroundStyle(StoryDesignTokens.ink)
                     Button { openURL(url) } label: {
                         Text(value)
                             .multilineTextAlignment(.leading)
@@ -1265,6 +1267,7 @@ private struct FactDuplicateSheet: View {
                     }
                 }
             }
+            .storyListCanvas()
             .navigationTitle("Combine duplicate")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .alert("Could not combine", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
@@ -1314,6 +1317,7 @@ private struct ContactDuplicateSheet: View {
                     }
                 }
             }
+            .storyListCanvas()
             .navigationTitle("Combine duplicate")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .alert("Could not combine", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
@@ -1372,8 +1376,9 @@ private struct ConditionAssignmentSheet: View {
                     }
                     TextField("Another condition or concern", text: $newName)
                 }
-                if let error { Text(error).foregroundStyle(.red) }
+                if let error { Text(error).foregroundStyle(StoryDesignTokens.action) }
             }
+            .storyListCanvas()
             .navigationTitle("Assign condition")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -1437,13 +1442,13 @@ private struct SummaryRegionHeader: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StoryDesignTokens.secondaryInk)
                 .accessibilityLabel(region.workingLabel + " View progress")
                 SummaryActivityLine(fraction: fraction).accessibilityHidden(true)
             } else {
                 Text(title).font(StoryDesignTokens.font(.headline, weight: .semibold))
                     .accessibilityAddTraits(.isHeader)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(StoryDesignTokens.ink)
             }
         }
         .textCase(nil)
@@ -1460,14 +1465,14 @@ private struct SummaryActivityLine: View {
     var body: some View {
         GeometryReader { geometry in
             let width = geometry.size.width
-            Capsule().fill(Color.secondary.opacity(0.12))
+            Capsule().fill(StoryDesignTokens.secondaryInk.opacity(0.12))
                 .overlay(alignment: .leading) {
                     if let fraction {
-                        Capsule().fill(BrandPalette.systemBlue)
+                        Capsule().fill(StoryDesignTokens.action)
                             .frame(width: width * min(1, max(0, fraction)))
                             .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: fraction)
                     } else {
-                        Capsule().fill(BrandPalette.systemBlue.opacity(0.65))
+                        Capsule().fill(StoryDesignTokens.action.opacity(0.65))
                             .frame(width: width * 0.3)
                             .offset(x: reduceMotion ? width * 0.35 : (moving ? width : -width * 0.3))
                     }
@@ -1528,9 +1533,9 @@ private struct SummaryUpdateProgressSheet: View {
                     Section {
                         if needsAttention || isPaused {
                             Text("Your saved details are available. You can leave this screen and continue using the app.")
-                            if let retained = model.retainedRecordNotice { Text(retained).foregroundStyle(.secondary) }
+                            if let retained = model.retainedRecordNotice { Text(retained).foregroundStyle(StoryDesignTokens.secondaryInk) }
                             if awaitsRecordReview {
-                                Text("The overview will stay unchanged until the record changes are resolved.").foregroundStyle(.secondary)
+                                Text("The overview will stay unchanged until the record changes are resolved.").foregroundStyle(StoryDesignTokens.secondaryInk)
                             }
                             if !model.categoryReviews.isEmpty {
                                 NavigationLink("Compare retained records") {WholeHistoryUpdateReviewView(health:model)}
@@ -1553,19 +1558,19 @@ private struct SummaryUpdateProgressSheet: View {
                     ForEach(SummaryUpdateRegion.allCases.filter { supportsConditions || $0 != .conditions }) { region in
                         HStack(alignment: .top, spacing: 12) {
                             Image(systemName: awaitsRecordReview && region == .overview ? "doc.text.magnifyingglass" : symbol(model.state(for: region)))
-                                .foregroundStyle(model.state(for: region) == .updating ? BrandPalette.systemBlue : .secondary)
+                                .foregroundStyle(model.state(for: region) == .updating ? StoryDesignTokens.action : .secondary)
                                 .frame(width: 22)
                                 .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(region.title).font(StoryDesignTokens.font(.headline, weight: .semibold))
                                 Text(awaitsRecordReview && region == .overview ? "Waiting for record review" : label(model.state(for: region)))
-                                    .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+                                    .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk)
                                 if model.state(for: region) == .updating {
                                     if region == .details && progress.showsRecordCount && progress.total > 0 {
                                         Text("Record \(progress.current) of \(progress.total)")
-                                            .font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+                                            .font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                                     }
-                                    Text(progress.message).font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+                                    Text(progress.message).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                                         .textSelection(.enabled)
                                 }
                             }
@@ -1595,6 +1600,7 @@ private struct SummaryUpdateProgressSheet: View {
                     }
                 }
             }
+            .storyListCanvas()
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
@@ -1638,14 +1644,14 @@ private struct HealthCarePlanCardView:View {
                 SummaryCategoryIcon(title:SummaryEntryCategory.carePlan.displayTitle)
                 VStack(alignment:.leading,spacing:4) {
                     Text(HealthStoryText.displayName(plan.title)).font(StoryDesignTokens.font(.headline, weight: .semibold))
-                    Text("\(plan.actions.count) \(plan.actions.count==1 ? "action":"actions")").font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+                    Text("\(plan.actions.count) \(plan.actions.count==1 ? "action":"actions")").font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
                 Spacer()
                 Menu {Button("Edit plan",systemImage:"pencil",action:edit)} label:{RecordActionsIcon()}
                     .accessibilityLabel("Actions for \(HealthStoryText.displayName(plan.title))")
             }
-            Text(plan.sourceLabel).font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
-                        if let practitioner=plan.practitioner {Text(practitioner).font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)}
+            Text(plan.sourceLabel).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
+                        if let practitioner=plan.practitioner {Text(practitioner).font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk)}
             ForEach(CarePlanBucket.allCases,id:\.self) {bucket in
                 let actions=plan.actions.filter{$0.bucket==bucket}
                 if !actions.isEmpty {
@@ -1654,7 +1660,7 @@ private struct HealthCarePlanCardView:View {
                             Text(bucket == .carePlan ? "Actions":bucket == .followUp ? "Follow-up":"Considerations")
                         } icon: {
                             Image(systemName:bucket == .carePlan ? "checkmark.circle":bucket == .followUp ? "calendar":"text.bubble")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(StoryDesignTokens.secondaryInk)
                                 .accessibilityHidden(true)
                         }
                         .font(StoryDesignTokens.font(.subheadline, weight: .semibold))
@@ -1666,8 +1672,8 @@ private struct HealthCarePlanCardView:View {
                                 Text(action.text)
                                     .font(StoryDesignTokens.font(.subheadline))
                                     .fixedSize(horizontal:false,vertical:true)
-                                ForEach(action.metadata.filter{!$0.hasPrefix("When:") && !$0.hasPrefix("Context:")},id:\.self){Text($0).font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)}
-                                if action.status != "Current" {Text(action.status).font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)}
+                                ForEach(action.metadata.filter{!$0.hasPrefix("When:") && !$0.hasPrefix("Context:")},id:\.self){Text($0).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)}
+                                if action.status != "Current" {Text(action.status).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)}
                             }
                             .frame(maxWidth:.infinity,alignment:.leading)
                             .padding(.vertical,12)
@@ -1677,16 +1683,16 @@ private struct HealthCarePlanCardView:View {
                 }
             }
             DisclosureGroup("Details and sources") {
-                if plan.fictional {Text("Source context: role-play / fictional case").font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)}
+                if plan.fictional {Text("Source context: role-play / fictional case").font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)}
                 ForEach(plan.entries) {entry in
                     VStack(alignment:.leading,spacing:5) {
                         Text(entry.sourceTitle ?? "Original record").font(StoryDesignTokens.font(.subheadline, weight: .semibold))
                         Text(entry.title).font(StoryDesignTokens.font(.subheadline)).textSelection(.enabled)
-                        if let quote=entry.supportingExcerpt {Text(quote).font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary).textSelection(.enabled)}
+                        if let quote=entry.supportingExcerpt {Text(quote).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk).textSelection(.enabled)}
                     }.padding(.vertical,4)
                 }
             }.font(StoryDesignTokens.font(.subheadline))
-            Text(plan.unverified ? "Source linked · Unverified":(plan.reviewed ? "Reviewed by you":"Not reviewed")).font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+            Text(plan.unverified ? "Source linked · Unverified":(plan.reviewed ? "Reviewed by you":"Not reviewed")).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
         }.padding(.vertical,10)
     }
 }

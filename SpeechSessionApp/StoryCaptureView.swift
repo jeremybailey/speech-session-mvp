@@ -37,10 +37,35 @@ final class CaptureEditor: ObservableObject {
         self.activity = nil
         Task { await activity.end(nil, dismissalPolicy: .immediate) }
     }
+    private(set) var recordingAssetID: UUID?
+    @Published private(set) var extracting: Set<UUID> = []
+    let auth: KindeAuthManager
+
+    func extract(_ asset: SessionSourceAsset) {
+        guard !closed, asset.id != recordingAssetID, extracting.insert(asset.id).inserted else { return }
+        Task {
+            defer { extracting.remove(asset.id) }
+            do {
+                // Wait for coalesced writes so the source exists before its checkpoint.
+                var sequence: Int
+                repeat {
+                    sequence = saveSequence
+                    try await write?.value
+                } while sequence != saveSequence
+                let text = try await CaptureProcessing.shared.read(asset, recordID: record.id, store: store, auth: auth)
+                guard !closed, record.sourceAssets?.contains(where: { $0.id == asset.id }) == true else { return }
+                record.capture?.textByAsset[asset.id] = text
+                if text == nil { record.capture?.failedAssets.insert(asset.id) }
+                else { record.capture?.failedAssets.remove(asset.id) }
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+
     private let microphone = AudioRecordingService()
     let store: SessionStore
 
-    init(record: Session, store: SessionStore) {
+    init(record: Session, store: SessionStore, auth: KindeAuthManager) {
+        self.auth = auth
         self.record = record
         self.store = store
         self.sources = SessionSourceStore(storageDirectory: store.storageDirectory)
@@ -81,6 +106,8 @@ final class CaptureEditor: ObservableObject {
 
     func remove(_ asset: SessionSourceAsset) {
         record.sourceAssets?.removeAll { $0.id == asset.id }
+        record.capture?.textByAsset.removeValue(forKey: asset.id)
+        record.capture?.failedAssets.remove(asset.id)
         changed()
         let saved = write
         let url = sources.url(for: asset, sessionID: record.id)
@@ -119,6 +146,7 @@ final class CaptureEditor: ObservableObject {
         do {
             try microphone.startRecording(outputFileURL: sources.url(for: asset, sessionID: record.id)) { _ in }
             record.sourceAssets = (record.sourceAssets ?? []) + [asset]
+            recordingAssetID = asset.id
             recordingSince = Date()
             showWidget()
             changed()
@@ -135,7 +163,10 @@ final class CaptureEditor: ObservableObject {
         record.capture?.duration += Date().timeIntervalSince(since)
         hideWidget()
         recordingSince = nil
+        let finished = record.sourceAssets?.first { $0.id == recordingAssetID }
+        recordingAssetID = nil
         changed()
+        if let finished { extract(finished) }
     }
 
     func flush(commit: Bool, discard: Bool = false) async throws {
@@ -176,6 +207,7 @@ struct StoryCaptureView: View {
     @State private var filePicker = false
     @State private var fileTypes: [UTType] = []
     @State private var photos: [PhotosPickerItem] = []
+    @State private var expandedAssets: Set<UUID> = []
     @State private var preview: URL?
     @State private var extra: Extra?
     @State private var draftActions = false
@@ -194,8 +226,8 @@ struct StoryCaptureView: View {
         var id: String { rawValue }
     }
 
-    init(record: Session, store: SessionStore, home: HomeViewModel, importDocument: Bool = false, finish: @escaping (UUID?) -> Void) {
-        _editor = StateObject(wrappedValue: CaptureEditor(record: record, store: store))
+    init(record: Session, store: SessionStore, home: HomeViewModel, auth: KindeAuthManager, importDocument: Bool = false, finish: @escaping (UUID?) -> Void) {
+        _editor = StateObject(wrappedValue: CaptureEditor(record: record, store: store, auth: auth))
         _filePicker = State(initialValue: importDocument)
         _fileTypes = State(initialValue: importDocument ? [.pdf, .plainText] : [])
         self.home = home
@@ -214,7 +246,7 @@ struct StoryCaptureView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     TextField("Untitled record", text: field(\.patientTitle), axis: .vertical)
-                        .font(StoryDesignTokens.sectionHeading)
+                        .font(StoryDesignTokens.pageTitle)
                         .accessibilityIdentifier("Capture title")
                     RecordMetadataRow(session: editor.record, health: health, editTime: { extra = .time },
                                       editTeam: { extra = .team }, editConditions: { extra = .conditions })
@@ -233,9 +265,18 @@ struct StoryCaptureView: View {
                             Button {
                                 editor.remove(asset)
                             } label: { Image(systemName: "minus.circle") }
-                            .disabled(asset.id == editor.record.sourceAssets?.last(where: { $0.kind == .audio })?.id && editor.recordingSince != nil)
+                            .disabled(asset.id == editor.recordingAssetID)
                             .accessibilityLabel("Remove " + asset.displayName)
                         }.frame(minHeight: 44)
+                        if editor.extracting.contains(asset.id) {
+                            StoryThinkingStatus(asset.kind == .audio ? "Transcribing…" : asset.kind == .image ? "Reading photo…" : "Reading file…")
+                        } else if let text = editor.record.capture?.textByAsset[asset.id] {
+                            DisclosureGroup("View text", isExpanded: Binding(get: { expandedAssets.contains(asset.id) }, set: { expanded in
+                                if expanded { expandedAssets.insert(asset.id) } else { expandedAssets.remove(asset.id) }
+                            })) { Text(text).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled) }
+                        } else if editor.record.capture?.failedAssets.contains(asset.id) == true {
+                            Button("Couldn’t read this attachment · Retry") { editor.extract(asset) }
+                        }
                     }
                 }.padding().frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -257,7 +298,7 @@ struct StoryCaptureView: View {
                         }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { close(commit: true) }
+                    Button("Done") { close(commit: true) }
                         .disabled(!editor.hasContent || importing)
                 }
             }
@@ -265,6 +306,9 @@ struct StoryCaptureView: View {
         .interactiveDismissDisabled(ending || importing)
         .disabled(ending)
         .task {
+            for asset in editor.record.sourceAssets ?? [] where editor.record.capture?.textByAsset[asset.id] == nil && editor.record.capture?.failedAssets.contains(asset.id) != true {
+                editor.extract(asset)
+            }
             router?.onCaptureDismiss = { [editor, home] in
                 guard !editor.closed else { return }
                 editor.pause()
@@ -389,16 +433,18 @@ struct StoryCaptureView: View {
     private var paused: Bool { (editor.record.capture?.duration ?? 0) > 0 }
 
     private var recordControl: some View {
-        Button {
+        let prominent = !active && !editor.starting
+        return Button {
             if editor.starting { editor.cancelPendingStart() }
             else if active { editor.pause() }
             else { Task { await editor.start() } }
         } label: {
             Label(editor.starting ? "Cancel" : active ? "Pause" : paused ? "Resume" : "Record",
                   systemImage: editor.starting ? "xmark" : active ? "pause.fill" : "mic.fill")
+                .foregroundStyle(prominent ? StoryDesignTokens.onAction : StoryDesignTokens.ink)
                 .frame(maxWidth: .infinity, minHeight: 44)
         }
-        .storyControlStyle(prominent: !active && !editor.starting)
+        .storyControlStyle(prominent: prominent)
         .accessibilityHint(active || editor.starting ? "" : Self.reminder)
     }
 
@@ -425,12 +471,12 @@ struct StoryCaptureView: View {
             : AnyLayout(HStackLayout(alignment: .bottom, spacing: 10))
         return layout {
             VStack(spacing: 8) {
-                StorySpeechBubble(text: "Record a visit or voice journal. We’ll transcribe it and summarize the key details…", symbols: ["waveform"])
+                StorySpeechBubble(text: "Record a visit\nor voice journal.\nGet a transcript\nand summary…", symbols: ["waveform"])
                 recordControl
             }
 
             VStack(spacing: 8) {
-                StorySpeechBubble(text: "Add a lab report, medication photo or care plan. We’ll summarize what’s in it…", symbols: ["photo", "doc"])
+                StorySpeechBubble(text: "Add lab reports,\nmedication photos\nor care plans for\na summary…", symbols: ["photo", "doc"])
                 attachmentControl
             }
             .buttonStyle(.plain)
@@ -466,6 +512,7 @@ struct StoryCaptureView: View {
     private func append(_ asset: SessionSourceAsset) {
         editor.record.sourceAssets = (editor.record.sourceAssets ?? []) + [asset]
         editor.changed()
+        editor.extract(asset)
     }
 }
 
@@ -484,26 +531,8 @@ final class CaptureProcessing: ObservableObject {
             do {
                 guard let latest = try await store.loadAll().first(where: { $0.id == record.id }),
                       let current = latest.capture, !current.isDraft else { return }
-                let sources = SessionSourceStore(storageDirectory: store.storageDirectory)
-                for asset in latest.sourceAssets ?? [] where current.textByAsset[asset.id] == nil || current.failedAssets.contains(asset.id) {
-                    let url = sources.url(for: asset, sessionID: latest.id)
-                    let text: String?
-                    do {
-                        switch asset.kind {
-                        case .pdf, .plainText:
-                            text = try await DocumentFileExtractService().extractText(from: url)
-                        case .image, .multiPageScan:
-                            guard let image = UIImage(contentsOfFile: url.path) else { throw CocoaError(.fileReadCorruptFile) }
-                            text = try await DocumentScanService().transcribe(images: [image])
-                        case .audio:
-                            text = try await transcribe(url, auth: auth)
-                        }
-                    } catch {
-                        try await store.checkpointCapture(id: latest.id, asset: asset.id, text: nil, publish: false)
-                        continue
-                    }
-                    let readable = text?.trimmingCharacters(in: .whitespacesAndNewlines)
-                    try await store.checkpointCapture(id: latest.id, asset: asset.id, text: readable?.isEmpty == false ? text : nil, publish: false)
+                for asset in latest.sourceAssets ?? [] where current.textByAsset[asset.id] == nil {
+                    _ = try await read(asset, recordID: latest.id, store: store, auth: auth)
                 }
                 try await store.checkpointCapture(id: latest.id, asset: nil, text: nil, publish: true)
                 await home.loadSessions()
@@ -517,6 +546,36 @@ final class CaptureProcessing: ObservableObject {
                 }
             } catch { errors[record.id] = error.localizedDescription }
         }
+    }
+
+    private var reads: [UUID: Task<String?, Error>] = [:]
+
+    func read(_ asset: SessionSourceAsset, recordID: UUID, store: SessionStore, auth: KindeAuthManager) async throws -> String? {
+        if let existing = reads[asset.id] { return try await existing.value }
+        let task = Task<String?, Error> {
+            guard let saved = try await store.loadAll().first(where: { $0.id == recordID }),
+                  saved.sourceAssets?.contains(where: { $0.id == asset.id }) == true else { return nil }
+            if let text = saved.capture?.textByAsset[asset.id] { return text }
+            let url = SessionSourceStore(storageDirectory: store.storageDirectory).url(for: asset, sessionID: recordID)
+            let result: String?
+            do {
+                switch asset.kind {
+                case .pdf, .plainText:
+                    result = try await DocumentFileExtractService().extractText(from: url)
+                case .image, .multiPageScan:
+                    guard let image = UIImage(contentsOfFile: url.path) else { throw CocoaError(.fileReadCorruptFile) }
+                    result = try await DocumentScanService().transcribe(images: [image])
+                case .audio:
+                    result = try await transcribe(url, auth: auth)
+                }
+            } catch { result = nil }
+            let text = result?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? result : nil
+            try await store.checkpointCapture(id: recordID, asset: asset.id, text: text, publish: false)
+            return text
+        }
+        reads[asset.id] = task
+        defer { reads[asset.id] = nil }
+        return try await task.value
     }
 
     private func transcribe(_ url: URL, auth: KindeAuthManager) async throws -> String {

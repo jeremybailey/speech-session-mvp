@@ -38,9 +38,9 @@ private struct SettingsDataTransferView: View {
             if importing {
                 Section {
                     Button(selectedFile == nil ? "Choose ZIP file" : "Choose a different ZIP file") { showPicker = true }
-                    if selectedFile != nil { Text("ZIP file selected").foregroundStyle(.secondary) }
+                    if selectedFile != nil { Text("ZIP file selected").foregroundStyle(StoryDesignTokens.secondaryInk) }
                     Text("Enter the password used when this ZIP file was created. Passwords are case-sensitive.")
-                        .font(StoryDesignTokens.font(.footnote)).foregroundStyle(.secondary)
+                        .font(StoryDesignTokens.font(.footnote)).foregroundStyle(StoryDesignTokens.secondaryInk)
                     SecureField("File password", text: $password)
                         .textContentType(.password)
                         .textInputAutocapitalization(.never)
@@ -75,18 +75,18 @@ private struct SettingsDataTransferView: View {
                     Toggle("Include original files", isOn: $includeOriginals)
                     Text("Add original audio, PDFs, scans, and photos. Transcripts, extracted text, and saved results are always included.").font(StoryDesignTokens.font(.footnote))
                     Text("Use at least \(DataTransferArchive.minimumPasswordLength) characters. Words and spaces are fine; numbers and symbols are optional.")
-                        .font(StoryDesignTokens.font(.footnote)).foregroundStyle(.secondary)
+                        .font(StoryDesignTokens.font(.footnote)).foregroundStyle(StoryDesignTokens.secondaryInk)
                     SecureField("Choose a password", text: $password)
                         .textContentType(.newPassword)
                     if !password.isEmpty && password.count < DataTransferArchive.minimumPasswordLength {
                         Text("\(DataTransferArchive.minimumPasswordLength - password.count) more characters needed.")
-                            .font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+                            .font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                     }
                     SecureField("Confirm password", text: $confirmation)
                         .textContentType(.newPassword)
                     if !confirmation.isEmpty && password != confirmation {
                         Text("Passwords don’t match yet.")
-                            .font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+                            .font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                     }
                     Button("Create encrypted ZIP") { export() }
                         .disabled(password.count < DataTransferArchive.minimumPasswordLength || password != confirmation)
@@ -105,8 +105,9 @@ private struct SettingsDataTransferView: View {
                     Button("Cancel", role: .cancel) { operation?.cancel(); status = "Cancelling safely…" }
                 }
             } else if !status.isEmpty { Section { Text(status) } }
-            if let errorMessage { Section { Text(errorMessage).foregroundStyle(.red) } }
+            if let errorMessage { Section { Text(errorMessage).foregroundStyle(StoryDesignTokens.action) } }
         }
+        .storyListCanvas()
         .navigationTitle(importing ? "Import data" : "Export data")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(busy)
@@ -330,7 +331,7 @@ struct SettingsView: View {
                         Image(systemName: "heart.text.square")
                     }
                     .font(StoryDesignTokens.font(.footnote))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StoryDesignTokens.secondaryInk)
                 } header: {
                     Text("Beta Notice")
                 }
@@ -341,7 +342,7 @@ struct SettingsView: View {
                             LabeledContent("Signed in", value: email)
                         } else {
                             Text("Signed in")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(StoryDesignTokens.secondaryInk)
                         }
                         Button("Sign Out", role: .destructive) {
                             Task {
@@ -418,6 +419,7 @@ struct SettingsView: View {
                                 if let error = health.overviewNotice { Text(error) }
                             }
                         }
+                        .storyListCanvas()
                         .navigationTitle("Update diagnostics")
                     }
                 }
@@ -451,7 +453,8 @@ struct SettingsView: View {
                                     }
                                 }
                                 Text("Unresolved charges: \(usage.unresolved_charges). These are not included in known costs; their budget remains reserved.")
-                            }.navigationTitle("AI usage")
+                            }
+                            .storyListCanvas().navigationTitle("AI usage")
                         }
                         Button("Copy usage report") { UIPasteboard.general.string = usage.report }
                     }
@@ -477,7 +480,7 @@ struct SettingsView: View {
                     Section {
                         Label(reason, systemImage: "exclamationmark.triangle")
                             .font(StoryDesignTokens.font(.footnote))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(StoryDesignTokens.secondaryInk)
                     }
                 }
 
@@ -552,13 +555,13 @@ struct SettingsView: View {
                             Section {
                                 Label(OnDeviceSummaryService.unavailabilityReason, systemImage: "exclamationmark.triangle")
                                     .font(StoryDesignTokens.font(.footnote))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(StoryDesignTokens.secondaryInk)
                             }
                         }
                     }
                 }
             }
-            .scrollContentBackground(.hidden)
+            .storyListCanvas()
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -646,13 +649,13 @@ struct SettingsView: View {
         case .checking:
             HStack {
                 ProgressView().scaleEffect(0.8)
-                Text("Checking…").foregroundStyle(.secondary)
+                Text("Checking…").foregroundStyle(StoryDesignTokens.secondaryInk)
             }
 
         case .notDownloaded:
             HStack {
                 Label("Not downloaded", systemImage: "icloud.and.arrow.down")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StoryDesignTokens.secondaryInk)
                 Spacer()
                 Button("Download") {
                     Task { await startDownload() }
@@ -665,20 +668,20 @@ struct SettingsView: View {
             HStack {
                 ProgressView().scaleEffect(0.8)
                 Text("Downloading… this may take a minute")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StoryDesignTokens.secondaryInk)
             }
 
         case .ready:
             Label("Ready to use", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(BrandPalette.systemGreen)
+                .foregroundStyle(StoryDesignTokens.ink)
 
         case .failed(let message):
             VStack(alignment: .leading, spacing: 8) {
                 Label("Download failed", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(BrandPalette.systemRed)
+                    .foregroundStyle(StoryDesignTokens.action)
                 Text(message)
                     .font(StoryDesignTokens.font(.caption))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StoryDesignTokens.secondaryInk)
                 Button("Retry") {
                     Task { await startDownload() }
                 }
@@ -886,10 +889,10 @@ struct WholeHistoryUpdateReviewView: View {
         List {
             Section {
                 Text("Compare the previous details with the new version before changing how a record is organized. This does not mark its contents as clinically verified.")
-                    .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+                    .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk)
             }
             if health.categoryReviews.isEmpty {
-                Text("There are no retained category changes to review.").foregroundStyle(.secondary)
+                Text("There are no retained category changes to review.").foregroundStyle(StoryDesignTokens.secondaryInk)
             }
             ForEach(health.categoryReviews) {review in
                 NavigationLink {
@@ -898,11 +901,12 @@ struct WholeHistoryUpdateReviewView: View {
                     VStack(alignment:.leading,spacing:4) {
                         Text(review.session.title ?? "Original record")
                         Text(review.missingCategories.map(\.displayTitle).sorted().joined(separator:", "))
-                            .font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+                            .font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                     }
                 }
             }
         }
+        .storyListCanvas()
         .navigationTitle("Review category changes")
     }
 }
@@ -918,7 +922,7 @@ private struct WholeHistoryRecordReviewView: View {
         List {
             Section {
                 Text("These categories appeared in the previous version but are absent from the new one: "+review.missingCategories.map(\.displayTitle).sorted().joined(separator:", ")+". Check that their information is still represented correctly before using the new details.")
-                    .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+                    .font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 DisclosureGroup("Original record") {Text(review.session.transcript).textSelection(.enabled)}
             }
             Section("Previous details in those categories") {
@@ -934,6 +938,7 @@ private struct WholeHistoryRecordReviewView: View {
                 Text("Your original record and the previous version stay saved. This action does not use your AI allowance. Go back to keep the previous details.")
             }
         }
+        .storyListCanvas()
         .navigationTitle("Compare details")
         .confirmationDialog("Use the new organization for this record?",isPresented:$confirm,titleVisibility:.visible) {
             Button("Use new details") {
@@ -958,11 +963,11 @@ private struct WholeHistoryRecordReviewView: View {
             ForEach(entry.fields.filter{!$0.isMissing && !$0.value.isEmpty}) {field in
                 LabeledContent(field.label,value:field.value)
             }
-            if let quote=entry.sourceExcerpt,!quote.isEmpty {Text(quote).font(StoryDesignTokens.font(.footnote)).foregroundStyle(.secondary).textSelection(.enabled)}
+            if let quote=entry.sourceExcerpt,!quote.isEmpty {Text(quote).font(StoryDesignTokens.font(.footnote)).foregroundStyle(StoryDesignTokens.secondaryInk).textSelection(.enabled)}
         } label: {
             VStack(alignment:.leading,spacing:4) {
                 Text(entry.title)
-                Text(entry.category.displayTitle).font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+                Text(entry.category.displayTitle).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
             }
         }
     }

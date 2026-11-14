@@ -5,6 +5,7 @@
 	<key>UIAppFonts</key>
 	<array>
 		<string>BrandFonts/ebgaramond.ttf</string>
+		<string>BrandFonts/ebgaramond-italic.ttf</string>
 		<string>BrandFonts/inter.ttf</string>
 		<string>BrandFonts/caveat.ttf</string>
 	</array>

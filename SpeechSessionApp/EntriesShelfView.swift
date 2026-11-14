@@ -30,12 +30,12 @@ struct EntriesShelfView: View {
                     HStack(spacing: 14) {
                         Image(systemName: "waveform")
                             .font(.system(size: 20, weight: .medium))
-                            .foregroundStyle(BrandPalette.systemBlue)
+                            .foregroundStyle(StoryDesignTokens.action)
                             .frame(width: 28)
                         Text("All entries")
                         Spacer()
                         Text("\(home.sessions.count)")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(StoryDesignTokens.secondaryInk)
                     }
                 }
                 .listRowBackground(BrandPalette.surface)
@@ -45,7 +45,7 @@ struct EntriesShelfView: View {
                 if home.folders.isEmpty {
                     Text("No folders yet. Open an entry list and use the plus button to add entries, or create a folder here.")
                         .font(StoryDesignTokens.font(.subheadline))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(StoryDesignTokens.secondaryInk)
                         .listRowBackground(BrandPalette.surface)
                 }
                 ForEach(home.folders) { folder in
@@ -53,12 +53,12 @@ struct EntriesShelfView: View {
                         HStack(spacing: 14) {
                             Image(systemName: "folder")
                                 .font(.system(size: 20, weight: .medium))
-                                .foregroundStyle(BrandPalette.systemBlue)
+                                .foregroundStyle(StoryDesignTokens.action)
                                 .frame(width: 28)
                             Text(folder.name)
                             Spacer()
                             Text("\(home.sessions.filter { $0.folderID == folder.id }.count)")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(StoryDesignTokens.secondaryInk)
                         }
                     }
                     .listRowBackground(BrandPalette.surface)

@@ -123,8 +123,8 @@ struct SessionDetailView: View {
                 }
             }
         }
-            if !editingNote && session.capture != nil && captureWorker.active.contains(session.id) {
-                StoryThinkingStatus("Preparing details…")
+            if !(storyLab && selectedTab == .transcript) && !editingNote && captureWorker.active.contains(session.id) {
+                StoryThinkingStatus("Preparing summary…")
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .background(.regularMaterial, in: Capsule())
@@ -136,7 +136,7 @@ struct SessionDetailView: View {
         .safeAreaInset(edge: .bottom) {
             if editingNote { EmptyView() }
             else if let capture = session.capture {
-                if captureWorker.active.contains(session.id) { EmptyView() }
+                if preparingCaptureSummary { EmptyView() }
                 else if !capture.failedAssets.isEmpty || captureWorker.errors[session.id] != nil || capture.pending {
                     Button("Retry unfinished processing") { processCapture() }.padding(8)
                 } else if !session.transcript.isEmpty && recordFacts.isEmpty {
@@ -350,6 +350,11 @@ struct SessionDetailView: View {
         }
     }
 
+    private var preparingCaptureSummary: Bool {
+        captureWorker.active.contains(session.id) ||
+            (session.capture?.pending == true && captureWorker.errors[session.id] == nil)
+    }
+
     private var noteCanvas: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -362,54 +367,58 @@ struct SessionDetailView: View {
                         Button { beginNoteEdit(.title) } label: { Text(verbatim: session.displayTitle) }
                             .accessibilityHint("Edit record title")
                     }
-                }.font(StoryDesignTokens.heading(.largeTitle)).foregroundStyle(.primary)
+                }.font(StoryDesignTokens.pageTitle).foregroundStyle(StoryDesignTokens.ink)
                     .multilineTextAlignment(.leading)
                 noteMetadata.disabled(editingNote)
                 let content = editingNote ? draftBlocks : blocks()
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(content.indices, id: \.self) { i in
-                        let block = content[i]
-                        if let category = block.fact?.category,
-                           i == 0 || content[i - 1].fact?.category != category {
-                            Text(category.displayTitle)
-                                .font(StoryDesignTokens.font(.title2, weight: .bold))
-                                .foregroundStyle(.primary)
-                                .accessibilityAddTraits(.isHeader)
-                                .padding(.top, i == 0 ? 0 : 24)
-                        }
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            if block.fact != nil { Text("•").accessibilityHidden(true) }
-                            VStack(alignment: .leading, spacing: 2) {
-                                if savingNote { Text(verbatim: block.text) }
-                                else if editingNote {
-                                    TextField("Write a summary…", text: Binding(get: {
-                                        draftBlocks.indices.contains(i) ? draftBlocks[i].text : ""
-                                    }, set: { if draftBlocks.indices.contains(i) { draftBlocks[i].text = $0 } }), axis: .vertical)
-                                        .focused($noteFocus, equals: .block(i)).accessibilityLabel("Note paragraph \(i + 1)")
-                                } else {
-                                    Button { beginNoteEdit(.block(i)) } label: {
-                                        Text(verbatim: block.text.isEmpty ? "Write a summary…" : block.text)
-                                            .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                                    }.accessibilityHint("Edit record text")
-                                }
-                                if let fact = block.fact {
-                                    Button {
-                                        openFact(RecordFactSelection(factID: fact.id, entryID: fact.latest.id))
-                                    } label: {
-                                        StorySourceTag(title: fact.category.displayTitle,
-                                                       systemImage: SummaryCategoryIcon(title: fact.category.displayTitle).icon)
-                                    }
-                                    .disabled(editingNote)
-                                    .accessibilityLabel("Open detail: \(fact.title)")
-                                }
+                if preparingCaptureSummary && content.allSatisfy({ $0.text.isEmpty }) {
+                    StoryThinkingStatus("Preparing summary…")
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(content.indices, id: \.self) { i in
+                            let block = content[i]
+                            if let category = block.fact?.category,
+                               i == 0 || content[i - 1].fact?.category != category {
+                                Text(category.displayTitle)
+                                    .font(StoryDesignTokens.sectionHeading)
+                                    .foregroundStyle(StoryDesignTokens.ink)
+                                    .accessibilityAddTraits(.isHeader)
+                                    .padding(.top, i == 0 ? 0 : 24)
                             }
-                        }.font(StoryDesignTokens.body)
-                            .lineSpacing(4).padding(.top, 8)
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                if block.fact != nil { Text("•").accessibilityHidden(true) }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    if savingNote { Text(verbatim: block.text) }
+                                    else if editingNote {
+                                        TextField("Write a summary…", text: Binding(get: {
+                                            draftBlocks.indices.contains(i) ? draftBlocks[i].text : ""
+                                        }, set: { if draftBlocks.indices.contains(i) { draftBlocks[i].text = $0 } }), axis: .vertical)
+                                            .focused($noteFocus, equals: .block(i)).accessibilityLabel("Note paragraph \(i + 1)")
+                                    } else {
+                                        Button { beginNoteEdit(.block(i)) } label: {
+                                            Text(verbatim: block.text.isEmpty ? "Write a summary…" : block.text)
+                                                .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                                        }.accessibilityHint("Edit record text")
+                                    }
+                                    if let fact = block.fact {
+                                        Button {
+                                            openFact(RecordFactSelection(factID: fact.id, entryID: fact.latest.id))
+                                        } label: {
+                                            StorySourceTag(title: fact.category.displayTitle,
+                                                           systemImage: SummaryCategoryIcon(title: fact.category.displayTitle).icon)
+                                        }
+                                        .disabled(editingNote)
+                                        .accessibilityLabel("Open detail: \(fact.title)")
+                                    }
+                                }
+                            }.font(StoryDesignTokens.body)
+                                .lineSpacing(4).padding(.top, 8)
+                        }
                     }
                 }
                 if let directory, let assets = session.sourceAssets, !assets.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Attached").font(.subheadline).foregroundStyle(.secondary)
+                        Text("Attached").font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
                             .accessibilityAddTraits(.isHeader)
                         ScrollView(.horizontal) {
                             LazyHStack(alignment: .top, spacing: 8) {
@@ -423,7 +432,7 @@ struct SessionDetailView: View {
                                             RawAssetThumbnail(url: url, kind: asset.kind,
                                                               size: CGSize(width: 88, height: 70))
                                             if asset.kind != .image {
-                                                Text(asset.displayName).font(.caption).lineLimit(2)
+                                                Text(asset.displayName).font(StoryDesignTokens.font(.caption)).lineLimit(2)
                                                     .frame(width: 88, alignment: .leading)
                                             }
                                         }
@@ -482,7 +491,7 @@ struct SessionDetailView: View {
             if !health.isProcessing, let issue = health.processingIssue {
                 SummaryProcessingIssueView(issue: issue, retry: { regenerate(retryUnfinished: true) })
             }
-            if let error = health.error { Text(error).foregroundStyle(.secondary) }
+            if let error = health.error { Text(error).foregroundStyle(StoryDesignTokens.secondaryInk) }
             let excluded = (session.summaryEntries ?? []).filter { !$0.isDeleted && !SummaryVerification.isVisible($0, source: session.transcript) }
             if !excluded.isEmpty {
                 DisclosureGroup("Details kept in original (\(excluded.count))") {
@@ -490,7 +499,7 @@ struct SessionDetailView: View {
                     ForEach(excluded) { entry in
                         VStack(alignment: .leading, spacing: 6) {
                             Text(entry.title).font(StoryDesignTokens.font(.headline, weight: .semibold))
-                            Text(SummaryVerification.exclusionReason(entry, source: session.transcript)).font(StoryDesignTokens.font(.caption)).foregroundStyle(.secondary)
+                            Text(SummaryVerification.exclusionReason(entry, source: session.transcript)).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                             Button("Edit and add to health story") {
                                 openFact(RecordFactSelection(factID: HealthMemoryProjection.key(for: entry), entryID: entry.id, sourceOnlyEntry: entry))
                             }
@@ -519,12 +528,13 @@ struct SessionDetailView: View {
                         SummaryCategoryIcon(title: category.displayTitle).accessibilityHidden(true)
                         Text(category.displayTitle).font(StoryDesignTokens.font(.headline, weight: .semibold))
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Text(facts.count.formatted()).foregroundStyle(.secondary)
+                        Text(facts.count.formatted()).foregroundStyle(StoryDesignTokens.secondaryInk)
                             .accessibilityLabel("\(facts.count) details")
                     }.frame(minHeight: 48)
                 }
             }
-        }.listStyle(.insetGrouped)
+        }
+        .storyListCanvas().listStyle(.insetGrouped)
     }
 
     private func openFact(_ selection: RecordFactSelection) {
@@ -663,7 +673,7 @@ struct RecordMetadataRow: View {
                         if let name = names.first { Text(verbatim: name); if names.count > 1 { Text("+\(names.count - 1)") } }
                     }
                 }.frame(minWidth: 44, minHeight: 44).accessibilityLabel(names.isEmpty ? "Add to condition" : "Conditions: " + names.joined(separator: ", "))
-            }.font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+            }.font(StoryDesignTokens.font(.subheadline)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 .buttonStyle(.plain).controlSize(.regular)
         }.scrollIndicators(.hidden)
     }
@@ -709,17 +719,18 @@ struct RecordAttributeEditor: View {
                             Button {
                                 if !ids.insert(person.id).inserted { ids.remove(person.id) }
                             } label: {
-                                HStack { Text(person.name).foregroundStyle(.primary); Spacer()
+                                HStack { Text(person.name).foregroundStyle(StoryDesignTokens.ink); Spacer()
                                     if ids.contains(person.id) { Image(systemName: "checkmark") }
                                 }
                             }.accessibilityValue(ids.contains(person.id) ? "Selected" : "Not selected")
                         }
                         Button("Add care team member", systemImage: "person.badge.plus") { member = CareTeamMember() }
                     }
+                    .storyListCanvas()
                 case "time":
-                    Form { DatePicker("Record date and time", selection: $date) }
+                    Form { DatePicker("Record date and time", selection: $date) }.storyListCanvas()
                 case "title":
-                    Form { TextField("Record title", text: $value, axis: .vertical) }
+                    Form { TextField("Record title", text: $value, axis: .vertical) }.storyListCanvas()
                 default:
                     TextEditor(text: $value).font(StoryDesignTokens.body).padding().accessibilityLabel("Extracted text")
                 }
@@ -817,11 +828,11 @@ private struct RawRecordSheet: View {
                                 Button { preview = url } label: {
                                     HStack {
                                         RawAssetThumbnail(url: url, kind: asset.kind)
-                                        Text(asset.displayName).font(.headline)
+                                        Text(asset.displayName).font(StoryDesignTokens.label)
                                         Image(systemName: "chevron.forward").font(.caption)
                                     }
                                 }
-                            } else { Text(asset.displayName).font(.headline) }
+                            } else { Text(asset.displayName).font(StoryDesignTokens.label) }
                             if usesSeparatePassages {
                                 passage(Binding(get: { passages[asset.id] ?? "" }, set: { passages[asset.id] = $0 }))
                             } else if assets.count == 1 && base.capture == nil {
@@ -862,14 +873,14 @@ private struct RawRecordSheet: View {
     }
 
     private func section(_ title: String, text: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: 8) { Text(title).font(.headline); passage(text) }
+        VStack(alignment: .leading, spacing: 8) { Text(title).font(StoryDesignTokens.section); passage(text) }
     }
 
     @ViewBuilder private func passage(_ text: Binding<String>) -> some View {
         if editing {
             TextField("Extracted text", text: text, axis: .vertical).textFieldStyle(.plain)
         } else if text.wrappedValue.isEmpty {
-            Text("No extracted text yet").foregroundStyle(.secondary)
+            Text("No extracted text yet").foregroundStyle(StoryDesignTokens.secondaryInk)
         } else {
             Text(verbatim: text.wrappedValue).textSelection(.enabled)
         }

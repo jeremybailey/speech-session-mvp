@@ -9,10 +9,10 @@ let context = CGContext(data: nil, width: size, height: size, bitsPerComponent: 
                         bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
 NSGraphicsContext.saveGraphicsState()
 NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-NSColor(srgbRed: 1, green: 238.0/255, blue: 207.0/255, alpha: 1).setFill()
+NSColor(srgbRed: 219.0/255, green: 80.0/255, blue: 74.0/255, alpha: 1).setFill()
 NSRect(x: 0, y: 0, width: size, height: size).fill()
 let configuration = NSImage.SymbolConfiguration(pointSize: 640, weight: .semibold)
-    .applying(.init(paletteColors: [NSColor(srgbRed: 219.0/255, green: 80.0/255, blue: 74.0/255, alpha: 1)]))
+    .applying(.init(paletteColors: [NSColor(srgbRed: 1, green: 238.0/255, blue: 207.0/255, alpha: 1)]))
 let heart = NSImage(systemSymbolName: "heart.fill", accessibilityDescription: nil)!.withSymbolConfiguration(configuration)!
 let width: CGFloat = 700
 let height = width * heart.size.height / heart.size.width

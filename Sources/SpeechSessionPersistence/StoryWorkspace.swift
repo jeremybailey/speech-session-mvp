@@ -138,8 +138,12 @@ extension SessionStore {
         let previousBlocks=env.story.blocks
         let protectedIDs=Set(previousBlocks.filter{$0.patientWritten || $0.suppressed}.flatMap(\.factIDs)+env.story.edits.filter{$0.state=="correction"}.flatMap(\.factIDs))
         if let overview=storyOverview(for:facts) {
+            var available = previousBlocks.filter { !$0.patientWritten && !$0.suppressed }
             let generated=overview.sentences.filter{Set($0.factIDs).isDisjoint(with:protectedIDs)}.map {sentence -> StoryBlock in
-                let old=previousBlocks.first{!$0.patientWritten && !$0.suppressed && Set($0.factIDs)==Set(sentence.factIDs)}
+                let citedFacts = Set(sentence.factIDs)
+                let index = available.firstIndex { $0.text == sentence.text && Set($0.factIDs) == citedFacts }
+                    ?? available.firstIndex { Set($0.factIDs) == citedFacts }
+                let old = index.map { available.remove(at: $0) }
                 return StoryBlock(id:old?.id ?? UUID(),revision:old?.revision ?? 0,text:sentence.text,factIDs:sentence.factIDs)
             }
             // Patient blocks retain their position; refreshed generated blocks fill the other slots.

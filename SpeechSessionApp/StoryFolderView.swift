@@ -113,6 +113,7 @@ private struct StoryFolderBrowser: View {
                 searchResults(term)
             }
         }
+        .scrollContentBackground(.hidden).background(StoryDesignTokens.canvas)
         .navigationTitle("Conditions")
         .searchable(text: $query, prompt: "Search health records")
         .sheet(isPresented: $creating) {
@@ -132,7 +133,7 @@ private struct StoryFolderBrowser: View {
                         Text(folder.name).font(StoryDesignTokens.label)
                         let count = health.recordFolders.recordIDs[folder.id]?.count ?? 0
                         Text(count == 1 ? "1 record" : "\(count) records")
-                            .font(StoryDesignTokens.caption).foregroundStyle(.secondary)
+                            .font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
                     }
                 }
             }
@@ -161,7 +162,7 @@ private struct StoryFolderBrowser: View {
                     NavigationLink(value: StoryRoute.fact(fact.id, nil, nil)) {
                         VStack(alignment: .leading) {
                             Text(fact.displayEntry.title)
-                            Text(fact.category.displayTitle).font(StoryDesignTokens.caption).foregroundStyle(.secondary)
+                            Text(fact.category.displayTitle).font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
                         }
                     }
                 }
@@ -177,7 +178,7 @@ private struct StoryFolderBrowser: View {
                         VStack(alignment: .leading) {
                             Text(record.displayTitle)
                             Text(record.date.formatted(date: .abbreviated, time: .shortened))
-                                .font(StoryDesignTokens.caption).foregroundStyle(.secondary)
+                                .font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
                         }
                     }.buttonStyle(.plain)
                 }
@@ -259,6 +260,7 @@ private struct FolderForm: View {
                     }
                 }
             }
+            .storyListCanvas()
             .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
@@ -326,7 +328,7 @@ struct RecordFolderPicker: View {
                         if selection.contains(folder.id) { selection.remove(folder.id) } else { selection.insert(folder.id) }
                     } label: {
                         HStack {
-                            Label(folder.name, systemImage: folder.symbol).foregroundStyle(.primary)
+                            Label(folder.name, systemImage: folder.symbol).foregroundStyle(StoryDesignTokens.ink)
                             Spacer()
                             Image(systemName: selection.contains(folder.id) ? "checkmark.circle.fill" : "circle")
                         }.frame(minHeight: 44)
@@ -334,7 +336,8 @@ struct RecordFolderPicker: View {
                     .accessibilityAddTraits(selection.contains(folder.id) ? .isSelected : [])
                 }
             }
-            .searchable(text: $query, prompt: "Search conditions")
+            .scrollContentBackground(.hidden).background(StoryDesignTokens.canvas)
+        .searchable(text: $query, prompt: "Search conditions")
             .navigationTitle("Record conditions").navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 guard !loaded else { return }

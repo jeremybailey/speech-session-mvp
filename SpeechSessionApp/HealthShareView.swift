@@ -48,7 +48,7 @@ struct HealthShareView: View {
                                     Text(category.displayTitle)
                                     Text("\(selectedCount) of \(facts.count) selected")
                                         .font(StoryDesignTokens.font(.caption))
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(StoryDesignTokens.secondaryInk)
                                 }
                             }
                             .toggleStyle(.switch)
@@ -62,8 +62,9 @@ struct HealthShareView: View {
                     Section { Toggle("Include my Personal Health Number", isOn: $includeHealthNumber) }
                 }
 
-                if let error { Text(error).foregroundStyle(.red) }
+                if let error { Text(error).foregroundStyle(StoryDesignTokens.action) }
             }
+            .storyListCanvas()
             #if DEBUG
             .task {
                 if ProcessInfo.processInfo.arguments.contains("--care-qa-pdf") && selectedIDs.isEmpty {

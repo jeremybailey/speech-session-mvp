@@ -45,6 +45,7 @@ struct AddEntryFlowSheet: View {
                 }
 
             }
+            .storyListCanvas()
             .navigationTitle("Add record")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

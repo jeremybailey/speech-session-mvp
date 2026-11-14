@@ -23,6 +23,29 @@ final class CaptureRecordTests: XCTestCase {
         XCTAssertEqual(records.first?.transcript, "Corrected passage")
     }
 
+    func testDraftAutosavePreservesExtractionUntilDone() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try SessionStore(storageDirectory: directory, sqliteEnabled: true)
+        let photo = SessionSourceAsset(kind: .image, relativePath: "photo.jpg", displayName: "Photo")
+        var draft = Session(transcript: "", sourceAssets: [photo])
+        draft.capture = RecordCapture()
+        try await store.upsert(draft)
+        try await store.checkpointCapture(id: draft.id, asset: photo.id, text: "Label", publish: false)
+        draft.capture?.notes = "My note"
+        try await store.upsert(draft)
+        let stored = try await store.loadAll()
+        XCTAssertEqual(stored.first?.transcript, "")
+        XCTAssertEqual(stored.first?.capture?.textByAsset[photo.id], "Label")
+        draft.capture?.isDraft = false
+        draft.capture?.pending = true
+        try await store.upsert(draft)
+        try await store.checkpointCapture(id: draft.id, asset: nil, text: nil, publish: true)
+        let result = try await store.loadAll()
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result.first?.transcript, "Patient notes\nMy note\n\nPhoto\nLabel")
+    }
+
     func testPartialCaptureRetryAndTitleAfterReload() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

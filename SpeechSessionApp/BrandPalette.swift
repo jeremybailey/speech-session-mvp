@@ -100,6 +100,11 @@ struct LiquidGlassRectangleModifier: ViewModifier {
 }
 
 extension View {
+    func storyListCanvas() -> some View {
+        scrollContentBackground(.hidden)
+            .background(StoryDesignTokens.canvas.ignoresSafeArea())
+    }
+
     /// Default Liquid Glass rounded surface over grouped screen chrome.
     func liquidGlassCard(cornerRadius: CGFloat = 14, interactive: Bool = false) -> some View {
         modifier(LiquidGlassRoundedCardModifier(cornerRadius: cornerRadius, interactive: interactive))

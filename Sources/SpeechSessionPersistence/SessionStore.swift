@@ -186,6 +186,17 @@ public actor SessionStore {
         }
         if let index = env.sessions.firstIndex(where: { $0.id == session.id }) {
             var updated = session
+            if let prior = previous?.capture, prior.isDraft, var capture = updated.capture {
+                for asset in updated.sourceAssets ?? [] {
+                    if let text = prior.textByAsset[asset.id] {
+                        capture.textByAsset[asset.id] = text
+                        capture.failedAssets.remove(asset.id)
+                    } else if prior.failedAssets.contains(asset.id) {
+                        capture.failedAssets.insert(asset.id)
+                    }
+                }
+                updated.capture = capture
+            }
             updated.summaryParagraphEdits = env.sessions[index].summaryParagraphEdits ?? session.summaryParagraphEdits
             if let selection = env.sessions[index].selectedFolderIDs {
                 updated.selectedFolderIDs = selection
@@ -962,10 +973,11 @@ public actor SessionStore {
     public func checkpointCapture(id: UUID, asset: UUID?, text: String?, publish: Bool) throws {
         var envelope = try loadEnvelope()
         guard let index = envelope.sessions.firstIndex(where: { $0.id == id }),
-              var capture = envelope.sessions[index].capture, !capture.isDraft else { return }
+              var capture = envelope.sessions[index].capture, !publish || !capture.isDraft else { return }
         if let asset {
+            guard envelope.sessions[index].sourceAssets?.contains(where: { $0.id == asset }) == true else { return }
             if let text {
-                if capture.textByAsset[asset] == nil,
+                if !capture.isDraft, capture.textByAsset[asset] == nil,
                    envelope.story.sources.contains(where: { $0.recordID == id && $0.patientEdited }),
                    let source = envelope.sessions[index].sourceAssets?.first(where: { $0.id == asset }) {
                     envelope.sessions[index].transcript += "\n\n" + source.displayName + "\n" + text
@@ -976,7 +988,7 @@ public actor SessionStore {
                 capture.failedAssets.insert(asset)
             }
         }
-        if !envelope.story.sources.contains(where: { $0.recordID == id && $0.patientEdited }) {
+        if !capture.isDraft && !envelope.story.sources.contains(where: { $0.recordID == id && $0.patientEdited }) {
             var passages: [String] = []
             if !capture.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 passages.append("Patient notes\n" + capture.notes)

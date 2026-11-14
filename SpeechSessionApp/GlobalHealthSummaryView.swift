@@ -160,14 +160,14 @@ struct ScopedHealthSummaryView: View {
             VStack(spacing: 14) {
                 Image(systemName: "heart.text.square")
                     .font(.system(size: 52))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StoryDesignTokens.secondaryInk)
                 Text(scope == .all ? "No entries yet" : "No entries in this folder")
                     .font(StoryDesignTokens.font(.headline, weight: .semibold))
                 Text(scope == .all
                     ? "Record an appointment to build a health summary."
                     : "Move or create entries here, then open Summary again.")
                     .font(StoryDesignTokens.font(.subheadline))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StoryDesignTokens.secondaryInk)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 12)
             }
@@ -192,21 +192,21 @@ struct ScopedHealthSummaryView: View {
             HStack(spacing: 10) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(BrandPalette.systemRed.opacity(0.15))
+                        .fill(StoryDesignTokens.action.opacity(0.15))
                         .frame(width: 34, height: 34)
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(BrandPalette.systemRed)
+                        .foregroundStyle(StoryDesignTokens.action)
                 }
                 Text("SUMMARY UNAVAILABLE")
                     .font(StoryDesignTokens.font(.caption))
                     .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StoryDesignTokens.secondaryInk)
                     .kerning(0.5)
             }
             Text(message)
                 .font(StoryDesignTokens.font(.body))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StoryDesignTokens.secondaryInk)
             Button("Try Again") {
                 summaryState = .idle
                 Task { await generateSummary() }

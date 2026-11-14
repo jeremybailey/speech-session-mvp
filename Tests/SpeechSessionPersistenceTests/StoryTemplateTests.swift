@@ -1,5 +1,6 @@
 import XCTest
 import PDFKit
+import CoreText
 @testable import SpeechSessionPersistence
 final class StoryTemplateTests:XCTestCase {
     func testExplicitPatientNameAcrossRecords() {
@@ -269,7 +270,21 @@ final class StoryTemplateTests:XCTestCase {
         ]
         let template = StorySummaryTemplate.practitioner
         let text = zip(template.sections, sections).map { "## " + $0 + "\n" + $1 }.joined(separator: "\n\n")
-        let data = try StorySummaryPDF.render(text: text, title: template.title, generatedAt: Date(), patientName: "Example Patient")
+        let fonts = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("SpeechSessionApp/BrandFonts")
+        func font(_ file: String, size: CGFloat) throws -> CTFont {
+            let url = fonts.appendingPathComponent(file)
+            let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor]
+            return CTFontCreateWithFontDescriptor(try XCTUnwrap(descriptors?.first), size, nil)
+        }
+        let title = try font("ebgaramond.ttf", size: 22)
+        let body = try font("inter.ttf", size: 11)
+        let typography = StorySummaryPDF.Typography(
+            title: title, heading: CTFontCreateCopyWithSymbolicTraits(body, 14, nil, .boldTrait, .boldTrait) ?? body,
+            body: body, ink: CGColor(gray: 0.2, alpha: 1), tableFill: CGColor(gray: 0.95, alpha: 1))
+        let data = try StorySummaryPDF.render(text: text, title: template.title, generatedAt: Date(),
+                                              patientName: "Example Patient", typography: typography)
         let pdf = try XCTUnwrap(PDFDocument(data: data))
         XCTAssertLessThanOrEqual(pdf.pageCount, 2)
         XCTAssertTrue(pdf.string?.contains("next visit.") == true)

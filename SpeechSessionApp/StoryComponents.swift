@@ -15,7 +15,7 @@ struct StoryThinkingStatus: View {
                 .accessibilityHidden(true)
             Text(label)
                 .font(StoryDesignTokens.font(.subheadline, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StoryDesignTokens.secondaryInk)
         }
         .accessibilityElement(children: .combine)
     }
@@ -31,7 +31,7 @@ struct StoryOnboardingCopy: View {
             if let detail {
                 Text(detail)
                     .font(StoryDesignTokens.body)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StoryDesignTokens.secondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -46,7 +46,7 @@ struct StorySpeechBubble: View {
     var heading: String? = nil
 
     var body: some View {
-        VStack(alignment: heading == nil ? .leading : .center, spacing: 8) {
+        VStack(alignment: .center, spacing: 8) {
             if !symbols.isEmpty {
                 HStack(spacing: 14) {
                     ForEach(symbols, id: \.self) { symbol in
@@ -61,15 +61,15 @@ struct StorySpeechBubble: View {
             }
             if let heading {
                 Text(heading)
-                    .font(StoryDesignTokens.label)
+                    .font(StoryDesignTokens.bubbleQuote.bold())
                     .foregroundStyle(StoryDesignTokens.bubbleContent)
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
             }
             Text(text)
-                .font(StoryDesignTokens.body)
+                .font(StoryDesignTokens.bubbleQuote)
                 .foregroundStyle(StoryDesignTokens.bubbleContent)
-                .multilineTextAlignment(heading == nil ? .leading : .center)
+                .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
             .padding(.horizontal, 18)
@@ -147,8 +147,8 @@ struct StoryEmptyRecord: View {
                 .opacity(0.65)
                 .accessibilityHidden(true)
 
-            StoryOnboardingCopy(detail: "Your notes, recordings, photos and files will appear here. Tap + below to add your first record.")
-                .accessibilityLabel("Your notes, recordings, photos and files will appear here. Use the Add record button below to get started.")
+            StoryOnboardingCopy(detail: "Extracted summaries of recordings, photos and files will appear here. Tap + below to add your first record.")
+                .accessibilityLabel("Extracted summaries of recordings, photos and files will appear here. Use the Add record button below to get started.")
         }
         .padding(.vertical, 8)
         .listRowSeparator(.hidden)
@@ -185,12 +185,12 @@ struct StoryFeaturePreview<Example: View>: View {
 }
 
 extension View {
-    @ViewBuilder func storyControlStyle(prominent: Bool = false) -> some View {
+    @ViewBuilder func storyControlStyle(prominent: Bool = false, tint: Color = StoryDesignTokens.primaryButtonFill) -> some View {
         if #available(iOS 26, *) {
-            if prominent { self.buttonStyle(.glassProminent).tint(StoryDesignTokens.action) }
+            if prominent { self.buttonStyle(.glassProminent).tint(tint) }
             else { self.buttonStyle(.glass) }
         } else {
-            if prominent { self.buttonStyle(.borderedProminent).tint(StoryDesignTokens.action) }
+            if prominent { self.buttonStyle(.borderedProminent).tint(tint) }
             else { self.buttonStyle(.bordered) }
         }
     }

@@ -5,8 +5,24 @@ import SwiftUI
 
 /// Native, selectable text with wrapped table cells and repeated headers on continuation pages.
 public enum StorySummaryPDF {
-    @MainActor public static func renderSummary(_ summary: StorySharedSummary, title: String, patientName: String?) throws -> Data {
-        try render(text: summary.text, title: title, generatedAt: summary.generatedAt, patientName: patientName, labs: summary.labReadings ?? []) { series, context, rect in
+    public struct Typography {
+        public let title: CTFont
+        public let heading: CTFont
+        public let body: CTFont
+        public let ink: CGColor
+        public let tableFill: CGColor
+
+        public init(title: CTFont, heading: CTFont, body: CTFont, ink: CGColor, tableFill: CGColor) {
+            self.title = title
+            self.heading = heading
+            self.body = body
+            self.ink = ink
+            self.tableFill = tableFill
+        }
+    }
+
+    @MainActor public static func renderSummary(_ summary: StorySharedSummary, title: String, patientName: String?, typography: Typography? = nil) throws -> Data {
+        try render(text: summary.text, title: title, generatedAt: summary.generatedAt, patientName: patientName, labs: summary.labReadings ?? [], typography: typography) { series, context, rect in
             let renderer = ImageRenderer(content: StoryLabSparkline(series).frame(width: rect.width, height: rect.height).environment(\.colorScheme, .light))
             renderer.render { _, paint in
                 context.saveGState()
@@ -16,19 +32,22 @@ public enum StorySummaryPDF {
             }
         }
     }
-    public static func render(text:String,title:String,generatedAt:Date,patientName:String?=nil,labs:[StoryLabReading]=[],drawChart:((StoryLabSeries,CGContext,CGRect)->Void)?=nil) throws -> Data {
+    public static func render(text:String,title:String,generatedAt:Date,patientName:String?=nil,labs:[StoryLabReading]=[],typography:Typography?=nil,drawChart:((StoryLabSeries,CGContext,CGRect)->Void)?=nil) throws -> Data {
         let output=NSMutableData();var page=CGRect(x:0,y:0,width:612,height:792)
         guard let consumer=CGDataConsumer(data:output as CFMutableData),let context=CGContext(consumer:consumer,mediaBox:&page,nil) else {throw StoryEditError.invalidMutation}
-        let ink=CGColor(gray:0.12,alpha:1),green=CGColor(red:0.12,green:0.29,blue:0.24,alpha:1)
-        let wash=CGColor(red:0.92,green:0.95,blue:0.92,alpha:1),rule=CGColor(gray:0.8,alpha:1)
+        let ink=typography?.ink ?? CGColor(gray:0.12,alpha:1)
+        let wash=typography?.tableFill ?? CGColor(gray:0.95,alpha:1),rule=CGColor(gray:0.8,alpha:1)
         var y:CGFloat=740;var pageNumber=0
-        func attributed(_ text:String,size:CGFloat=11,bold:Bool=false,color:CGColor?=nil)->NSAttributedString {
+        func attributed(_ text:String,size:CGFloat=11,bold:Bool=false,color:CGColor?=nil,displayTitle:Bool=false)->NSAttributedString {
             var spacing:CGFloat=3
             let style=withUnsafePointer(to:&spacing) {pointer in
                 var setting=CTParagraphStyleSetting(spec:.lineSpacingAdjustment,valueSize:MemoryLayout<CGFloat>.size,value:pointer)
                 return CTParagraphStyleCreate(&setting,1)
             }
-            return NSAttributedString(string:text,attributes:[NSAttributedString.Key(kCTFontAttributeName as String):CTFontCreateWithName((bold ? "Helvetica-Bold":"Helvetica") as CFString,size,nil),NSAttributedString.Key(kCTForegroundColorAttributeName as String):color ?? ink,NSAttributedString.Key(kCTParagraphStyleAttributeName as String):style])
+            let face = displayTitle ? typography?.title : (bold ? typography?.heading : typography?.body)
+            let font = face.map { CTFontCreateCopyWithAttributes($0, size, nil, nil) }
+                ?? CTFontCreateWithName((bold ? "Helvetica-Bold" : "Helvetica") as CFString, size, nil)
+            return NSAttributedString(string:text,attributes:[NSAttributedString.Key(kCTFontAttributeName as String):font,NSAttributedString.Key(kCTForegroundColorAttributeName as String):color ?? ink,NSAttributedString.Key(kCTParagraphStyleAttributeName as String):style])
         }
         func height(_ value:NSAttributedString,width:CGFloat)->CGFloat {
             ceil(CTFramesetterSuggestFrameSizeWithConstraints(CTFramesetterCreateWithAttributedString(value),CFRange(location:0,length:0),nil,CGSize(width:width,height:1000000),nil).height)+2
@@ -47,8 +66,8 @@ public enum StorySummaryPDF {
             context.textPosition=CGPoint(x:50,y:30)
             CTLineDraw(CTLineCreateWithAttributedString(attributed("CollectiveCare · \(pageNumber)",size:9,color:CGColor(gray:0.45,alpha:1))),context)
         }
-        func paragraph(_ string:String,size:CGFloat=11,bold:Bool=false,color:CGColor?=nil,keepNext:CGFloat=0,bullet:Bool=false) throws {
-            let value=attributed(string,size:size,bold:bold,color:color)
+        func paragraph(_ string:String,size:CGFloat=11,bold:Bool=false,color:CGColor?=nil,keepNext:CGFloat=0,bullet:Bool=false,displayTitle:Bool=false) throws {
+            let value=attributed(string,size:size,bold:bold,color:color,displayTitle:displayTitle)
             let indent: CGFloat = bullet ? 14 : 0
             let width = 512 - indent
             let total=height(value,width:width)
@@ -70,7 +89,7 @@ public enum StorySummaryPDF {
         func table(headers:[String],rows:[[String]],series:[StoryLabSeries]=[]) throws {
             let fractions:[CGFloat]=headers.count==2 ? [0.24,0.76] : headers.count==3 ? [0.28,0.34,0.38] : [0.25,0.25,0.23,0.27]
             let widths=fractions.map{$0*512}
-            let headerValues=headers.map{attributed($0,size:10,bold:true,color:green)}
+            let headerValues=headers.map{attributed($0,size:10,bold:true,color:ink)}
             let headerHeight=zip(headerValues,widths).map{height($0.0,width:$0.1-16)}.max()!+16
             guard headerHeight<220 else {throw StoryEditError.invalidMutation}
             func header() {
@@ -117,8 +136,8 @@ public enum StorySummaryPDF {
             y-=12
         }
         try newPage()
-        try paragraph(title,size:22,bold:true,color:green)
-        if let patientName,!patientName.isEmpty {try paragraph(patientName,size:14,bold:true,color:green)}
+        try paragraph(title,size:22,bold:true,color:ink,displayTitle:true)
+        if let patientName,!patientName.isEmpty {try paragraph(patientName,size:14,bold:true,color:ink)}
         let blocks=StorySummaryDocument.blocks(text)
         for (index,block) in blocks.enumerated() {
             switch block {
@@ -134,7 +153,7 @@ public enum StorySummaryPDF {
                         following=(headers.map{height(attributed($0,size:10,bold:true),width:width)}.max() ?? 16)+66
                     }
                 }
-                try paragraph(value,size:level==2 ? 14:11,bold:true,color:green,keepNext:following)
+                try paragraph(value,size:level==2 ? 14:11,bold:true,color:ink,keepNext:following)
                 if level == 2, value == "Labs & Investigations", !labs.isEmpty {
                     let series = StoryLabSeries.grouped(labs)
                     let rows = series.map { group -> [String] in

@@ -3,6 +3,7 @@ import CoreMedia
 import PDFKit
 import UniformTypeIdentifiers
 import UIKit
+import SwiftUI
 
 /// Share extension → App Group handoff for audio (Voice Memos), images (Photos), or PDF/text files.
 final class ShareViewController: UIViewController {
@@ -48,14 +49,15 @@ final class ShareViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemGroupedBackground
+        view.backgroundColor = UIColor(StoryDesignTokens.canvas)
+        spinner.color = UIColor(StoryDesignTokens.action)
 
         spinner.translatesAutoresizingMaskIntoConstraints = false
         spinner.hidesWhenStopped = false
 
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.font = .preferredFont(forTextStyle: .subheadline)
-        statusLabel.textColor = .secondaryLabel
+        statusLabel.textColor = UIColor(StoryDesignTokens.secondaryInk)
         statusLabel.numberOfLines = 0
         statusLabel.textAlignment = .center
         statusLabel.text = "Saving to CollectiveCare…"

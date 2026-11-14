@@ -65,7 +65,7 @@ struct RecordingView: View {
             if let status = vm.recordingStatusMessage {
                 Text(status)
                     .font(StoryDesignTokens.font(.subheadline))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StoryDesignTokens.secondaryInk)
                     .frame(maxWidth: .infinity, alignment: .center)
             }
 
@@ -80,7 +80,7 @@ struct RecordingView: View {
             if !batchInfoText.isEmpty && phase == .recording {
                 Text(batchInfoText)
                     .font(StoryDesignTokens.font(.caption))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StoryDesignTokens.secondaryInk)
                     .transition(.opacity)
             }
 
@@ -91,7 +91,7 @@ struct RecordingView: View {
             }
 
             if let err = vm.errorMessage {
-                Text(err).foregroundStyle(BrandPalette.systemRed).font(StoryDesignTokens.font(.footnote))
+                Text(err).foregroundStyle(StoryDesignTokens.action).font(StoryDesignTokens.font(.footnote))
             }
 
             Button {
@@ -115,7 +115,7 @@ struct RecordingView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(BrandPalette.systemRed)
+            .tint(StoryDesignTokens.action)
             .disabled(phase == .transcribing)
         }
         .padding()
@@ -130,7 +130,7 @@ struct RecordingView: View {
             VStack(spacing: 10) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 52))
-                    .foregroundStyle(BrandPalette.systemGreen)
+                    .foregroundStyle(StoryDesignTokens.ink)
                     .scaleEffect(checkmarkScale)
                     .opacity(checkmarkOpacity)
                     .onAppear {
