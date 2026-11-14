@@ -246,6 +246,38 @@ final class StoryTemplateTests:XCTestCase {
         XCTAssertTrue(StorySummaryDocument.blocks(text).contains(.paragraph("Part of this table is incomplete in the saved summary.")))
         XCTAssertFalse(StorySummaryDocument.hasBrokenTable("| Test | Result |\n\n|---|---|\n\n| Example | 3 |"))
     }
+    func testBulletsRenderBesideClinicalValuesAndLegacyProse() throws {
+        let text = "## Clinical Snapshot\n- Reported improvement after rest.\n• Follow-up pending.\nPrior paragraph."
+        XCTAssertEqual(StorySummaryDocument.blocks(text), [.heading("Clinical Snapshot", level: 2),
+            .bullet("Reported improvement after rest."), .bullet("Follow-up pending."), .paragraph("Prior paragraph.")])
+        let data = try StorySummaryPDF.render(text: text, title: "Practitioner summary", generatedAt: Date())
+        let pdf = try XCTUnwrap(PDFDocument(data: data))
+        XCTAssertEqual(pdf.pageCount, 1)
+        XCTAssertTrue(pdf.string?.contains("Follow-up pending.") == true)
+        XCTAssertTrue(pdf.string?.contains("•") == true)
+    }
+
+    func testCompactPractitionerHandoffFitsTwoPages() throws {
+        let sections = [
+            "The patient describes ankle stiffness after longer walks and intermittent headaches that interrupt desk work. The priority for the next visit is returning to a full shift and understanding which symptoms to track between appointments.",
+            "Primary care coordinates follow-up with physiotherapy. The patient reported skin irritation with adhesive dressings. Medication allergies were not documented. The physiotherapist requested the prior imaging report before the next appointment.",
+            "The patient wants to discuss how long stiffness lasts after walking, whether the exercise schedule still fits workdays, and what to bring to the next review. No appointment date was recorded.",
+            "An ankle injury was documented in spring 2024. The patient returned to part-time desk work that summer and described greater walking tolerance the following winter. A later note documents a change to longer shifts. Exact dates for the work changes were not recorded.",
+            "Ankle discomfort is described after prolonged standing, with stiffness the following morning. A later physiotherapy note reports improvement on stairs. Headaches were reported mainly at the end of longer shifts. The record does not establish a cause or connect the headaches to the ankle symptoms.",
+            "The physiotherapist recommended a short home exercise routine on workdays if comfortable. The patient reports following it twice last week and missing one session because of travel. The recommendation and the reported activity are recorded separately. Earlier manual treatment was associated with brief relief according to the patient.",
+            "An imaging report describes no acute fracture at the time of evaluation. The clinician requested review of the prior films if symptoms persisted. The record does not document whether that review occurred. The patient plans to bring the report to the next visit."
+        ]
+        let template = StorySummaryTemplate.practitioner
+        let text = zip(template.sections, sections).map { "## " + $0 + "\n" + $1 }.joined(separator: "\n\n")
+        let data = try StorySummaryPDF.render(text: text, title: template.title, generatedAt: Date(), patientName: "Example Patient")
+        let pdf = try XCTUnwrap(PDFDocument(data: data))
+        XCTAssertLessThanOrEqual(pdf.pageCount, 2)
+        XCTAssertTrue(pdf.string?.contains("next visit.") == true)
+        if let path = ProcessInfo.processInfo.environment["STORY_HANDOFF_PREVIEW"] {
+            try data.write(to: URL(fileURLWithPath: path))
+        }
+    }
+
     func testPDFPaginatesLongParagraphWithoutLosingLastLine() throws {
         let body=(0..<300).map{"Unique line \($0): Recorded information with timing and context."}.joined(separator:"\n")+"\nEND OF SUMMARY"
         let data=try StorySummaryPDF.render(text:"## Clinical Snapshot\n"+body,title:"Synthetic summary",generatedAt:Date(timeIntervalSince1970:0))

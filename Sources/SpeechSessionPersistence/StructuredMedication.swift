@@ -67,7 +67,7 @@ public enum BClinicalPresentation {
     }
     public static func displayForm(_ value: String) -> String {
         let key = value.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        let forms = ["op drp":"Eye drops", "eye drops":"Eye drops", "ophthalmic drops":"Eye drops", "gel eye drops":"Eye gel drops",
+        let forms = ["op drp":"Eye drops", "eye drops":"Eye drops", "eye drop":"Eye drops", "ophthalmic drops":"Eye drops", "gel eye drops":"Eye gel drops",
                      "eye ointment":"Eye ointment", "tablet":"Tablet", "tablets":"Tablet", "capsule":"Capsule", "capsules":"Capsule",
                      "solution":"Solution", "cream":"Cream", "ointment":"Ointment"]
         return forms[key] ?? value

@@ -12,6 +12,11 @@ final class RecordFolderTests: XCTestCase {
         }
         let names = ["Corneal injury and dry eye", "dry eye", "cornea eye injury", "chronic eye care condition", "impaired vision"]
         let eyes = names.map { condition($0, $0 == "dry eye" ? other.id : visit.id, system:"eye") }
+        let singular = condition("Dry eye", visit.id, system: "eye")
+        let plural = condition("Dry eyes", other.id, system: "eye")
+        let index = RecordFolderLibrary(snapshot: .init(sessions: [visit, other]), conditions: [singular, plural])
+        XCTAssertEqual(index.folders.count, 1)
+        XCTAssertEqual(index.folders.first.flatMap { index.recordIDs[$0.id] }, [visit.id, other.id])
         let lipids = ["Elevated LDL cholesterol","Elevated total cholesterol"].map { condition($0,visit.id,system:"cardiovascular") }
         let library = RecordFolderLibrary(snapshot:.init(sessions:[visit,other]),conditions: eyes + lipids)
         XCTAssertEqual(library.folders.count,3)

@@ -32,7 +32,12 @@ import SpeechSessionFeatures
                 try await store.save([Session(id:id,transcript:"I have neck discomfort after sitting. My clinician recommended walking for ten minutes if comfortable.",title:"Synthetic visit",summaryEntries:[SummaryEntry(category:.symptoms,title:"I have neck discomfort after sitting.",sourceSessionID:id,sourceExcerpt:"I have neck discomfort after sitting.",origin:.userAdded),care])])
             }
             #endif
-            try await store.synchronizeStory();workspace = try await store.storyWorkspace();records = try await store.loadAll();if narrativeSave == nil {narrative = try await store.storyNarrativeText()};didLoadStory = true}
+            records = try await store.loadAll()
+            if narrativeSave == nil { narrative = try await store.storyNarrativeText() }
+            didLoadStory = true
+            try await store.synchronizeStory()
+            workspace = try await store.storyWorkspace()
+        }
         catch {initialStoryLoadFailed = !didLoadStory; self.error = error.localizedDescription}
     }
     func saveNarrative(_ text:String) {
@@ -118,6 +123,7 @@ import SpeechSessionFeatures
         let encoded=String(decoding:try JSONSerialization.data(withJSONObject:payload,options:.sortedKeys),as:UTF8.self)
         if let saved=try await store.storyRequestBody(id,proposed:encoded),let value=try JSONSerialization.jsonObject(with:Data(saved.utf8)) as? [String:Any] {payload=value}
         let savedEvidence=try JSONDecoder().decode([StoryEvidence].self,from:JSONSerialization.data(withJSONObject:payload["evidence"] ?? []))
+        if kind == "chat" { self.evidence = savedEvidence }
         var first=true
         var transientFailures = 0
         for _ in 0..<300 {
@@ -261,6 +267,7 @@ struct StoryLabView: View {
     @State private var progressEventID=UUID()
     @StateObject private var folderRouter = StoryFolderRouter()
     init(appModel:AppModel){self.appModel=appModel;_sharing=StateObject(wrappedValue:StorySummaryGeneration(store:appModel.store));_model=StateObject(wrappedValue:StoryLabModel(store:appModel.store))}
+    @State private var homeHasAppeared = false
     private var day:String {Calendar.current.startOfDay(for:Date()).formatted(.iso8601)}
     var body:some View {
         NavigationStack(path: $folderRouter.path) {
@@ -269,7 +276,12 @@ struct StoryLabView: View {
                     StoryFolderDestination(route: route, store: appModel.store, home: appModel.home) { AnyView(currentPlan) }
                         .environment(\.storyRouter, folderRouter)
                 }
-                .onAppear {Task{await appModel.health.refresh();await model.reload()}}
+                .onAppear {
+                    if homeHasAppeared {
+                        Task { await model.reload(); await appModel.health.refresh() }
+                    }
+                    homeHasAppeared = true
+                }
         }
         .environment(\.storyRouter, folderRouter)
         .sheet(item: $folderRouter.capture, onDismiss: {
@@ -397,7 +409,7 @@ struct StoryLabView: View {
                             }.frame(maxWidth:.infinity,alignment:.leading).id(item.id)
                         }
                         if model.busy && showingActiveAnswer {
-                            if !model.answerDraft.isEmpty {StoryAnswerText(text:model.answerDraft,evidence:[],fontSize:citationTextSize,isAnswer:true){_,_,_ in};StoryThinkingStatus("Checking sources…")}
+                            if !model.answerDraft.isEmpty {StoryAnswerText(text:model.answerDraft,evidence:model.evidence,fontSize:citationTextSize,isAnswer:true){source,_,_ in openChatRecord(source)};StoryThinkingStatus("Checking sources…")}
                             else {StoryThinkingStatus().frame(maxWidth:.infinity,alignment:.leading)}
                         }
                         Color.clear.frame(height:1).id("end")
@@ -536,7 +548,11 @@ struct StoryLabView: View {
     }
     private var adoptedActions:[HealthCarePlan.Action]{actions.filter{adopted($0)}}
     @ViewBuilder private var currentPlan:some View {
-        if model.didLoadStory { loadedPlan }
+        if model.didLoadStory {
+            if currentCarePlans.isEmpty && recordedCarePlans.isEmpty {
+                ScrollView { StoryCarePlanPreview { folderRouter.newCapture() } }
+            } else { loadedPlan }
+        }
         else if model.initialStoryLoadFailed {Button("Retry loading care plan"){Task{await model.reload()}}}
         else {StoryLoadingPlaceholder(label:"Loading care plan",rows:3).padding()}
     }
@@ -640,25 +656,43 @@ struct StoryRecordsList:View {
     @ScaledMetric(relativeTo: .body) private var overviewTextSize = StoryDesignTokens.bodyBaseSize
     @ObservedObject var home:HomeViewModel
     var narrative:String?
+    @Environment(\.storyRouter) private var captureRouter
+    @State private var suggestRecord = false
+    @State private var addAfterPreview = false
+    var showFirstRecordGuide = false
     var retryStoryLoad:(() -> Void)?
     var summaryStatus:String? = nil
     var shareStory:()->Void = {}
+    private var carePlanLabel: some View {
+        HStack(spacing: 12) {
+            StoryRecordIcon(symbol: "list.bullet.clipboard")
+                .saturation(showFirstRecordGuide ? 0 : 1)
+                .opacity(showFirstRecordGuide ? 0.65 : 1)
+            Text("My care plan").font(StoryDesignTokens.label)
+                .foregroundStyle(showFirstRecordGuide ? Color.secondary : StoryDesignTokens.ink)
+        }
+        .frame(maxWidth: .infinity, minHeight: StoryDesignTokens.controlHeight, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
     var body:some View {
         List {
             Section {
-                if let narrative { Text(narrative.isEmpty ? "Your overview will appear here as your records are organized.":narrative).font(StoryDesignTokens.body).lineSpacing(StoryDesignTokens.readingLineSpacing(for: overviewTextSize)).textSelection(.enabled).padding(.vertical,8).listRowSeparator(.hidden).listRowBackground(StoryDesignTokens.canvas)
+                if showFirstRecordGuide { StoryEmptyOverview() }
+                else if let narrative { Text(narrative.isEmpty ? "Your overview will appear here as your records are organized.":narrative).font(StoryDesignTokens.body).lineSpacing(StoryDesignTokens.readingLineSpacing(for: overviewTextSize)).textSelection(.enabled).padding(.vertical,8).listRowSeparator(.hidden).listRowBackground(StoryDesignTokens.canvas)
                 } else if let retryStoryLoad { Button("Retry loading overview",action:retryStoryLoad) }
                 else {StoryLoadingPlaceholder(label:"Loading overview").listRowSeparator(.hidden)}
                 Group {
-                    NavigationLink(value:StoryRoute.carePlan) {
-                        HStack(spacing:12) {
-                            StoryRecordIcon(symbol:"list.bullet.clipboard")
-                            Text("My care plan").font(StoryDesignTokens.label).foregroundStyle(StoryDesignTokens.ink)
-                        }.frame(minHeight:StoryDesignTokens.controlHeight)
+                    if showFirstRecordGuide {
+                        Button { suggestRecord = true } label: { carePlanLabel }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Add a record to start your care plan")
+                    } else {
+                        NavigationLink(value: StoryRoute.carePlan) { carePlanLabel }
+                            .accessibilityHint("View your current plan and recorded recommendations")
                     }
-                    .listRowSeparator(.hidden).listRowBackground(StoryDesignTokens.canvas)
-                    .accessibilityHint("View your current plan and recorded recommendations")
                 }
+                .listRowSeparator(.hidden).listRowBackground(StoryDesignTokens.canvas)
             }
             if let summaryStatus {
                 Button(action:shareStory){
@@ -675,7 +709,32 @@ struct StoryRecordsList:View {
                 if home.initialLoadFailed {Button("Retry loading records"){Task{await home.loadSessions()}}}
                 else {StoryLoadingPlaceholder(label:"Loading records", rows:4).listRowSeparator(.hidden)}
             }
+            if showFirstRecordGuide { Section("Records") { StoryEmptyRecord() } }
             StoryTimelineSections(records: home.sessions)
+        }
+        .sheet(isPresented: $suggestRecord, onDismiss: {
+            if addAfterPreview {
+                addAfterPreview = false
+                captureRouter?.newCapture()
+            }
+        }) {
+            NavigationStack {
+                ScrollView {
+                    StoryCarePlanPreview {
+                        addAfterPreview = true
+                        suggestRecord = false
+                    }
+                }
+                .background(StoryDesignTokens.canvas)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close", systemImage: "xmark") { suggestRecord = false }
+                            .labelStyle(.iconOnly)
+                    }
+                }
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -743,7 +802,7 @@ private struct StoryAnswerText:UIViewRepresentable {
         let attributes:[NSAttributedString.Key:Any]=[.font:font,.foregroundColor:UIColor.label.resolvedColor(with:traits),.paragraphStyle:paragraph]
         let result=NSMutableAttributedString(string:"")
         let raw=text as NSString
-        let regex=try! NSRegularExpression(pattern:#"\[(E\d+(?:\s*[,;]\s*E\d+)*)\]"#)
+        let regex=try! NSRegularExpression(pattern:#"[\[【［]\s*(E\d+(?:\s*[,;]\s*E\d+)*)\s*[\]】］]"#)
         let matches=isAnswer ? regex.matches(in:text,range:NSRange(location:0,length:raw.length)):[]
         var offset=0
         var citationNumbers:[String:Int]=[:]
@@ -869,6 +928,11 @@ private struct StoryTemplateShareView:View {
                                         Divider()
                                     }
                                 }
+                            case let .bullet(text):
+                                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                    Text("•").accessibilityHidden(true)
+                                    Text(text).textSelection(.enabled)
+                                }.font(StoryDesignTokens.body)
                             case let .paragraph(text):
                                 Text(text).font(StoryDesignTokens.body).textSelection(.enabled)
                             case let .table(headers,rows):
@@ -1046,10 +1110,11 @@ private struct SummaryStageFailure:Error {
                         } catch let failure as SummaryStageFailure where failure.canRepair {
                             // A terminal receipt will never produce another result under its original ID.
                         }
-                        if result["kind"] as? String != "answer" || (result["text"] as? String).flatMap(template.validatedText) == nil || (result["citationIDs"] as? [String])?.isEmpty != false {
+                        let needsShortening = batches.count == 1 && ((result["text"] as? String).flatMap(template.validatedText)?.count ?? 0) > 3600
+                        if needsShortening || result["kind"] as? String != "answer" || (result["text"] as? String).flatMap(template.validatedText) == nil || (result["citationIDs"] as? [String])?.isEmpty != false {
                             stage = try await store.prepareSummaryStage(parentID:id,stage:"\(round):\(index):compact")
                             stageID = stage.id
-                            let concise = "\nProduce a shorter complete handoff of at most 5000 characters. Use concise paragraphs and subheadings. Omit pipe tables. Complete the last section."
+                            let concise = "\nProduce a shorter complete handoff of about 2500 characters including headings. Use short bullets, each on its own line starting with '- '. Omit pipe tables. Complete the last section."
                             result = try await runner.request(id:stage.id,kind:"chat",revision:0,before:"",after:template.prompt+labInstructions+context+concise,targets:[],auth:auth,summaryEvidence:batch)
                         }
                         guard result["kind"] as? String == "answer",let raw=result["text"] as? String,let valid=template.validatedText(raw),let citations=result["citationIDs"] as? [String],!citations.isEmpty,Set(citations).isSubset(of:Set(batch.map(\.id))) else {throw StoryEditError.invalidMutation}

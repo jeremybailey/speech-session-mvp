@@ -119,13 +119,15 @@ extension SessionStore {
     }
     public func storyWorkspace() throws -> StoryWorkspace { try loadEnvelope().story }
     public func synchronizeStory() throws {
+        let snapshot = try healthSnapshot()
         var env = try loadEnvelope()
+        let previousStory = env.story
         for session in env.sessions where !session.transcript.isEmpty {
             if env.story.sources.last(where: {$0.recordID == session.id})?.text != session.transcript {
                 env.story.sources.append(StorySourceRevision(recordID: session.id, text: session.transcript))
             }
         }
-        let facts = HealthMemoryProjection.facts(in: try healthSnapshot())
+        let facts = HealthMemoryProjection.facts(in: snapshot)
         let byID = Dictionary(uniqueKeysWithValues: facts.map {($0.id, $0.displayEntry.title)})
         for i in env.story.blocks.indices {
             if let sourceID=env.story.blocks[i].correctionRecordID {
@@ -153,7 +155,7 @@ extension SessionStore {
         for i in env.story.blocks.indices where env.story.blocks[i].factIDs.contains(where: {byID[$0] == nil}) {
             env.story.blocks[i].evidenceChanged = true
         }
-        try saveEnvelope(env)
+        if env.story != previousStory { try saveEnvelope(env) }
     }
     @discardableResult public func addStoryBlock(section: String = "story") throws -> UUID {
         guard ["story","plan","progress"].contains(section) else {throw StoryEditError.invalidMutation}

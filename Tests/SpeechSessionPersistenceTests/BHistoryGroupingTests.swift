@@ -12,6 +12,22 @@ final class BHistoryGroupingTests: XCTestCase {
     private func fact(_ text: String, category: SummaryEntryCategory = .medications, id: String) -> HealthFact {
         .init(id: id, occurrences: [entry(text, category: category, id: id)], preference: .init(id: id), topicIDs: [])
     }
+    func testCrossFormatGroupingRetainsSourceHistory() {
+        for (name, category) in [("Example tablet", SummaryEntryCategory.medications), ("Headache", .symptoms)] {
+            var newer = entry(name, category: category, id: "new")
+            if category == .medications {
+                newer.evidence?.medication = .init(values: ["name": name, "form": "tablets"])
+            }
+            var older = entry(name, category: category, id: "old")
+            older.evidence?.assessmentMethod = nil
+            older.origin = .legacyImported
+            let sessions = [older, newer].map { Session(id: $0.sourceSessionID!, transcript: name, summaryEntries: [$0]) }
+            let facts = HealthMemoryProjection.facts(in: .init(sessions: sessions), verifiedOnly: false)
+            XCTAssertEqual(facts.count, 1, name)
+            XCTAssertEqual(Set(facts.first?.occurrences.map(\.id) ?? []), Set([older.id, newer.id]))
+        }
+    }
+
     func testReportAndFillDescriptionsGroupByProductAndKeepAllHistory() {
         let rows = [fact("Medication report lists EXAMPLE 0.5% GEL EYE DROPS as active, started Jan 9, 2026; frequency not shown.", id: "a"),
                     fact("Medication report lists EXAMPLE 0.5% GEL EYE DROPS as discontinued Jan 9, 2026; started Oct 18, 2025.", id: "b"),

@@ -91,37 +91,28 @@ private struct StoryFolderBrowser: View {
 
     var body: some View {
         List {
-            CreateFolderButton { creating = true }
-            NavigationLink(value: StoryRoute.allDetails) { Label("All details", systemImage: "square.grid.2x2") }
-            if let deleted = router?.lastDeleted {
-                Button("Undo deletion of " + deleted.name, systemImage: "arrow.uturn.backward") {
-                    Task {
-                        do {
-                            try await store.setRecordFolderDeleted(false, folder: deleted)
-                            await health.refresh()
-                            router?.lastDeleted = nil
-                        } catch { self.error = error.localizedDescription }
-                    }
-                }
-            }
-            Section {
-                ForEach(health.recordFolders.folders.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }) { folder in
-                    NavigationLink(value: StoryRoute.folder(folder.id)) {
-                        HStack {
-                            StoryRecordIcon(symbol: folder.symbol)
-                            VStack(alignment: .leading) {
-                                Text(folder.name).font(StoryDesignTokens.label)
-                                let count = health.recordFolders.recordIDs[folder.id]?.count ?? 0
-                                Text(count == 1 ? "1 record" : "\(count) records")
-                                    .font(StoryDesignTokens.caption).foregroundStyle(.secondary)
-                            }
+            let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            if term.isEmpty {
+                CreateFolderButton { creating = true }
+                NavigationLink(value: StoryRoute.allDetails) { Label("All details", systemImage: "square.grid.2x2") }
+                if let deleted = router?.lastDeleted {
+                    Button("Undo deletion of " + deleted.name, systemImage: "arrow.uturn.backward") {
+                        Task {
+                            do {
+                                try await store.setRecordFolderDeleted(false, folder: deleted)
+                                await health.refresh()
+                                router?.lastDeleted = nil
+                            } catch { self.error = error.localizedDescription }
                         }
                     }
                 }
+                folderRows(health.recordFolders.folders)
+            } else {
+                searchResults(term)
             }
         }
         .navigationTitle("Conditions")
-        .searchable(text: $query, prompt: "Search conditions")
+        .searchable(text: $query, prompt: "Search health records")
         .sheet(isPresented: $creating) {
             FolderForm(title: "Create condition", folder: SessionFolder(name: "")) { folder in
                 try await store.upsertFolder(folder)
@@ -130,6 +121,71 @@ private struct StoryFolderBrowser: View {
         }
         .folderError($error)
     }
+    private func folderRows(_ folders: [SessionFolder]) -> some View {
+        ForEach(folders) { folder in
+            NavigationLink(value: StoryRoute.folder(folder.id)) {
+                HStack {
+                    StoryRecordIcon(symbol: folder.symbol)
+                    VStack(alignment: .leading) {
+                        Text(folder.name).font(StoryDesignTokens.label)
+                        let count = health.recordFolders.recordIDs[folder.id]?.count ?? 0
+                        Text(count == 1 ? "1 record" : "\(count) records")
+                            .font(StoryDesignTokens.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func searchResults(_ term: String) -> some View {
+        let matches: (String) -> Bool = { $0.localizedStandardContains(term) }
+        let folders = health.recordFolders.folders.filter { matches($0.name) }
+        let details = health.facts.filter { fact in
+            guard !BArtifactPresentation.isLabReportMetadata(fact.latest) else { return false }
+            let entry = fact.displayEntry
+            return matches(entry.title) || matches(fact.category.displayTitle)
+                || entry.fields.contains { matches($0.label) || matches($0.value) }
+                || HealthDetailPresentation.remainingDetails(entry).contains(where: matches)
+        }
+        let records = health.snapshot.sessions.filter { record in
+            matches(record.displayTitle) || matches(record.transcript) || matches(record.capture?.notes ?? "")
+                || record.sourceAssets?.contains { matches($0.displayName) } == true
+                || record.capture?.textByAsset.values.contains(where: matches) == true
+        }.sorted { $0.date > $1.date }
+        if !folders.isEmpty { Section("Conditions") { folderRows(folders) } }
+        if !details.isEmpty {
+            Section("Details") {
+                ForEach(details) { fact in
+                    NavigationLink(value: StoryRoute.fact(fact.id, nil, nil)) {
+                        VStack(alignment: .leading) {
+                            Text(fact.displayEntry.title)
+                            Text(fact.category.displayTitle).font(StoryDesignTokens.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        if !records.isEmpty {
+            Section("Records") {
+                ForEach(records) { record in
+                    Button {
+                        if record.capture?.isDraft == true { router?.capture = record }
+                        else { router?.open(.record(record.id)) }
+                    } label: {
+                        VStack(alignment: .leading) {
+                            Text(record.displayTitle)
+                            Text(record.date.formatted(date: .abbreviated, time: .shortened))
+                                .font(StoryDesignTokens.caption).foregroundStyle(.secondary)
+                        }
+                    }.buttonStyle(.plain)
+                }
+            }
+        }
+        if folders.isEmpty && details.isEmpty && records.isEmpty {
+            ContentUnavailableView.search(text: term)
+        }
+    }
+
 }
 
 private struct StoryFolderPage: View {
@@ -248,6 +304,7 @@ struct RecordFolderPicker: View {
     let store: SessionStore
     @EnvironmentObject private var health: HealthSummaryModel
     @Environment(\.dismiss) private var dismiss
+    var prepareRecord: (() async throws -> Void)? = nil
     @State private var selection: Set<UUID> = []
     @State private var initial: Set<UUID> = []
     @State private var drafts: [SessionFolder] = []
@@ -290,6 +347,7 @@ struct RecordFolderPicker: View {
                         saving = true
                         Task {
                             do {
+                                try await prepareRecord?()
                                 try await store.setRecordFolders(recordID: recordID, folders: folders.filter { selection.contains($0.id) })
                                 await health.refresh()
                                 dismiss()

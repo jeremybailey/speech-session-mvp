@@ -6,6 +6,7 @@
 	<array>
 		<string>BrandFonts/ebgaramond.ttf</string>
 		<string>BrandFonts/inter.ttf</string>
+		<string>BrandFonts/caveat.ttf</string>
 	</array>
 	<key>IncrementalRecordsEnabled</key>
 	<string>$(CC_INCREMENTAL_RECORDS_ENABLED)</string>

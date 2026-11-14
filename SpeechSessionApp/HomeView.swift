@@ -95,15 +95,8 @@ struct HomeView: View {
 
     var body: some View {
         Group {
-            if showFirstRecordGuide {
-                ContentUnavailableView {
-                    Label("Start with your story", systemImage: "book.pages")
-                } description: {
-                    Text("Tap + to record or write a little about your health history. We’ll organize it so it’s easier to remember and share.")
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if storyRecords {
-                StoryRecordsList(home:home,narrative:storyNarrative,retryStoryLoad:retryStoryLoad,summaryStatus:summaryStatus,shareStory:{showSummaryDrawer=true})
+            if storyRecords {
+                StoryRecordsList(home:home,narrative:storyNarrative,showFirstRecordGuide:showFirstRecordGuide,retryStoryLoad:retryStoryLoad,summaryStatus:summaryStatus,shareStory:{showSummaryDrawer=true})
             }
             else {HealthSummaryView(model: health, home: home, store: store, canOpenSettings: phase == .idle, openSettings: { showSettings = true })}
         }

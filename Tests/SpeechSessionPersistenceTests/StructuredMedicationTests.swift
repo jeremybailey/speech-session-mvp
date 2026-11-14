@@ -84,6 +84,20 @@ final class StructuredMedicationTests: XCTestCase {
         c.evidence?.medication = .init(values:["name":"Unknown eye drops"])
         XCTAssertNotEqual(MedicationIdentity.key(a),MedicationIdentity.key(c))
     }
+    func testNamedDropsAcrossCaptureFormatsShareOneHistory() {
+        var label = b("Label")
+        label.evidence?.medication = .init(values: ["name": "PRP eye drops", "form": "Eye drops"])
+        var mention = b("Mention")
+        mention.evidence?.medication = .init(values: ["name": "PRP eye drops", "form": "eye drop"])
+        let patient = SummaryEntry(category: .medications, title: "PRP eye drops",
+                                   details: "Patient reports using drops as needed every two hours.")
+        var specific = b("Specific strength")
+        specific.evidence?.medication = .init(values: ["name": "PRP eye drops", "strength": "50%", "form": "eye drops"])
+        let grouped = MedicationHistoryPresentation.group([label, mention, patient, specific].map { fact($0, id: $0.id.uuidString) })
+        XCTAssertEqual(grouped.count, 2)
+        XCTAssertTrue(grouped.contains { Set($0.occurrences.map(\.id)) == Set([label.id, mention.id, patient.id]) })
+    }
+
     func testFillDoesNotEraseRecordedPrescriptionInstructionsAndConflictsRemainExplicit() {
         var prescription = b("Prescription source")
         prescription.evidence?.medication = .init(values:["name":"Example", "strength":"5mg", "form":"tablet", "instructions":"Take one tablet at night"])

@@ -122,6 +122,14 @@ public struct RecordFolderLibrary: Sendable {
             guard saved[originalID] == nil,
                   !condition.facts.contains(where: { $0.preference.topicIDs != nil }) else { continue }
             let name = key(condition.name)
+            // Reuse the existing singular folder ID so its saved edits still apply.
+            if name == "dry eyes" {
+                let singular = conditions.filter { key($0.name) == "dry eye" && $0.bodySystem == condition.bodySystem }
+                if singular.count == 1, let target = singular.first {
+                    result[condition.id] = (target.id, HealthStoryText.displayName(target.name))
+                    continue
+                }
+            }
             if lipids.contains(name) {
                 result[condition.id] = ("lab-group:elevated-cholesterol", "Elevated cholesterol")
                 continue
@@ -137,6 +145,10 @@ public struct RecordFolderLibrary: Sendable {
             if parents.count == 1, let parent = parents.first {
                 result[condition.id] = (parent.id, HealthStoryText.displayName(parent.name))
             }
+        }
+        // A singular label may already file into a compound condition.
+        for (id, target) in result {
+            if let parent = result[target.0] { result[id] = parent }
         }
         return result
     }

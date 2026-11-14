@@ -6,7 +6,7 @@ public enum MedicationHistoryPresentation {
     public static func group(_ facts: [HealthFact]) -> [HealthFact] {
         let medications = facts.filter { $0.category == .medications }
         let groups = Dictionary(grouping: medications) { fact in
-            MedicationIdentity.key(fact.latest)
+            displayGroupKey(fact.latest)
         }
         var result = facts.filter { $0.category != .medications }
         for group in groups.values {
@@ -19,6 +19,33 @@ public enum MedicationHistoryPresentation {
             result += separated + combine(visible) + combine(hidden)
         }
         return result
+    }
+
+    /// Older rows can carry the form in the name alone, while structured rows
+    /// also carry a form field. Match an explicit product name and form across those representations.
+    private static func displayGroupKey(_ entry: SummaryEntry) -> String {
+        let original = MedicationIdentity.key(entry)
+        let structured = BClinicalPresentation.medication(entry)
+        let title = MedicationIdentity.productTitle(entry).lowercased()
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        let suffixes = ["gel eye drops", "eye ointment", "eye drops", "eye drop", "tablets", "tablet",
+                        "capsules", "capsule", "solution", "cream", "ointment", "injection"]
+        guard let suffix = suffixes.first(where: { title.hasSuffix(" " + $0) }),
+              !original.contains("|uncertain|"),
+              !original.contains("|conflict|"), structured["uncertainty"] == nil,
+              !["name", "strength", "form"].contains(where: { structured.rejectedValues?[$0] != nil }),
+              !["unknown", "unclear", "unspecified", "steroid", "medication"].contains(where: { title.split(separator: " ").contains(Substring($0)) })
+        else { return original }
+        let forms = entry.fields.filter { $0.label.lowercased() == "form" }.map(\.value)
+            + [structured["form"]].compactMap { $0 }
+        let form = BClinicalPresentation.displayForm(suffix).lowercased()
+        guard forms.allSatisfy({ BClinicalPresentation.displayForm($0).lowercased() == form }),
+              !entry.fields.contains(where: { ["concentration", "strength"].contains($0.label.lowercased()) && !$0.value.isEmpty }),
+              structured["strength"] == nil,
+              [ "medication|" + title + "|", "medication|" + title + "||",
+                "medication|" + title + "|" + form + "|" ].contains(original)
+        else { return original }
+        return "display|named form|" + String(title.dropLast(suffix.count)) + "|" + form
     }
 
     static func combine(_ group: [HealthFact]) -> [HealthFact] {

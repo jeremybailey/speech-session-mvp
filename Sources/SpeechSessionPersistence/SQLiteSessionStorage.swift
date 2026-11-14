@@ -68,14 +68,24 @@ struct SQLiteSessionStorage {
                 if sessions[i].removeValue(forKey:"_sqlite_"+field) as? Bool == true {sessions[i][field]=[Any]()}
             }
         }
+        var positions: [String: Int] = [:]
+        for (index, session) in sessions.enumerated() {
+            guard let id = session["id"] as? String, positions.updateValue(index, forKey: id) == nil else {
+                throw SessionStoreError.decodingFailed
+            }
+        }
         for (table,field) in [("occurrences","summaryEntries"),("source_revisions","summaryRevisions"),("processing_receipts","summaryRun")] {
+            var children: [Int: [Any]] = [:]
             for (key,payload) in try rows(db,table:table) {
                 let value=try JSONSerialization.jsonObject(with:Data(payload.utf8),options:.fragmentsAllowed)
                 if key == "update" {object["recordUpdate"]=value;continue}
                 let recordID=String(key.split(separator:"/")[0])
-                guard let i=sessions.firstIndex(where:{($0["id"] as? String)==recordID}) else {throw SessionStoreError.decodingFailed}
+                guard let i=positions[recordID] else {throw SessionStoreError.decodingFailed}
                 if field == "summaryRun" {sessions[i][field]=value}
-                else {var values=sessions[i][field] as? [Any] ?? [];values.append(value);sessions[i][field]=values}
+                else { children[i, default: []].append(value) }
+            }
+            for (index, values) in children {
+                sessions[index][field] = (sessions[index][field] as? [Any] ?? []) + values
             }
         }
         object["sessions"] = sessions

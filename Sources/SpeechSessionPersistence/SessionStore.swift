@@ -20,7 +20,7 @@ public actor SessionStore {
     private let sqliteEnabled: Bool
 
     /// Root directory containing `sessions.json` and `sources/`.
-    public var storageDirectory: URL { directoryURL }
+    public nonisolated var storageDirectory: URL { directoryURL }
 
     /// - Parameters:
     ///   - fileManager: inject for tests.

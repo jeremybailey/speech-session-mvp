@@ -365,23 +365,8 @@ struct SessionDetailView: View {
     }
 
     private var noteMetadata: some View {
-        let ids = health.recordFolders.memberships[session.id] ?? []
-        let names = health.recordFolders.folders.filter { ids.contains($0.id) }.map(\.name)
-        return ScrollView(.horizontal) {
-            HStack(spacing: 16) {
-                Button((session.visitTime ?? session.date).formatted(date: .abbreviated, time: .shortened), systemImage: "calendar") { edit = .time }
-                Button { edit = .team } label: {
-                    HStack(spacing: 4) { Image(systemName: "person.2"); if let n = session.linkedMemberIDs?.count, n > 0 { Text("\(n)") } }
-                }.frame(minWidth: 44, minHeight: 44).accessibilityLabel(teamLabel)
-                Button { pickingFolders = true } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: names.isEmpty ? "folder.badge.plus" : "folder")
-                        if let name = names.first { Text(verbatim: name); if names.count > 1 { Text("+\(names.count - 1)") } }
-                    }
-                }.frame(minWidth: 44, minHeight: 44).accessibilityLabel(names.isEmpty ? "Add to condition" : "Conditions: " + names.joined(separator: ", "))
-            }.font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
-                .buttonStyle(.plain).controlSize(.regular)
-        }.scrollIndicators(.hidden)
+        RecordMetadataRow(session: session, health: health, editTime: { edit = .time },
+                          editTeam: { edit = .team }, editConditions: { pickingFolders = true })
     }
 
     // Older records have no timestamps. Break long prose at sentence boundaries
@@ -413,11 +398,6 @@ struct SessionDetailView: View {
             paragraphs.append(String(line[start...]))
             return paragraphs.joined(separator: "\n\n")
         }.joined(separator: "\n")
-    }
-
-    private var teamLabel: String {
-        let names = health.snapshot.careTeam.filter { session.linkedMemberIDs?.contains($0.id) == true }.map(\.name)
-        return names.isEmpty ? "Care team" : names.joined(separator: ", ")
     }
 
     private var recordSummary: some View {
@@ -609,7 +589,41 @@ private struct RecordTextPage {
     }
 }
 
-private struct RecordAttributeEditor: View {
+struct RecordMetadataRow: View {
+    let session: Session
+    @ObservedObject var health: HealthSummaryModel
+    let editTime: () -> Void
+    let editTeam: () -> Void
+    let editConditions: () -> Void
+
+    var body: some View {
+        let ids = health.recordFolders.memberships[session.id] ?? []
+        let names = health.recordFolders.folders.filter { ids.contains($0.id) }.map(\.name)
+        return ScrollView(.horizontal) {
+            HStack(spacing: 16) {
+                Button((session.visitTime ?? session.date).formatted(date: .abbreviated, time: .shortened), systemImage: "calendar") { editTime() }
+                Button { editTeam() } label: {
+                    HStack(spacing: 4) { Image(systemName: "person.2"); if let n = session.linkedMemberIDs?.count, n > 0 { Text("\(n)") } }
+                }.frame(minWidth: 44, minHeight: 44).accessibilityLabel(teamLabel)
+                Button { editConditions() } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: names.isEmpty ? "folder.badge.plus" : "folder")
+                        if let name = names.first { Text(verbatim: name); if names.count > 1 { Text("+\(names.count - 1)") } }
+                    }
+                }.frame(minWidth: 44, minHeight: 44).accessibilityLabel(names.isEmpty ? "Add to condition" : "Conditions: " + names.joined(separator: ", "))
+            }.font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
+                .buttonStyle(.plain).controlSize(.regular)
+        }.scrollIndicators(.hidden)
+    }
+
+    private var teamLabel: String {
+        let names = health.snapshot.careTeam.filter { session.linkedMemberIDs?.contains($0.id) == true }.map(\.name)
+        return names.isEmpty ? "Care team" : names.joined(separator: ", ")
+    }
+
+}
+
+struct RecordAttributeEditor: View {
     let kind: String
     let record: Session
     let store: SessionStore
@@ -622,7 +636,10 @@ private struct RecordAttributeEditor: View {
     @State private var member: CareTeamMember?
     @State private var saving = false
     @State private var issue: String?
-    init(kind: String, record: Session, store: SessionStore, health: HealthSummaryModel, refreshed: @escaping (Bool) async -> Void) {
+    private let saveDraftMetadata: ((Date?, Set<UUID>?) async throws -> Void)?
+    init(kind: String, record: Session, store: SessionStore, health: HealthSummaryModel,
+         saveDraftMetadata: ((Date?, Set<UUID>?) async throws -> Void)? = nil, refreshed: @escaping (Bool) async -> Void) {
+        self.saveDraftMetadata = saveDraftMetadata
         self.kind = kind; self.record = record; self.store = store; self.health = health; self.refreshed = refreshed
         _value = State(initialValue: kind == "title" ? record.displayTitle : record.transcript.isEmpty && record.capture?.pending == true ? record.capture?.notes ?? "" : record.transcript)
         _date = State(initialValue: record.visitTime ?? record.date)
@@ -675,9 +692,13 @@ private struct RecordAttributeEditor: View {
         defer { saving = false }
         do {
             switch kind {
-            case "team": try await store.editRecordMetadata(id: record.id, members: ids)
+            case "team":
+                if let saveDraftMetadata { try await saveDraftMetadata(nil, ids) }
+                else { try await store.editRecordMetadata(id: record.id, members: ids) }
             case "title": try await store.editRecordMetadata(id: record.id, title: value)
-            case "time": try await store.editRecordMetadata(id: record.id, time: date)
+            case "time":
+                if let saveDraftMetadata { try await saveDraftMetadata(date, nil) }
+                else { try await store.editRecordMetadata(id: record.id, time: date) }
             default: try await store.reviseStorySource(record.id, text: value, expectedTranscript: base)
             }
             dismiss(); await refreshed(kind == "text" && value != base)

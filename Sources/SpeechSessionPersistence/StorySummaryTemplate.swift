@@ -14,14 +14,15 @@ public enum StorySummaryTemplate:String,CaseIterable,Codable,Sendable {
         If evidence explicitly identifies the patient by name, start with one line "Patient name: <name>". Otherwise omit that line. Never infer the patient name from the account, a clinician name, or a document title alone.
         Use these exact headings in this order, each on its own line prefixed with ##:
         \(sections.joined(separator:"\n"))
-        Clinical Snapshot: connected narrative of relevant concerns, course, functional impact and patient priorities.
-        Care Coordination Summary: allergies/sensitivities; medication and supplement use with recorded status; adopted actions versus recorded recommendations; responsibilities and who recommended them.
-        Appointment Preparation Brief: recorded reason, questions and changes since the last visit only when supported. Do not invent an appointment, recipient, age or patient name.
-        Comprehensive Health History: concise chronological dated events and relevant family/life context. Dates must be clinical dates, never inferred from upload dates.
-        Condition-Specific Summary: established concerns with their course. Investigations, excluded conditions and uncertain diagnoses retain their exact status, never become established conditions.
-        Care Plan & Interventions: medications, supplements, lifestyle plans, previous treatments and responses. Retain dose, units, timing, conditional instructions, attribution, adoption, historical status, conflicting regimens and patient-reported response. Do not turn a recommendation into a current adopted plan or infer effectiveness.
-        Labs & Investigations: dated results, units, provided reference intervals and recorded investigations. Only describe abnormality or trends supported by evidence; do not calculate or invent them.
-        Use brief connected paragraphs, ### subheadings, and Markdown pipe tables for comparable information. Use ### Patient priorities beneath Clinical Snapshot when supported. Under Care Coordination Summary use ### Allergies and sensitivities, ### Current medications and supplements, ### Actions and responsibilities. Under Appointment Preparation Brief use ### Reason for appointment and ### Changes since last visit when supported. Use a two-column Date / period | Health events and course table in Comprehensive Health History, followed by ### Background. Under Condition-Specific Summary use a ### subheading for each supported concern. Under Care Plan & Interventions use ### Medications and ### Supplements with three-column Intervention / purpose | Dose and timing | Response / recorded plan tables; ### Lifestyle plans for paragraphs; and ### Previous treatments and responses with Treatment / dates | Response | Status. Under Labs & Investigations use ### Results with four-column Test / date | Result and units | Reference interval | Recorded interpretation, then ### Investigations and follow-up. Use tables only when supported rows exist; no empty scaffold tables. Every table must have a header, a Markdown separator row and consistent cell counts, at most four columns. Keep each row on one line; use semicolons for context within cells, and replace literal pipe characters in source text with slashes. Write 'Not documented' for unknown cells; never use a dash to imply a negative. Preserve qualifiers, conflicts and source attribution within the same row as the relevant fact. No charts, checkboxes, raw JSON, invented links, or recommendations of your own. Do not copy any fictional example. If a section has no supporting information, say "Not documented in the available saved details." Absence is not a negative finding. Keep all seven headings. Aim for 700–1100 words, shorter for sparse records, maximum 11000 characters. Supply citationIDs for factual claims. The output is a selective summary of eligible saved details, not a complete clinical record. No chat history or current overview is evidence.
+        Write a selective two-page handoff. Aim for 2200–3000 characters including headings, shorter for sparse evidence. Give each fact one home. Write each section as concise bullet points. Start each point on its own line with '- '. Use one material finding or action per bullet and keep its qualifiers together.
+        Clinical Snapshot: one or two bullets on the main concerns, functional impact and patient priorities.
+        Care Coordination Summary: documented allergies or sensitivities and who is coordinating care.
+        Appointment Preparation Brief: recorded reason, patient questions or changes requiring discussion.
+        Comprehensive Health History: relevant dated milestones and background. Never infer clinical dates from upload dates.
+        Condition-Specific Summary: material course or status beyond the snapshot. Keep suspected, excluded and established conditions distinct.
+        Care Plan & Interventions: document current medications and adopted actions here once. Keep dose, units, timing, conditions, attribution and conflicting regimens together. Distinguish recommendations from adopted actions and previous treatments. Attribute reported responses.
+        Labs & Investigations: relevant dated results, units, supplied ranges and documented interpretation or follow-up. Do not infer trends.
+        Keep all seven headings. Where evidence is missing use “Not documented.” Never imply a negative from missing evidence. Use at most one short Markdown table for genuinely comparable rows, with a header, separator and consistent columns. Omit nested headings and repeated history. Shorten by selecting material facts, never by dropping qualifiers from a retained fact. Supply citationIDs for factual claims. Use only the supplied evidence.
         """
     }
     public func validatedText(_ raw:String)->String? {
@@ -76,6 +77,7 @@ public enum StorySummaryBatching {
 public enum StorySummaryBlock:Equatable,Sendable {
     case heading(String,level:Int)
     case paragraph(String)
+    case bullet(String)
     case table(headers:[String],rows:[[String]])
 }
 public enum StorySummaryDocument {
@@ -151,6 +153,9 @@ public enum StorySummaryDocument {
             }
             if line.hasPrefix("### ") {result.append(.heading(String(line.dropFirst(4)),level:3))}
             else if line.hasPrefix("## ") {result.append(.heading(String(line.dropFirst(3)),level:2))}
+            else if ["- ", "* ", "• "].contains(where: { line.hasPrefix($0) }) {
+                result.append(.bullet(String(line.dropFirst(2))))
+            }
             else if !line.isEmpty {result.append(.paragraph(line))}
             index+=1
         }

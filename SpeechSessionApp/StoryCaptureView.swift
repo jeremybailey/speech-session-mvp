@@ -14,10 +14,9 @@ import SpeechSessionTranscription
 final class CaptureEditor: ObservableObject {
     @Published var record: Session
     @Published var recordingSince: Date?
-    @Published var reminder: Bool
     @Published var starting = false
     @Published var error: String?
-    var sources: SessionSourceStore?
+    let sources: SessionSourceStore
     var closed = false
     private var request = UUID()
     private var saveSequence = 0
@@ -44,8 +43,7 @@ final class CaptureEditor: ObservableObject {
     init(record: Session, store: SessionStore) {
         self.record = record
         self.store = store
-        reminder = record.sourceAssets?.isEmpty != false && record.capture?.notes.isEmpty != false &&
-            record.capture?.patientTitle.isEmpty != false
+        self.sources = SessionSourceStore(storageDirectory: store.storageDirectory)
         microphone.onSessionEvent = { [weak self] event in
             Task { @MainActor in
                 switch event {
@@ -76,17 +74,22 @@ final class CaptureEditor: ObservableObject {
         }
     }
 
+    func saveDraft() async throws {
+        changed()
+        try await write?.value
+    }
+
     func remove(_ asset: SessionSourceAsset) {
         record.sourceAssets?.removeAll { $0.id == asset.id }
         changed()
         let saved = write
-        let url = sources?.url(for: asset, sessionID: record.id)
+        let url = sources.url(for: asset, sessionID: record.id)
         Task {
             do {
                 try await saved?.value
                 // A newer edit may have coalesced the removal. Wait until it is on disk.
                 try await write?.value
-                if let url, let stored = try await store.loadAll().first(where: { $0.id == record.id }),
+                if let stored = try await store.loadAll().first(where: { $0.id == record.id }),
                    stored.sourceAssets?.contains(where: { $0.id == asset.id }) != true {
                     try FileManager.default.removeItem(at: url)
                 }
@@ -94,15 +97,13 @@ final class CaptureEditor: ObservableObject {
         }
     }
 
-    func typeOnly() {
-        reminder = false
+    func cancelPendingStart() {
         starting = false
         request = UUID()
     }
 
     func start() async {
-        guard !closed, !starting, recordingSince == nil, let sources else { return }
-        reminder = false
+        guard !closed, !starting, recordingSince == nil else { return }
         starting = true
         let token = UUID()
         request = token
@@ -128,7 +129,7 @@ final class CaptureEditor: ObservableObject {
     }
 
     func pause() {
-        typeOnly()
+        cancelPendingStart()
         guard let since = recordingSince else { return }
         microphone.stopRecording()
         record.capture?.duration += Date().timeIntervalSince(since)
@@ -177,12 +178,20 @@ struct StoryCaptureView: View {
     @State private var photos: [PhotosPickerItem] = []
     @State private var preview: URL?
     @State private var extra: Extra?
-    @State private var discard = false
+    @State private var draftActions = false
     @State private var ending = false
+    @State private var showReminder = false
+    @State private var selectedPrompt: String?
+    @FocusState private var writingNotes: Bool
+
+    private var showCaptureGuide: Bool {
+        !writingNotes && !editor.hasContent && !editor.starting && editor.recordingSince == nil
+    }
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var importing = false
     @Environment(\.scenePhase) private var phase
     private enum Extra: String, Identifiable {
-        case detail, contact
+        case team, time, conditions
         var id: String { rawValue }
     }
 
@@ -206,15 +215,16 @@ struct StoryCaptureView: View {
                     TextField("Untitled record", text: field(\.patientTitle), axis: .vertical)
                         .font(StoryDesignTokens.sectionHeading)
                         .accessibilityIdentifier("Capture title")
-                    Text(editor.record.date.formatted(date: .abbreviated, time: .shortened))
-                        .font(StoryDesignTokens.caption).foregroundStyle(.secondary)
-                    TextField("Write notes here…", text: field(\.notes), axis: .vertical)
+                    RecordMetadataRow(session: editor.record, health: health, editTime: { extra = .time },
+                                      editTeam: { extra = .team }, editConditions: { extra = .conditions })
+                    TextField(selectedPrompt ?? "Write notes here…", text: field(\.notes), axis: .vertical)
+                        .focused($writingNotes)
                         .font(StoryDesignTokens.body).lineLimit(6...)
                         .accessibilityIdentifier("Capture notes")
                     ForEach(editor.record.sourceAssets ?? []) { asset in
                         HStack {
                             Button {
-                                preview = editor.sources?.url(for: asset, sessionID: editor.record.id)
+                                preview = editor.sources.url(for: asset, sessionID: editor.record.id)
                             } label: {
                                 Label(asset.displayName, systemImage: asset.kind == .audio ? "waveform" : asset.kind == .image ? "photo" : "doc")
                             }
@@ -233,27 +243,21 @@ struct StoryCaptureView: View {
             .safeAreaInset(edge: .bottom) { controls }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button { close(commit: false) } label: { Image(systemName: "chevron.down") }
-                        .accessibilityLabel("Close record and keep draft")
+                    Button {
+                        if editor.hasContent { draftActions = true }
+                        else { close(commit: false) }
+                    } label: { Image(systemName: "xmark") }
+                        .accessibilityLabel("Close record")
+                        .disabled(importing)
+                        .confirmationDialog("Close this draft?", isPresented: $draftActions, titleVisibility: .visible) {
+                            Button("Keep Draft") { close(commit: false) }
+                            Button("Discard Draft", role: .destructive) { close(commit: false, discard: true) }
+                            Button("Cancel", role: .cancel) {}
+                        }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button("Photo library", systemImage: "photo.on.rectangle") { library = true }
-                        Button("Camera", systemImage: "camera") { camera = true }
-                            .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
-                        Button("Import document", systemImage: "doc") { fileTypes = [.pdf, .plainText]; filePicker = true }
-                        Button("Scan pages", systemImage: "doc.viewfinder") { scanner = true }
-                            .disabled(!VNDocumentCameraViewController.isSupported)
-                        Button("Import audio", systemImage: "waveform") { fileTypes = [.audio]; filePicker = true }
-                    } label: { Label("Attach", systemImage: "paperclip") }
-                    .disabled(editor.sources == nil || importing)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button("Add health detail") { editor.pause(); extra = .detail }
-                        Button("Add contact") { editor.pause(); extra = .contact }
-                        Button("Discard draft", role: .destructive) { discard = true }
-                    } label: { Label("More actions", systemImage: "ellipsis") }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { close(commit: true) }
+                        .disabled(!editor.hasContent || importing)
                 }
             }
         }
@@ -268,17 +272,9 @@ struct StoryCaptureView: View {
                     catch { home.errorMessage = error.localizedDescription }
                 }
             }
-            editor.sources = SessionSourceStore(storageDirectory: await editor.store.storageDirectory)
-            guard editor.reminder else { return }
-            if UIAccessibility.isVoiceOverRunning {
-                UIAccessibility.post(notification: .announcement, argument: "Ask everyone’s permission before recording. Choose Record or Type only.")
-                return
-            }
-            try? await Task.sleep(for: .seconds(2))
-            if !Task.isCancelled, editor.reminder, phase == .active { await editor.start() }
         }
         .onChange(of: phase) { _, next in
-            if next == .background && editor.reminder { editor.typeOnly() }
+            if next == .background && editor.starting { editor.cancelPendingStart() }
         }
         .quickLookPreview($preview)
         .photosPicker(isPresented: $library, selection: $photos, maxSelectionCount: 24, matching: .images)
@@ -312,56 +308,110 @@ struct StoryCaptureView: View {
                 let url = try result.get()
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                guard let sources = editor.sources else { return }
                 let kind: SessionSourceKind = fileTypes == [.audio] ? .audio : url.pathExtension.lowercased() == "pdf" ? .pdf : .plainText
-                let asset = try sources.copyFile(from: url, sessionID: editor.record.id, displayName: url.lastPathComponent, kind: kind)
+                let asset = try editor.sources.copyFile(from: url, sessionID: editor.record.id, displayName: url.lastPathComponent, kind: kind)
                 append(asset)
             } catch let e as CocoaError where e.code == .userCancelled {} catch { editor.error = error.localizedDescription }
         }
         .sheet(item: $extra) { action in
             switch action {
-            case .detail: HealthManualEntryView(model: health, home: home, store: editor.store, topicID: nil)
-            case .contact: CareTeamEditor(member: .init(), model: health)
+            case .team, .time:
+                RecordAttributeEditor(kind: action.rawValue, record: editor.record, store: editor.store, health: health,
+                                      saveDraftMetadata: { date, members in
+                    if let date { editor.record.visitTime = date }
+                    if let members { editor.record.linkedMemberIDs = members }
+                    try await editor.saveDraft()
+                }, refreshed: { _ in })
+            case .conditions:
+                RecordFolderPicker(recordID: editor.record.id, store: editor.store, prepareRecord: editor.saveDraft)
             }
-        }
-        .confirmationDialog("Discard this draft and its attachments?", isPresented: $discard) {
-            Button("Discard draft", role: .destructive) { close(commit: false, discard: true) }
         }
         .alert("Record", isPresented: Binding(get: { editor.error != nil }, set: { if !$0 { editor.error = nil } })) {
             Button("OK") {}
         } message: { Text(editor.error ?? "") }
     }
 
-    @ViewBuilder private var controls: some View {
+    private static let reminder = "Ask everyone’s permission before recording."
+
+    private var controls: some View {
         VStack(spacing: 8) {
-            if editor.reminder {
-                Text("Ask everyone’s permission before recording.").font(StoryDesignTokens.label)
-                HStack {
-                    Button("Type only") { editor.typeOnly() }
-                    if UIAccessibility.isVoiceOverRunning { Button("Record") { Task { await editor.start() } } }
-                }
-            } else {
-                HStack {
-                    if editor.starting {
-                        Button("Type only") { editor.typeOnly() }
-                    } else if editor.recordingSince != nil {
-                        Button("Pause", systemImage: "pause.fill") { editor.pause() }
-                    } else {
-                        Button((editor.record.capture?.duration ?? 0) > 0 ? "Resume" : "Record", systemImage: "mic.fill") {
-                            Task { await editor.start() }
+            let layout = typeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(spacing: 8))
+                : AnyLayout(HStackLayout(spacing: 10))
+            if showCaptureGuide {
+                VStack(spacing: 8) {
+                    ForEach(StoryRecordPrompts.questions, id: \.self) { prompt in
+                        Button {
+                            selectedPrompt = prompt
+                            writingNotes = true
+                        } label: {
+                            StoryQuestionBubble(text: prompt)
                         }
+                        .storyPromptAnchor(prompt)
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Write a response")
                     }
-                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 52)
+            }
+            layout {
+                let active = editor.recordingSince != nil
+                let paused = (editor.record.capture?.duration ?? 0) > 0
+                Button {
+                    if editor.starting { editor.cancelPendingStart() }
+                    else if active { editor.pause() }
+                    else { Task { await editor.start() } }
+                } label: {
+                    Label(editor.starting ? "Cancel" : active ? "Pause" : paused ? "Resume" : "Record",
+                          systemImage: editor.starting ? "xmark" : active ? "pause.fill" : "mic.fill")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .storyControlStyle(prominent: !active && !editor.starting)
+                .accessibilityHint(active || editor.starting ? "" : Self.reminder)
+                .storyGuideAnchor(.button)
+                if active || paused {
                     TimelineView(.periodic(from: .now, by: 1)) { tick in
                         let seconds = Int((editor.record.capture?.duration ?? 0) + (editor.recordingSince.map { max(0, tick.date.timeIntervalSince($0)) } ?? 0))
-                        Text(String(format: "%d:%02d", seconds / 60, seconds % 60)).monospacedDigit()
+                        Text(String(format: "%d:%02d", seconds / 60, seconds % 60)).monospacedDigit().fixedSize()
                     }
-                    Spacer()
-                    Button("Done") { close(commit: true) }.buttonStyle(.borderedProminent)
-                        .disabled(!editor.hasContent || importing)
                 }
+                Menu {
+                    Button("Photo library", systemImage: "photo.on.rectangle") { library = true }
+                    Button("Camera", systemImage: "camera") { camera = true }
+                        .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
+                    Button("Import document", systemImage: "doc") { fileTypes = [.pdf, .plainText]; filePicker = true }
+                    Button("Scan pages", systemImage: "doc.viewfinder") { scanner = true }
+                        .disabled(!VNDocumentCameraViewController.isSupported)
+                    Button("Import audio", systemImage: "waveform") { fileTypes = [.audio]; filePicker = true }
+                } label: {
+                    Label("Attach", systemImage: "paperclip")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .storyControlStyle()
+                .disabled(importing)
             }
-        }.padding().background(.regularMaterial)
+            .font(StoryDesignTokens.font(.body, weight: .medium))
+            .controlSize(.regular)
+            .buttonBorderShape(.capsule)
+            if showReminder {
+                Text(Self.reminder)
+                    .font(.footnote).multilineTextAlignment(.center)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+            }
+        }
+        .connectStoryGuide()
+        .padding(.horizontal).padding(.vertical, 8)
+        .task(id: editor.recordingSince) {
+            guard let start = editor.recordingSince else { showReminder = false; return }
+            showReminder = true
+            if UIAccessibility.isVoiceOverRunning {
+                UIAccessibility.post(notification: .announcement, argument: Self.reminder)
+            }
+            do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            if editor.recordingSince == start { showReminder = false }
+        }
     }
 
     private func close(commit: Bool, discard: Bool = false) {
@@ -384,9 +434,8 @@ struct StoryCaptureView: View {
     }
 
     private func attachImage(_ data: Data, ext: String) throws {
-        guard let sources = editor.sources else { throw CocoaError(.fileWriteUnknown) }
         let count = (editor.record.sourceAssets ?? []).filter { $0.kind == .image }.count + 1
-        let asset = try sources.saveData(data, sessionID: editor.record.id, fileName: UUID().uuidString + "." + ext,
+        let asset = try editor.sources.saveData(data, sessionID: editor.record.id, fileName: UUID().uuidString + "." + ext,
                                          displayName: "Photo \(count)", kind: .image)
         append(asset)
     }
@@ -412,7 +461,7 @@ final class CaptureProcessing: ObservableObject {
             do {
                 guard let latest = try await store.loadAll().first(where: { $0.id == record.id }),
                       let current = latest.capture, !current.isDraft else { return }
-                let sources = SessionSourceStore(storageDirectory: await store.storageDirectory)
+                let sources = SessionSourceStore(storageDirectory: store.storageDirectory)
                 for asset in latest.sourceAssets ?? [] where current.textByAsset[asset.id] == nil || current.failedAssets.contains(asset.id) {
                     let url = sources.url(for: asset, sessionID: latest.id)
                     let text: String?

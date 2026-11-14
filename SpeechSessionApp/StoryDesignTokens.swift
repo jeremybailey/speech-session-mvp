@@ -6,6 +6,7 @@ import UIKit
 enum StoryDesignTokens {
     static let headingFamily = "EBGaramond-Regular"
     static let bodyFamily = "Inter-Regular"
+    static let guideFont = Font.custom("Caveat-Regular", size: 25, relativeTo: .headline).weight(.semibold)
 
     // CollectiveCare Copper, Papaya and Mocha. Small text uses deeper copper in light mode.
     static let copper = adaptive(0xDB504A, 0xFF9F96)

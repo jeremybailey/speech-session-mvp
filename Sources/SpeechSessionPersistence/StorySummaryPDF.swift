@@ -47,20 +47,25 @@ public enum StorySummaryPDF {
             context.textPosition=CGPoint(x:50,y:30)
             CTLineDraw(CTLineCreateWithAttributedString(attributed("CollectiveCare · \(pageNumber)",size:9,color:CGColor(gray:0.45,alpha:1))),context)
         }
-        func paragraph(_ string:String,size:CGFloat=11,bold:Bool=false,color:CGColor?=nil,keepNext:CGFloat=0) throws {
+        func paragraph(_ string:String,size:CGFloat=11,bold:Bool=false,color:CGColor?=nil,keepNext:CGFloat=0,bullet:Bool=false) throws {
             let value=attributed(string,size:size,bold:bold,color:color)
-            let total=height(value,width:512)
+            let indent: CGFloat = bullet ? 14 : 0
+            let width = 512 - indent
+            let total=height(value,width:width)
             if y-58 < min(total+keepNext,682) {try newPage()}
             var offset=0
             while offset<value.length {
                 let remaining=value.attributedSubstring(from:NSRange(location:offset,length:value.length-offset))
-                let h=min(height(remaining,width:512),y-58)
-                let count=draw(value,offset:offset,rect:CGRect(x:50,y:y-h,width:512,height:h))
+                let h=min(height(remaining,width:width),y-58)
+                if bullet && offset == 0 {
+                    draw(attributed("•",size:size),rect:CGRect(x:50,y:y-h,width:indent,height:h))
+                }
+                let count=draw(value,offset:offset,rect:CGRect(x:50+indent,y:y-h,width:width,height:h))
                 guard count>0 else {throw StoryEditError.invalidMutation}
                 offset+=count;y-=h
                 if offset<value.length {try newPage()}
             }
-            y-=8
+            y -= bullet ? 3 : 8
         }
         func table(headers:[String],rows:[[String]],series:[StoryLabSeries]=[]) throws {
             let fractions:[CGFloat]=headers.count==2 ? [0.24,0.76] : headers.count==3 ? [0.28,0.34,0.38] : [0.25,0.25,0.23,0.27]
@@ -122,7 +127,7 @@ public enum StorySummaryPDF {
                 var following:CGFloat=24
                 if index+1<blocks.count {
                     switch blocks[index+1] {
-                    case let .paragraph(next):following=min(60,height(attributed(next),width:512))+8
+                    case let .paragraph(next), let .bullet(next):following=min(60,height(attributed(next),width:512))+8
                     case .heading:following=70
                     case let .table(headers,_):
                         let width:CGFloat=headers.count==2 ? 110:headers.count==3 ? 127:101
@@ -135,11 +140,12 @@ public enum StorySummaryPDF {
                     let rows = series.map { group -> [String] in
                         let latest = group.latest
                         let headline = [latest.valueLabel, latest.interpretation, latest.dateLabel].filter { !$0.isEmpty }.joined(separator: "\n")
-                        let history = group.readings.count > 1 ? group.readings.reversed().map { $0.dateLabel + "  " + $0.valueLabel }.joined(separator: "\n") : "Single result"
+                        let history = group.readings.count > 1 ? group.readings.dropFirst().reversed().map { $0.dateLabel + "  " + $0.valueLabel }.joined(separator: "\n") : ""
                         return [group.title, headline, history, latest.interval.isEmpty ? "Not documented" : latest.interval]
                     }
-                    try table(headers:["Test","Latest recorded result","History","Reference interval"],rows:rows,series:series)
+                    try table(headers:["Test","Latest recorded result","Earlier results","Reference interval"],rows:rows,series:series)
                 }
+            case let .bullet(value):try paragraph(value,bullet:true)
             case let .paragraph(value):try paragraph(value)
             case let .table(headers,rows):try table(headers:headers,rows:rows)
             }
