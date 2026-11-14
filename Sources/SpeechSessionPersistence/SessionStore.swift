@@ -186,6 +186,7 @@ public actor SessionStore {
         }
         if let index = env.sessions.firstIndex(where: { $0.id == session.id }) {
             var updated = session
+            updated.summaryParagraphEdits = env.sessions[index].summaryParagraphEdits ?? session.summaryParagraphEdits
             if let selection = env.sessions[index].selectedFolderIDs {
                 updated.selectedFolderIDs = selection
                 updated.folderID = env.sessions[index].folderID

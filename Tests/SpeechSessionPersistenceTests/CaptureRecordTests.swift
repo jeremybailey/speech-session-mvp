@@ -2,6 +2,27 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class CaptureRecordTests: XCTestCase {
+    func testSummaryRevisionSurvivesRawEditsAndRejectsAStaleSave() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try SessionStore(storageDirectory: directory, sqliteEnabled: true)
+        let record = Session(transcript: "Original passage")
+        try await store.upsert(record)
+        try await store.saveRecordSummary(record.id, changes: ["detail": "Edited paragraph"], baseline: [:], title: "My note")
+        let saved = try await store.loadAll()
+        XCTAssertEqual(saved.first?.transcript, "Original passage")
+        do {
+            try await store.saveRecordSummary(record.id, changes: ["detail": "Stale edit"], baseline: [:], title: nil)
+            XCTFail("Stale edits should be rejected")
+        } catch StoryEditError.staleRevision {}
+        try await store.reviseStorySource(record.id, text: "Corrected passage", expectedTranscript: record.transcript)
+        let reopened = try SessionStore(storageDirectory: directory, sqliteEnabled: true)
+        let records = try await reopened.loadAll()
+        XCTAssertEqual(records.first?.summaryParagraphEdits, ["detail": "Edited paragraph"])
+        XCTAssertEqual(records.first?.displayTitle, "My note")
+        XCTAssertEqual(records.first?.transcript, "Corrected passage")
+    }
+
     func testPartialCaptureRetryAndTitleAfterReload() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

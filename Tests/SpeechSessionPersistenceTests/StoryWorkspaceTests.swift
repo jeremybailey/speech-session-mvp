@@ -1,6 +1,24 @@
 import XCTest
 @testable import SpeechSessionPersistence
 final class StoryWorkspaceTests:XCTestCase {
+    func testRecordChatIsolatesEvidenceAndSavedAnswers() async throws {
+        let store = try store()
+        let record = Session(transcript: "The appointment was on Tuesday.")
+        let other = Session(transcript: "The appointment was on Friday.")
+        try await store.save([record, other])
+        let evidence = try await store.storyRecordEvidence(recordID: record.id, query: "appointment")
+        XCTAssertEqual(evidence.map(\.text), [record.transcript])
+        let question = StoryMessage.queuedQuestion("When?", recordID: record.id)
+        try await store.addStoryMessage(question)
+        let wrong = try await store.storyRecordEvidence(recordID: other.id, query: "appointment")
+        do {
+            try await store.completeStoryQuestion(question.id, text: "Friday", citations: ["E1"], evidence: wrong)
+            XCTFail("Accepted evidence from another record")
+        } catch StoryEditError.invalidMutation {}
+        try await store.completeStoryQuestion(question.id, text: "Tuesday", citations: ["E1"], evidence: evidence)
+        let workspace = try await store.storyWorkspace()
+        XCTAssertEqual(workspace.messages.map(\.scopeRecordID), [record.id, record.id])
+    }
     func testOverviewCanCiteASingleLongUnprocessedTranscript() async throws {
         let store = try store()
         let sentence = "This is a complete synthetic observation. "

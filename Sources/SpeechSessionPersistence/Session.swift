@@ -358,13 +358,14 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var visitTime: Date?
     public var linkedMemberIDs: Set<UUID>?
     public var editedRecordTitle: String?
+    public var summaryParagraphEdits: [String: String]?
     public var capture: RecordCapture?
     public var summaryRun: SummaryRun?
     public var summaryDrafts: [SummaryEntry]?
     public var summaryRevisions: [SummaryRevision]?
 
     enum CodingKeys: String, CodingKey {
-        case visitTime, linkedMemberIDs, editedRecordTitle, capture, id, date, transcript, title, summary, summaryEntries, inputType, entryIntent, folderID, selectedFolderIDs, sourceAssets, processingState, processingError, extractionVersion, summaryRun, summaryRevisions, summaryDrafts
+        case summaryParagraphEdits, visitTime, linkedMemberIDs, editedRecordTitle, capture, id, date, transcript, title, summary, summaryEntries, inputType, entryIntent, folderID, selectedFolderIDs, sourceAssets, processingState, processingError, extractionVersion, summaryRun, summaryRevisions, summaryDrafts
     }
 
     public init(
@@ -402,6 +403,7 @@ public struct Session: Codable, Equatable, Hashable, Identifiable, Sendable {
         visitTime = try c.decodeIfPresent(Date.self, forKey: .visitTime)
         linkedMemberIDs = try c.decodeIfPresent(Set<UUID>.self, forKey: .linkedMemberIDs)
         editedRecordTitle = try c.decodeIfPresent(String.self, forKey: .editedRecordTitle)
+        summaryParagraphEdits = try c.decodeIfPresent([String: String].self, forKey: .summaryParagraphEdits)
         capture = try c.decodeIfPresent(RecordCapture.self, forKey: .capture)
         transcript = try c.decode(String.self, forKey: .transcript)
         title     = try c.decodeIfPresent(String.self, forKey: .title)

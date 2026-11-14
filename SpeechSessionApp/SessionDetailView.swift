@@ -1,5 +1,6 @@
 import SwiftUI
 import QuickLook
+import QuickLookThumbnailing
 import NaturalLanguage
 import SpeechSessionFeatures
 import SpeechSessionPersistence
@@ -29,6 +30,7 @@ struct SessionDetailView: View {
     @State private var localError: String?
     @State private var selectedTab: DetailTab
     @State private var expandedCategories: Set<SummaryEntryCategory> = []
+    @Environment(\.askAboutRecord) private var askAboutRecord
     @Environment(\.storyRouter) private var storyRouter
     @State private var routedExcerpt: String?
     @State private var pickingFolders = false
@@ -46,7 +48,8 @@ struct SessionDetailView: View {
     @State private var savingNote = false
     @State private var draftTitle = ""
     @State private var originalTitle = ""
-    @State private var baseTranscript = ""
+    @State private var baselineEdits: [String: String] = [:]
+    @State private var rawDrawer = false
     @State private var draftBlocks: [NoteBlock] = []
     private var storyLab: Bool { Bundle.main.bundleIdentifier == "com.CollectiveCare.storylab" }
     let sourceHighlightExcerpt: String?
@@ -150,6 +153,25 @@ struct SessionDetailView: View {
                 }.frame(maxWidth: .infinity).padding().background(.regularMaterial)
             }
         }
+        .safeAreaInset(edge: .bottom) {
+            if storyLab && !editingNote && selectedTab == .transcript, let askAboutRecord {
+                Button { askAboutRecord(session) } label: {
+                    Label("Ask anything", systemImage: "bubble.left")
+                        .font(StoryDesignTokens.label)
+                        .frame(maxWidth: .infinity, minHeight: StoryDesignTokens.controlHeight)
+                }
+                .buttonBorderShape(.capsule)
+                .storyControlStyle()
+                .padding(.horizontal)
+                .padding(.vertical, 6)
+                .accessibilityHint("Ask about this record")
+            }
+        }
+        .background {
+            if storyLab && selectedTab == .transcript {
+                StoryDesignTokens.canvas.ignoresSafeArea()
+            }
+        }
         .navigationTitle(storyLab && selectedTab == .summary ? "Details" : "")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(editingNote || (storyLab && selectedTab == .summary))
@@ -180,6 +202,7 @@ struct SessionDetailView: View {
                 Menu {
                     if storyLab {
                         Button("Edit record", systemImage: "pencil") { selectedTab = .transcript; beginNoteEdit(.title) }
+                        Button("View extracted data", systemImage: "doc.text.magnifyingglass") { rawDrawer = true }
                         Button("View details", systemImage: "list.bullet") {
                             selectedTab = .summary
                         }
@@ -229,6 +252,13 @@ struct SessionDetailView: View {
                 }
             }
         }
+        .sheet(isPresented: $rawDrawer) {
+            RawRecordSheet(record: session, directory: directory, store: store) {
+                await home.loadSessions()
+                await health.refresh()
+                if !health.isProcessing && session.capture?.pending != true { regenerate() }
+            }
+        }
         .sheet(item: $edit) { kind in
             RecordAttributeEditor(kind: kind.rawValue, record: session, store: store, health: health) { textChanged in
                 await home.loadSessions()
@@ -260,18 +290,42 @@ struct SessionDetailView: View {
         } message: { Text(localError ?? "") }
     }
 
-    private var noteSource: String {
-        session.transcript.isEmpty && session.capture?.pending == true ? session.capture?.notes ?? "" : session.transcript
-    }
-
     private func blocks() -> [NoteBlock] {
-        NoteBlock.parse(noteSource, headings: Set((session.sourceAssets ?? []).map(\.displayName) + ["Patient notes"]), format: readableText)
+        let edits = session.summaryParagraphEdits ?? [:]
+        var result: [NoteBlock] = []
+        let grouped = Dictionary(grouping: recordFacts, by: \.category)
+        for fact in SummaryEntryCategory.allCases.flatMap({ grouped[$0] ?? [] }) {
+            let entry = fact.displayEntry
+            var generated = entry.title
+            if !entry.details.isEmpty && entry.details != generated {
+                generated += (generated.isEmpty ? "" : "\n") + entry.details
+            }
+            for field in entry.fields where !field.isMissing && !field.needsReview {
+                let value = field.value.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !value.isEmpty, !generated.localizedCaseInsensitiveContains(value),
+                      field.label.caseInsensitiveCompare(BodySystem.fieldLabel) != .orderedSame else { continue }
+                generated += "\n" + field.label + ": " + value
+            }
+            let text = edits[fact.id] ?? generated
+            result.append(NoteBlock(key: fact.id, initial: text, text: text, fact: fact))
+        }
+        // Keep patient writing even when an underlying detail is later retired.
+        let keys = Set(result.map(\.key))
+        for key in edits.keys.sorted() where !keys.contains(key) {
+            let text = edits[key] ?? ""
+            result.append(NoteBlock(key: key, initial: text, text: text))
+        }
+        if result.isEmpty {
+            let text = session.summary ?? ""
+            result.append(NoteBlock(key: "note", initial: text, text: text))
+        }
+        return result
     }
 
     private func beginNoteEdit(_ focus: NoteFocus) {
         if !editingNote {
             originalTitle = session.displayTitle; draftTitle = originalTitle
-            baseTranscript = session.transcript; draftBlocks = blocks()
+            baselineEdits = session.summaryParagraphEdits ?? [:]; draftBlocks = blocks()
             editingNote = true
         }
         noteFocus = focus
@@ -283,19 +337,13 @@ struct SessionDetailView: View {
         guard !savingNote else { return }
         savingNote = true
         noteFocus = nil
-        let changed = draftBlocks.contains { $0.text != $0.initial }
+        let changes = Dictionary(uniqueKeysWithValues: draftBlocks.filter { $0.text != $0.initial }.map { ($0.key, $0.text) })
         let title = originalTitle == draftTitle ? nil : draftTitle
-        let id = session.id
-        let text = draftBlocks.map(\.source).joined()
-        let base = baseTranscript
         Task {
           defer { savingNote = false }
           do {
-            if changed {
-                try await store.reviseStorySource(id, text: text, expectedTranscript: base, title: title)
-            } else if let title { try await store.editRecordMetadata(id: id, title: title) }
+            try await store.saveRecordSummary(session.id, changes: changes, baseline: baselineEdits, title: title)
             await home.loadSessions(); await health.refresh(); endNoteEdit()
-            if changed && !health.isProcessing && session.capture?.pending != true { regenerate() }
         } catch StoryEditError.staleRevision {
             localError = "More text arrived while you were editing. Your edits are still here. Copy them before cancelling to view the updated note."
         } catch { localError = error.localizedDescription }
@@ -321,43 +369,69 @@ struct SessionDetailView: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(content.indices, id: \.self) { i in
                         let block = content[i]
+                        if let category = block.fact?.category,
+                           i == 0 || content[i - 1].fact?.category != category {
+                            Text(category.displayTitle)
+                                .font(StoryDesignTokens.font(.title2, weight: .bold))
+                                .foregroundStyle(.primary)
+                                .accessibilityAddTraits(.isHeader)
+                                .padding(.top, i == 0 ? 0 : 24)
+                        }
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            if block.bullet { Text("•").accessibilityHidden(true) }
-                            if savingNote { Text(verbatim: block.text) }
-                            else if editingNote {
-                                TextField("Write notes here…", text: Binding(get: {
-                                    draftBlocks.indices.contains(i) ? draftBlocks[i].text : ""
-                                }, set: { if draftBlocks.indices.contains(i) { draftBlocks[i].text = $0 } }), axis: .vertical)
-                                    .focused($noteFocus, equals: .block(i)).accessibilityLabel("Note paragraph \(i + 1)")
-                            } else {
-                                Button { beginNoteEdit(.block(i)) } label: {
-                                    Text(verbatim: block.text.isEmpty ? "Write notes here…" : block.text)
-                                        .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                                }.accessibilityHint("Edit record text")
+                            if block.fact != nil { Text("•").accessibilityHidden(true) }
+                            VStack(alignment: .leading, spacing: 2) {
+                                if savingNote { Text(verbatim: block.text) }
+                                else if editingNote {
+                                    TextField("Write a summary…", text: Binding(get: {
+                                        draftBlocks.indices.contains(i) ? draftBlocks[i].text : ""
+                                    }, set: { if draftBlocks.indices.contains(i) { draftBlocks[i].text = $0 } }), axis: .vertical)
+                                        .focused($noteFocus, equals: .block(i)).accessibilityLabel("Note paragraph \(i + 1)")
+                                } else {
+                                    Button { beginNoteEdit(.block(i)) } label: {
+                                        Text(verbatim: block.text.isEmpty ? "Write a summary…" : block.text)
+                                            .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                                    }.accessibilityHint("Edit record text")
+                                }
+                                if let fact = block.fact {
+                                    Button {
+                                        openFact(RecordFactSelection(factID: fact.id, entryID: fact.latest.id))
+                                    } label: {
+                                        StorySourceTag(title: fact.category.displayTitle,
+                                                       systemImage: SummaryCategoryIcon(title: fact.category.displayTitle).icon)
+                                    }
+                                    .disabled(editingNote)
+                                    .accessibilityLabel("Open detail: \(fact.title)")
+                                }
                             }
-                        }.font(block.heading ? StoryDesignTokens.font(.headline, weight: .semibold) : StoryDesignTokens.body)
-                            .lineSpacing(4).padding(.top, i == 0 ? 4 : block.startsParagraph || block.heading ? 16 : 3)
+                        }.font(StoryDesignTokens.body)
+                            .lineSpacing(4).padding(.top, 8)
                     }
                 }
                 if let directory, let assets = session.sourceAssets, !assets.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Attachments").font(StoryDesignTokens.font(.subheadline)).foregroundStyle(.secondary)
-                        ForEach(assets) { asset in
-                            Button {
-                                previewAsset = SessionSourceStore(storageDirectory: directory).url(for: asset, sessionID: session.id)
-                            } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: asset.kind == .audio ? "waveform" : asset.kind == .image ? "photo" : "doc")
-                                        .foregroundStyle(StoryDesignTokens.action).frame(width: 24)
-                                    Text(verbatim: asset.displayName)
-                                    Spacer()
-                                    Image(systemName: "chevron.forward").font(.footnote).foregroundStyle(.secondary)
-                                }.padding(.horizontal, 14).frame(minHeight: 48)
-                                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
-                                    .contentShape(Rectangle())
-                            }.accessibilityHint("Open attachment preview")
-                        }
-                    }.padding(.top, 8)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Attached").font(.subheadline).foregroundStyle(.secondary)
+                            .accessibilityAddTraits(.isHeader)
+                        ScrollView(.horizontal) {
+                            LazyHStack(alignment: .top, spacing: 8) {
+                                ForEach(assets) { asset in
+                                    let url = SessionSourceStore(storageDirectory: directory).url(for: asset, sessionID: session.id)
+                                    Button {
+                                        noteFocus = nil
+                                        previewAsset = url
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            RawAssetThumbnail(url: url, kind: asset.kind,
+                                                              size: CGSize(width: 88, height: 70))
+                                            if asset.kind != .image {
+                                                Text(asset.displayName).font(.caption).lineLimit(2)
+                                                    .frame(width: 88, alignment: .leading)
+                                            }
+                                        }
+                                    }.accessibilityLabel("Open " + asset.displayName)
+                                }
+                            }
+                        }.scrollIndicators(.hidden)
+                    }.padding(.top, 6)
                 }
             }.buttonStyle(.plain).textFieldStyle(.plain).multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(20)
@@ -530,33 +604,11 @@ private struct RecordFactSelection: Identifiable {
     var id: String { "\(factID)|\(entryID)" }
 }
 
-// The editor changes visible words. Keep the source delimiters, document markers
-// and unchanged passages byte-for-byte when writing a revision.
 private struct NoteBlock {
-    var prefix = "", suffix = "", original = "", initial = "", text = ""
-    var heading = false, bullet = false, startsParagraph = false
-    var source: String { prefix + (text == initial ? original : text) + suffix }
-    static func parse(_ source: String, headings: Set<String>, format: (String) -> String) -> [Self] {
-        var result: [Self] = [], gap = "", previousBreaks = 0
-        for match in source.matches(of: #/(?i:<br[ \t]*\/?[ \t]*>)|\R|(?:(?!(?i:<br[ \t]*\/?[ \t]*>)).)+/#) {
-            let raw = String(match.output)
-            if raw.first?.isNewline == true || raw.wholeMatch(of: #/(?i:<br[ \t]*\/?[ \t]*>)/#) != nil {
-                gap += raw; previousBreaks += 1; continue
-            }
-            var b = Self(); b.prefix = gap; b.startsParagraph = previousBreaks > 1; gap = ""; previousBreaks = 0
-            var words = raw
-            if let m = raw.wholeMatch(of: #/([ \t]*#{1,6}[ \t]+)(.*)/#) { b.prefix += m.1; words = String(m.2); b.heading = true }
-            else if let m = raw.wholeMatch(of: #/([ \t]*[-*•][ \t]+)(.*)/#) { b.prefix += m.1; words = String(m.2); b.bullet = true }
-            b.original = words
-            if let m = raw.wholeMatch(of: #/[ \t]*[-–—]+[ \t]*((?i:page)[ \t]+[0-9]+(?:[ \t]+(?i:of)[ \t]+[0-9]+)?)[ \t]*[-–—]+[ \t]*/#) {
-                b.initial = String(m.1); b.heading = true
-            } else { b.initial = format(words); b.heading = b.heading || headings.contains(words) }
-            b.text = b.initial; result.append(b)
-        }
-        if result.isEmpty { result.append(Self()) }
-        result[result.count - 1].suffix = gap
-        return result
-    }
+    let key: String
+    let initial: String
+    var text: String
+    var fact: HealthFact?
 }
 
 private struct RecordTextPage {
@@ -706,4 +758,164 @@ struct RecordAttributeEditor: View {
             issue = "New text arrived while you were editing. Copy your changes, then reopen the editor to see the updated record."
         } catch { issue = error.localizedDescription }
     }
+}
+
+private struct RawRecordSheet: View {
+    let record: Session
+    let directory: URL?
+    let store: SessionStore
+    let saved: () async -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var base: Session
+    @State private var notes: String
+    @State private var combined: String
+    @State private var passages: [UUID: String]
+    @State private var editing = false
+    @State private var saving = false
+    @State private var error: String?
+    @State private var preview: URL?
+
+    init(record: Session, directory: URL?, store: SessionStore, saved: @escaping () async -> Void) {
+        self.record = record
+        self.directory = directory
+        self.store = store
+        self.saved = saved
+        _base = State(initialValue: record)
+        _notes = State(initialValue: record.capture?.notes ?? "")
+        _combined = State(initialValue: record.transcript)
+        _passages = State(initialValue: record.capture?.textByAsset ?? [:])
+    }
+
+    private func assembled(_ capture: RecordCapture) -> String {
+        var parts: [String] = []
+        if !capture.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parts.append("Patient notes\n" + capture.notes)
+        }
+        for asset in base.sourceAssets ?? [] {
+            if let text = capture.textByAsset[asset.id] { parts.append(asset.displayName + "\n" + text) }
+        }
+        return parts.joined(separator: "\n\n")
+    }
+
+    private var usesSeparatePassages: Bool {
+        guard let capture = base.capture else { return false }
+        return base.transcript == assembled(capture) || capture.pending && base.transcript.isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    if usesSeparatePassages && base.capture?.notes.isEmpty == false {
+                        section("Patient notes", text: $notes)
+                    }
+                    let assets = base.sourceAssets ?? []
+                    ForEach(assets) { asset in
+                        VStack(alignment: .leading, spacing: 8) {
+                            if let directory {
+                                let url = SessionSourceStore(storageDirectory: directory).url(for: asset, sessionID: base.id)
+                                Button { preview = url } label: {
+                                    HStack {
+                                        RawAssetThumbnail(url: url, kind: asset.kind)
+                                        Text(asset.displayName).font(.headline)
+                                        Image(systemName: "chevron.forward").font(.caption)
+                                    }
+                                }
+                            } else { Text(asset.displayName).font(.headline) }
+                            if usesSeparatePassages {
+                                passage(Binding(get: { passages[asset.id] ?? "" }, set: { passages[asset.id] = $0 }))
+                            } else if assets.count == 1 && base.capture == nil {
+                                passage($combined)
+                            } else if let captured = base.capture?.textByAsset[asset.id] {
+                                Text(verbatim: captured).textSelection(.enabled)
+                            }
+                        }
+                    }
+                    if !usesSeparatePassages && (assets.count != 1 || base.capture != nil) {
+                        section("Record text", text: $combined)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding()
+            }
+            .navigationTitle("Extracted data").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(editing ? "Discard edits" : "Close") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(editing ? "Save" : "Edit") {
+                        if editing { save() } else { editing = true }
+                    }.disabled(base.capture?.pending == true)
+                }
+            }
+            .disabled(saving)
+            .interactiveDismissDisabled(editing)
+            .quickLookPreview($preview)
+            .onChange(of: record) { _, latest in
+                guard !editing else { return }
+                base = latest; notes = latest.capture?.notes ?? ""
+                combined = latest.transcript; passages = latest.capture?.textByAsset ?? [:]
+            }
+            .alert("Couldn’t save edits", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+                Button("OK") { error = nil }
+            } message: { Text(error ?? "") }
+        }
+    }
+
+    private func section(_ title: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 8) { Text(title).font(.headline); passage(text) }
+    }
+
+    @ViewBuilder private func passage(_ text: Binding<String>) -> some View {
+        if editing {
+            TextField("Extracted text", text: text, axis: .vertical).textFieldStyle(.plain)
+        } else if text.wrappedValue.isEmpty {
+            Text("No extracted text yet").foregroundStyle(.secondary)
+        } else {
+            Text(verbatim: text.wrappedValue).textSelection(.enabled)
+        }
+    }
+
+    private func save() {
+        guard !saving else { return }
+        var capture = usesSeparatePassages ? base.capture : nil
+        capture?.notes = notes
+        capture?.textByAsset = passages
+        let text = capture.map(assembled) ?? combined
+        guard text != base.transcript || (capture != nil && capture != base.capture) else { dismiss(); return }
+        saving = true
+        Task {
+            do {
+                try await store.reviseStorySource(base.id, text: text, expectedTranscript: base.transcript,
+                                                  revisedCapture: capture, expectedCapture: base.capture)
+                dismiss()
+                await saved()
+            } catch { self.error = error.localizedDescription }
+            saving = false
+        }
+    }
+}
+
+private struct RawAssetThumbnail: View {
+    let url: URL
+    let kind: SessionSourceKind
+    var size = CGSize(width: 56, height: 56)
+    @State private var thumbnail: UIImage?
+    var body: some View {
+        Group {
+            if let thumbnail { Image(uiImage: thumbnail).resizable().scaledToFill() }
+            else { Image(systemName: kind == .audio ? "waveform" : kind == .image ? "photo" : "doc") }
+        }.frame(width: size.width, height: size.height).clipShape(RoundedRectangle(cornerRadius: 8)).background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+            .accessibilityHidden(true)
+            .task(id: url) {
+                thumbnail = nil
+                let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 96, height: 96),
+                                                            scale: 2, representationTypes: .all)
+                thumbnail = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request).uiImage
+            }
+    }
+}
+
+
+extension EnvironmentValues {
+    @Entry var askAboutRecord: ((Session) -> Void)? = nil
 }

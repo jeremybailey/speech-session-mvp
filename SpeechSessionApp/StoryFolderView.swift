@@ -13,10 +13,12 @@ final class StoryFolderRouter: ObservableObject {
     @Published var capture: Session?
     var onCaptureDismiss: (() -> Void)?
     var finishedCapture: UUID?
-    func newCapture() {
+    var documentImportID: UUID?
+    func newCapture(importDocument: Bool = false) {
         guard capture == nil else { return }
         var record = Session(transcript: "", inputType: .document, sourceAssets: [])
         record.capture = RecordCapture()
+        documentImportID = importDocument ? record.id : nil
         capture = record
     }
     var captureExcerpt: (id: UUID, quote: String)?
@@ -57,7 +59,7 @@ struct StoryFolderDestination: View {
     }
     @ViewBuilder private var destination: some View {
         switch route {
-        case .carePlan: carePlan().navigationTitle("My care plan").navigationBarTitleDisplayMode(.inline)
+        case .carePlan: carePlan().navigationTitle("").navigationBarTitleDisplayMode(.inline)
         case .folders: StoryFolderBrowser(store: store)
         case .allDetails:
             HealthSummaryView(model: health, home: home, store: store, structuredOnly: true)

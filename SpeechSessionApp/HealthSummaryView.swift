@@ -78,9 +78,36 @@ struct HealthSummaryView: View {
     var body: some View {
         let categoryFacts = Dictionary(grouping: unlinkedFacts, by: \.category)
         let categories = SummaryEntryCategory.allCases.filter { $0 != .followUp }
-        ScrollViewReader { proxy in
+        let categoryRows = ForEach(categories, id: \.self) { category in
+            let facts = categoryFacts[category] ?? []
+            let members = category == .practitionerContact ? model.snapshot.careTeam : []
+            let contactGroups = ContactPresentationGroup.groups(facts: facts, members: members)
+            DisclosureGroup(isExpanded: Binding(
+                get: { expanded.contains(category.rawValue) },
+                set: { if $0 { expanded.insert(category.rawValue) } else { expanded.remove(category.rawValue) } }
+            )) {
+                if category == .carePlan {
+                    ForEach(model.carePlans) { plan in sharedPlanRow(plan) }
+                } else if category == .practitionerContact {
+                    ForEach(contactGroups) { group in
+                        contactGroupRow(group)
+                    }
+                } else {
+                    ForEach(facts) { fact in factRow(fact) }
+                }
+                if facts.isEmpty && members.isEmpty && (category != .carePlan || model.carePlans.isEmpty) {
+                    Text("No details yet").foregroundStyle(.secondary)
+                }
+                Button(category == .practitionerContact ? "Add contact" : "Add detail", systemImage: "plus") {
+                    taskSheet = category == .practitionerContact ? .contact(.init()) : .add(category)
+                }.frame(minHeight: 44)
+            } label: {
+                categoryLabel(category.displayTitle, count: category == .carePlan ? model.carePlans.count : (category == .practitionerContact ? contactGroups.count : facts.count))
+            }.id(category.rawValue)
+        }
+        return ScrollViewReader { proxy in
         List {
-            if model.hasLoaded && model.snapshot.sessions.isEmpty && model.snapshot.careTeam.isEmpty {
+            if !structuredOnly && model.hasLoaded && model.snapshot.sessions.isEmpty && model.snapshot.careTeam.isEmpty {
                 Section {
                     Text("Your health, in one place").font(StoryDesignTokens.font(.headline, weight: .semibold))
                     Text("Add a recording or document, or choose a category below to add a detail yourself.")
@@ -111,39 +138,19 @@ struct HealthSummaryView: View {
             if !categories.isEmpty {
                 Section {
                     regionRecovery(.details)
-                    DisclosureGroup(isExpanded: $allExpanded) {
-                    ForEach(categories, id: \.self) { category in
-                        let facts = categoryFacts[category] ?? []
-                        let members = category == .practitionerContact ? model.snapshot.careTeam : []
-                        let contactGroups = ContactPresentationGroup.groups(facts: facts, members: members)
-                        DisclosureGroup(isExpanded: Binding(
-                            get: { expanded.contains(category.rawValue) },
-                            set: { if $0 { expanded.insert(category.rawValue) } else { expanded.remove(category.rawValue) } }
-                        )) {
-                            if category == .carePlan {
-                                ForEach(model.carePlans) { plan in sharedPlanRow(plan) }
-                            } else if category == .practitionerContact {
-                                ForEach(contactGroups) { group in
-                                    contactGroupRow(group)
-                                }
-                            } else {
-                                ForEach(facts) { fact in factRow(fact) }
-                            }
-                            if facts.isEmpty && members.isEmpty && (category != .carePlan || model.carePlans.isEmpty) {
-                                Text("No details yet").foregroundStyle(.secondary)
-                            }
-                            Button(category == .practitionerContact ? "Add contact" : "Add detail", systemImage: "plus") {
-                                taskSheet = category == .practitionerContact ? .contact(.init()) : .add(category)
-                            }.frame(minHeight: 44)
+                    if structuredOnly {
+                        categoryRows
+                    } else {
+                        DisclosureGroup(isExpanded: $allExpanded) {
+                            categoryRows
                         } label: {
-                            categoryLabel(category.displayTitle, count: category == .carePlan ? model.carePlans.count : (category == .practitionerContact ? contactGroups.count : facts.count))
-                        }.id(category.rawValue)
+                            Label("All", systemImage: "square.grid.2x2.fill")
+                                .font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(.primary).padding(.vertical, 8)
+                        }
                     }
-                    } label: {
-                        Label("All", systemImage: "square.grid.2x2.fill")
-                            .font(StoryDesignTokens.font(.headline, weight: .semibold)).foregroundStyle(.primary).padding(.vertical, 8)
-                    }
-                } header: { regionHeader("Details", region: .details) }
+                } header: {
+                    if !structuredOnly { regionHeader("Details", region: .details) }
+                }
             }
             if !structuredOnly {
             Section {
@@ -217,13 +224,15 @@ struct HealthSummaryView: View {
                         }
                     }
                     }
-                    Button("Regenerate overview", systemImage: "text.bubble") {
-                        overviewOnlyRequest = true
-                        prepare()
-                    }.disabled(model.isProcessing || model.facts.isEmpty)
-                    Button("Regenerate conditions", systemImage: "square.grid.2x2") {
-                        showConditionRetryConsent = true
-                    }.disabled(model.isProcessing || model.facts.isEmpty || backend == "onDevice")
+                    if !structuredOnly {
+                        Button("Regenerate overview", systemImage: "text.bubble") {
+                            overviewOnlyRequest = true
+                            prepare()
+                        }.disabled(model.isProcessing || model.facts.isEmpty)
+                        Button("Regenerate conditions", systemImage: "square.grid.2x2") {
+                            showConditionRetryConsent = true
+                        }.disabled(model.isProcessing || model.facts.isEmpty || backend == "onDevice")
+                    }
                     Button("Reprocess health details", systemImage: "doc.text.magnifyingglass") {
                         reprocessAllRecordsRequest = true
                         prepare()
@@ -398,7 +407,6 @@ struct HealthSummaryView: View {
                 return
             }
             #endif
-            if structuredOnly { allExpanded = true }
             await model.refresh()
             if resumePendingSummaryJobIfPossible() { return }
             #if DEBUG

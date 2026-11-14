@@ -926,7 +926,7 @@ struct SummaryCategoryIcon: View {
         }
     }
 
-    private var icon: String {
+    var icon: String {
         if title == "Original records" { return "tray.full.fill" }
         let l = title.lowercased()
         if l.contains("care team") || l.contains("practitioner") || (l.contains("provider") && l.contains("contact")) {

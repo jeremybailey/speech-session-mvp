@@ -46,10 +46,11 @@ public struct StoryCareEvent: Codable, Equatable, Identifiable, Sendable {
     public var factIDs: [String]? = nil
 }
 public struct StoryMessage: Codable, Equatable, Identifiable, Sendable {
-    public static func queuedQuestion(_ text: String) -> Self {
-        StoryMessage(role: "user", text: text, state: "queued")
+    public static func queuedQuestion(_ text: String, recordID: UUID? = nil) -> Self {
+        StoryMessage(scopeRecordID: recordID, role: "user", text: text, state: "queued")
     }
 
+    public var scopeRecordID: UUID? = nil
     public var summaryParentID:UUID? = nil
     public var id: UUID = UUID()
     public var role: String
@@ -243,9 +244,26 @@ extension SessionStore {
         var drafts = env.story.sourceDrafts ?? [:]; drafts[recordID.uuidString] = text
         env.story.sourceDrafts = drafts; try saveEnvelope(env)
     }
-    public func reviseStorySource(_ recordID: UUID, text: String, expectedTranscript: String? = nil, title: String? = nil) throws {
+    public func saveRecordSummary(_ id: UUID, changes: [String: String], baseline: [String: String], title: String?) throws {
+        var env = try loadEnvelope()
+        guard let i = env.sessions.firstIndex(where: { $0.id == id }) else { throw StoryEditError.notFound }
+        var edits = env.sessions[i].summaryParagraphEdits ?? [:]
+        for (key, text) in changes {
+            guard edits[key] == baseline[key] else { throw StoryEditError.staleRevision }
+            edits[key] = text
+        }
+        env.sessions[i].summaryParagraphEdits = edits
+        if let title { env.sessions[i].editedRecordTitle = title.trimmingCharacters(in: .whitespacesAndNewlines) }
+        try saveEnvelope(env)
+    }
+
+    public func reviseStorySource(_ recordID: UUID, text: String, expectedTranscript: String? = nil, title: String? = nil, revisedCapture: RecordCapture? = nil, expectedCapture: RecordCapture? = nil) throws {
         var env = try loadEnvelope();guard let i = env.sessions.firstIndex(where: {$0.id == recordID}) else {throw StoryEditError.notFound}
         if let expectedTranscript, env.sessions[i].transcript != expectedTranscript { throw StoryEditError.staleRevision }
+        if let revisedCapture {
+            guard env.sessions[i].capture == expectedCapture else { throw StoryEditError.staleRevision }
+            env.sessions[i].capture = revisedCapture
+        }
         if let title { env.sessions[i].editedRecordTitle = title.trimmingCharacters(in: .whitespacesAndNewlines) }
         env.story.sourceDrafts?.removeValue(forKey: recordID.uuidString)
         let previous = env.sessions[i].transcript;guard text != previous else {try saveEnvelope(env);return}
@@ -324,7 +342,9 @@ extension SessionStore {
         var env=try loadEnvelope()
         guard let i=env.story.messages.firstIndex(where:{$0.id==id && $0.role=="user"}), Set(citations).isSubset(of:Set(evidence.map(\.id))) else {throw StoryEditError.invalidMutation}
         guard env.story.messages[i].state == "queued" else {return}
-        var reply=StoryMessage(role:"assistant",text:text,citationIDs:citations)
+        let scope = env.story.messages[i].scopeRecordID
+        if let scope, !evidence.allSatisfy({ $0.recordID == scope }) { throw StoryEditError.invalidMutation }
+        var reply=StoryMessage(scopeRecordID:scope,role:"assistant",text:text,citationIDs:citations)
         reply.id=IncrementalRecordUpdate.stableID("story-answer:"+id.uuidString);reply.evidence=evidence.filter{citations.contains($0.id)}
         env.story.messages.append(reply);env.story.messages[i].state="completed";try saveEnvelope(env)
     }
@@ -499,6 +519,51 @@ extension SessionStore {
     public func storyRetrievalMetadata(query:String,limit:Int) throws -> [String:String] {
         let scope=storyQueryScope(query), count=try storyQueryFacts(query).count
         return ["scope":scope,"availableCount":String(count),"returnedCount":String(min(count,max(1,min(limit,200)))),"complete":scope != "retrieval" && count <= limit && count <= 200 ? "true":"false"]
+    }
+    public func storyRecordEvidence(recordID: UUID, query: String) throws -> [StoryEvidence] {
+        let envelope = try loadEnvelope()
+        guard let record = envelope.sessions.first(where: { $0.id == recordID }) else { throw StoryEditError.notFound }
+        let title = String(record.displayTitle.prefix(160))
+        var sources = [record.transcript]
+        if record.transcript.isEmpty, let capture = record.capture {
+            sources.append(capture.notes)
+            sources += capture.textByAsset.sorted { $0.key.uuidString < $1.key.uuidString }.map { $0.value }
+        }
+        if let summary = record.summary { sources.append(summary) }
+        for key in (record.summaryParagraphEdits ?? [:]).keys.sorted() {
+            if let edit = record.summaryParagraphEdits?[key], !edit.isEmpty { sources.append("Patient-edited summary: " + edit) }
+        }
+        var passages: [String] = []
+        for source in sources {
+            var remaining = source[...]
+            while !remaining.isEmpty {
+                let window = remaining.prefix(1400)
+                let end = window.endIndex == remaining.endIndex ? window.endIndex :
+                    (window.lastIndex(where: { $0.isWhitespace }).map { remaining.index(after: $0) } ?? window.endIndex)
+                let passage = remaining[..<end].trimmingCharacters(in: .whitespacesAndNewlines)
+                if !passage.isEmpty { passages.append(passage) }
+                remaining = remaining[end...]
+            }
+        }
+        let terms = Set(query.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).filter { $0.count > 2 })
+        var ranked: [(Int, Int)] = []
+        for (index, text) in passages.enumerated() {
+            let words = text.lowercased()
+            let score = terms.filter { words.contains(String($0)) }.count
+            ranked.append((index, score))
+        }
+        ranked.sort { $0.1 == $1.1 ? $0.0 < $1.0 : $0.1 > $1.1 }
+        var bytes = 0
+        var selected: [Int] = []
+        for (index, _) in ranked where selected.count < 72 {
+            let size = passages[index].utf8.count
+            guard bytes + size <= 32000 else { continue }
+            bytes += size
+            selected.append(index)
+        }
+        return selected.sorted().enumerated().map { number, index in
+            StoryEvidence(id: "E" + String(number + 1), text: passages[index], recordID: recordID, title: title)
+        }
     }
     public func storyEvidence(query:String, limit:Int = 24) throws -> [StoryEvidence] {
         let env = try loadEnvelope();let facts = try storyQueryFacts(query)

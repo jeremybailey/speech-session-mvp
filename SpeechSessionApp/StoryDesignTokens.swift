@@ -18,6 +18,9 @@ enum StoryDesignTokens {
     static let softSurface = adaptive(0xFFEECF, 0x413537)
     static let onSoftSurface = adaptive(0x483D3F, 0xFFEECF)
 
+    static let bubbleFill = adaptive(0x483D3F, 0x483D3F, highLight: 0x302A2B, highDark: 0x302A2B)
+    static let bubbleContent = adaptive(0xFFEECF, 0xFFEECF)
+
     static let controlHeight: CGFloat = 48
     static let iconSize: CGFloat = 44
     static let tileRadius: CGFloat = 12

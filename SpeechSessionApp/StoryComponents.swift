@@ -39,69 +39,59 @@ struct StoryOnboardingCopy: View {
     }
 }
 
-enum StoryRecordPrompts {
-    static let questions = ["Who’s on your care team?", "What medications do you take?", "What’s bothering you?"]
-}
-
-struct StoryQuestionBubble: View {
+struct StorySpeechBubble: View {
     let text: String
+    var trailingTargetWidth: CGFloat? = nil
+    let symbols: [String]
+    var heading: String? = nil
+
     var body: some View {
-        Text(text)
-            .font(StoryDesignTokens.body)
-            .foregroundStyle(StoryDesignTokens.onSoftSurface)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 14)
-            .frame(minHeight: 44)
-            .background(StoryDesignTokens.softSurface, in: RoundedRectangle(cornerRadius: 20))
-    }
-}
-
-enum StoryGuideAnchor: Hashable { case caption, button }
-
-private struct StoryGuideBounds: PreferenceKey {
-    static var defaultValue: [StoryGuideAnchor: Anchor<CGRect>] { [:] }
-    static func reduce(value: inout [StoryGuideAnchor: Anchor<CGRect>], nextValue: () -> [StoryGuideAnchor: Anchor<CGRect>]) {
-        value.merge(nextValue()) { _, new in new }
-    }
-}
-
-extension View {
-    func storyGuideAnchor(_ part: StoryGuideAnchor) -> some View {
-        anchorPreference(key: StoryGuideBounds.self, value: .bounds) { [part: $0] }
-    }
-
-    func storyPromptAnchor(_ prompt: String) -> some View {
-        anchorPreference(key: StoryGuideBounds.self, value: .bounds) {
-            prompt == StoryRecordPrompts.questions.last ? [.caption: $0] : [:]
-        }
-    }
-
-    func connectStoryGuide() -> some View {
-        overlayPreferenceValue(StoryGuideBounds.self) { anchors in
-            GeometryReader { geometry in
-                if let caption = anchors[.caption], let button = anchors[.button] {
-                    let text = geometry[caption], target = geometry[button]
-                    let direction: CGFloat = target.midX >= text.midX ? 1 : -1
-                    let start = CGPoint(x: text.midX + direction * min(text.width * 0.25, 40), y: text.maxY + 10)
-                    let tip = CGPoint(x: target.midX, y: target.minY - 16)
-                    Path { path in
-                        path.move(to: start)
-                        let neck = CGPoint(x: tip.x, y: tip.y - 15)
-                        path.addCurve(to: neck,
-                                      control1: CGPoint(x: start.x + direction * 16, y: start.y + 18),
-                                      control2: CGPoint(x: neck.x, y: neck.y - 14))
-                        path.addLine(to: CGPoint(x: tip.x, y: tip.y - 2))
-                        path.move(to: CGPoint(x: tip.x - 7, y: tip.y - 11))
-                        path.addLine(to: tip)
-                        path.addLine(to: CGPoint(x: tip.x + 8, y: tip.y - 10))
+        VStack(alignment: heading == nil ? .leading : .center, spacing: 8) {
+            if !symbols.isEmpty {
+                HStack(spacing: 14) {
+                    ForEach(symbols, id: \.self) { symbol in
+                        Image(systemName: symbol)
+                            .font(StoryDesignTokens.font(.title, weight: .semibold))
+                            .foregroundStyle(StoryDesignTokens.bubbleContent)
                     }
-                    .stroke(StoryDesignTokens.action, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
                 }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 4)
+                .accessibilityHidden(true)
             }
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+            if let heading {
+                Text(heading)
+                    .font(StoryDesignTokens.label)
+                    .foregroundStyle(StoryDesignTokens.bubbleContent)
+                    .multilineTextAlignment(.center)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            Text(text)
+                .font(StoryDesignTokens.body)
+                .foregroundStyle(StoryDesignTokens.bubbleContent)
+                .multilineTextAlignment(heading == nil ? .leading : .center)
+                .fixedSize(horizontal: false, vertical: true)
         }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            .frame(minHeight: 44)
+            .background(StoryDesignTokens.bubbleFill, in: RoundedRectangle(cornerRadius: 20))
+            .overlay(alignment: trailingTargetWidth == nil ? .bottom : .bottomTrailing) {
+                let side: CGFloat = 16
+                let height = side * CGFloat(3).squareRoot() / 2
+                Path { path in
+                    path.move(to: .zero)
+                    path.addLine(to: CGPoint(x: side, y: 0))
+                    path.addLine(to: CGPoint(x: side / 2, y: height))
+                    path.closeSubpath()
+                }
+                .fill(StoryDesignTokens.bubbleFill)
+                .frame(width: side, height: height)
+                .frame(width: trailingTargetWidth)
+                .offset(y: height - 1)
+                .accessibilityHidden(true)
+            }
+            .padding(.bottom, 13)
     }
 }
 
@@ -109,19 +99,14 @@ struct StoryActionDock: View {
     let ask: () -> Void
     let add: () -> Void
     let guideToAdd: Bool
+    @State private var addButtonWidth = StoryDesignTokens.controlHeight
 
     var body: some View {
         VStack(spacing: 4) {
             if guideToAdd {
-                VStack(spacing: 8) {
-                    ForEach(StoryRecordPrompts.questions, id: \.self) { question in
-                        StoryQuestionBubble(text: question)
-                            .storyPromptAnchor(question)
-                    }
-                }
-                .frame(maxWidth: .infinity)
+                StorySpeechBubble(text: "Add a voice journal, photo or file. We’ll automatically pull the key details into your health story…", trailingTargetWidth: addButtonWidth, symbols: ["note.text", "waveform", "photo", "doc"], heading: "Add your first record")
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(.top, 12)
-                    .padding(.bottom, 68)
             }
             HStack(alignment: .bottom, spacing: 12) {
                 Button(action: ask) {
@@ -139,10 +124,9 @@ struct StoryActionDock: View {
                 .buttonBorderShape(.circle)
                 .storyControlStyle(prominent: true)
                 .accessibilityLabel("Add record")
-                .storyGuideAnchor(.button)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { addButtonWidth = $0 }
             }
         }.controlSize(.regular)
-        .connectStoryGuide()
     }
 }
 
@@ -157,10 +141,18 @@ struct StoryEmptyOverview: View {
 
 struct StoryEmptyRecord: View {
     var body: some View {
-        StoryOnboardingCopy(detail: "Your notes, recordings, and files will appear here, newest first.")
-            .padding(.vertical, 8)
-            .listRowSeparator(.hidden)
-            .listRowBackground(StoryDesignTokens.canvas)
+        HStack(alignment: .top, spacing: 14) {
+            StoryRecordIcon(symbol: "doc")
+                .saturation(0)
+                .opacity(0.65)
+                .accessibilityHidden(true)
+
+            StoryOnboardingCopy(detail: "Your notes, recordings, photos and files will appear here. Tap + below to add your first record.")
+                .accessibilityLabel("Your notes, recordings, photos and files will appear here. Use the Add record button below to get started.")
+        }
+        .padding(.vertical, 8)
+        .listRowSeparator(.hidden)
+        .listRowBackground(StoryDesignTokens.canvas)
     }
 }
 
@@ -192,27 +184,6 @@ struct StoryFeaturePreview<Example: View>: View {
     }
 }
 
-struct StoryCarePlanPreview: View {
-    let add: () -> Void
-
-    var body: some View {
-        StoryFeaturePreview(title: "Your care plan in one place",
-                            description: "Add a record to upload a written care plan or record a voice journal about what you’re following now.",
-                            actionTitle: "Add a record", action: add) {
-            VStack(alignment: .leading, spacing: 12) {
-                Label("Example care plan", systemImage: "list.bullet.clipboard")
-                    .font(StoryDesignTokens.label)
-                Divider()
-                Text("Following now").font(StoryDesignTokens.caption)
-                Text("Keep a list of questions for my next visit.").font(StoryDesignTokens.body)
-                Divider()
-                Text("Recorded recommendations").font(StoryDesignTokens.caption)
-                Text("Bring the exercise sheet to the follow-up.").font(StoryDesignTokens.body)
-            }
-        }
-    }
-}
-
 extension View {
     @ViewBuilder func storyControlStyle(prominent: Bool = false) -> some View {
         if #available(iOS 26, *) {
@@ -227,8 +198,9 @@ extension View {
 
 struct StorySourceTag: View {
     let title: String
+    var systemImage = "link"
     var body: some View {
-        Label(title, systemImage: "link")
+        Label(title, systemImage: systemImage)
             .font(StoryDesignTokens.font(.body, weight: .medium))
             .foregroundStyle(StoryDesignTokens.action)
             .padding(.horizontal, 12).padding(.vertical, 7)

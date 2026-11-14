@@ -181,7 +181,6 @@ struct StoryCaptureView: View {
     @State private var draftActions = false
     @State private var ending = false
     @State private var showReminder = false
-    @State private var selectedPrompt: String?
     @FocusState private var writingNotes: Bool
 
     private var showCaptureGuide: Bool {
@@ -195,8 +194,10 @@ struct StoryCaptureView: View {
         var id: String { rawValue }
     }
 
-    init(record: Session, store: SessionStore, home: HomeViewModel, finish: @escaping (UUID?) -> Void) {
+    init(record: Session, store: SessionStore, home: HomeViewModel, importDocument: Bool = false, finish: @escaping (UUID?) -> Void) {
         _editor = StateObject(wrappedValue: CaptureEditor(record: record, store: store))
+        _filePicker = State(initialValue: importDocument)
+        _fileTypes = State(initialValue: importDocument ? [.pdf, .plainText] : [])
         self.home = home
         self.finish = finish
     }
@@ -217,7 +218,7 @@ struct StoryCaptureView: View {
                         .accessibilityIdentifier("Capture title")
                     RecordMetadataRow(session: editor.record, health: health, editTime: { extra = .time },
                                       editTeam: { extra = .team }, editConditions: { extra = .conditions })
-                    TextField(selectedPrompt ?? "Write notes here…", text: field(\.notes), axis: .vertical)
+                    TextField("write notes here, transcribe a recording or extract text from photos and files below", text: field(\.notes), axis: .vertical)
                         .focused($writingNotes)
                         .font(StoryDesignTokens.body).lineLimit(6...)
                         .accessibilityIdentifier("Capture notes")
@@ -338,58 +339,29 @@ struct StoryCaptureView: View {
             let layout = typeSize.isAccessibilitySize
                 ? AnyLayout(VStackLayout(spacing: 8))
                 : AnyLayout(HStackLayout(spacing: 10))
-            if showCaptureGuide {
-                VStack(spacing: 8) {
-                    ForEach(StoryRecordPrompts.questions, id: \.self) { prompt in
-                        Button {
-                            selectedPrompt = prompt
-                            writingNotes = true
-                        } label: {
-                            StoryQuestionBubble(text: prompt)
+            Group {
+                if showCaptureGuide {
+                    if typeSize.isAccessibilitySize {
+                        ScrollView {
+                            guidedControls
                         }
-                        .storyPromptAnchor(prompt)
-                        .buttonStyle(.plain)
-                        .accessibilityHint("Write a response")
+                        .frame(maxHeight: 300)
+                    } else {
+                        guidedControls
+                    }
+                } else {
+                    layout {
+                        recordControl
+                        if active || paused {
+                            TimelineView(.periodic(from: .now, by: 1)) { tick in
+                                let seconds = Int((editor.record.capture?.duration ?? 0) + (editor.recordingSince.map { max(0, tick.date.timeIntervalSince($0)) } ?? 0))
+                                Text(String(format: "%d:%02d", seconds / 60, seconds % 60)).monospacedDigit().fixedSize()
+                            }
+                        }
+                        attachmentControl
                     }
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, 52)
-            }
-            layout {
-                let active = editor.recordingSince != nil
-                let paused = (editor.record.capture?.duration ?? 0) > 0
-                Button {
-                    if editor.starting { editor.cancelPendingStart() }
-                    else if active { editor.pause() }
-                    else { Task { await editor.start() } }
-                } label: {
-                    Label(editor.starting ? "Cancel" : active ? "Pause" : paused ? "Resume" : "Record",
-                          systemImage: editor.starting ? "xmark" : active ? "pause.fill" : "mic.fill")
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                }
-                .storyControlStyle(prominent: !active && !editor.starting)
-                .accessibilityHint(active || editor.starting ? "" : Self.reminder)
-                .storyGuideAnchor(.button)
-                if active || paused {
-                    TimelineView(.periodic(from: .now, by: 1)) { tick in
-                        let seconds = Int((editor.record.capture?.duration ?? 0) + (editor.recordingSince.map { max(0, tick.date.timeIntervalSince($0)) } ?? 0))
-                        Text(String(format: "%d:%02d", seconds / 60, seconds % 60)).monospacedDigit().fixedSize()
-                    }
-                }
-                Menu {
-                    Button("Photo library", systemImage: "photo.on.rectangle") { library = true }
-                    Button("Camera", systemImage: "camera") { camera = true }
-                        .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
-                    Button("Import document", systemImage: "doc") { fileTypes = [.pdf, .plainText]; filePicker = true }
-                    Button("Scan pages", systemImage: "doc.viewfinder") { scanner = true }
-                        .disabled(!VNDocumentCameraViewController.isSupported)
-                    Button("Import audio", systemImage: "waveform") { fileTypes = [.audio]; filePicker = true }
-                } label: {
-                    Label("Attach", systemImage: "paperclip")
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                }
-                .storyControlStyle()
-                .disabled(importing)
+
             }
             .font(StoryDesignTokens.font(.body, weight: .medium))
             .controlSize(.regular)
@@ -401,7 +373,6 @@ struct StoryCaptureView: View {
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
             }
         }
-        .connectStoryGuide()
         .padding(.horizontal).padding(.vertical, 8)
         .task(id: editor.recordingSince) {
             guard let start = editor.recordingSince else { showReminder = false; return }
@@ -411,6 +382,58 @@ struct StoryCaptureView: View {
             }
             do { try await Task.sleep(for: .seconds(5)) } catch { return }
             if editor.recordingSince == start { showReminder = false }
+        }
+    }
+
+    private var active: Bool { editor.recordingSince != nil }
+    private var paused: Bool { (editor.record.capture?.duration ?? 0) > 0 }
+
+    private var recordControl: some View {
+        Button {
+            if editor.starting { editor.cancelPendingStart() }
+            else if active { editor.pause() }
+            else { Task { await editor.start() } }
+        } label: {
+            Label(editor.starting ? "Cancel" : active ? "Pause" : paused ? "Resume" : "Record",
+                  systemImage: editor.starting ? "xmark" : active ? "pause.fill" : "mic.fill")
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .storyControlStyle(prominent: !active && !editor.starting)
+        .accessibilityHint(active || editor.starting ? "" : Self.reminder)
+    }
+
+    private var attachmentControl: some View {
+        Menu {
+            Button("Photo library", systemImage: "photo.on.rectangle") { library = true }
+            Button("Camera", systemImage: "camera") { camera = true }
+                .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
+            Button("Import document", systemImage: "doc") { fileTypes = [.pdf, .plainText]; filePicker = true }
+            Button("Scan pages", systemImage: "doc.viewfinder") { scanner = true }
+                .disabled(!VNDocumentCameraViewController.isSupported)
+            Button("Import audio", systemImage: "waveform") { fileTypes = [.audio]; filePicker = true }
+        } label: {
+            Label("Attach", systemImage: "paperclip")
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .storyControlStyle()
+        .disabled(importing)
+    }
+
+    private var guidedControls: some View {
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 16))
+            : AnyLayout(HStackLayout(alignment: .bottom, spacing: 10))
+        return layout {
+            VStack(spacing: 8) {
+                StorySpeechBubble(text: "Transcribe a visit or record a voice journal about your conditions…", symbols: ["waveform"])
+                recordControl
+            }
+
+            VStack(spacing: 8) {
+                StorySpeechBubble(text: "Extract facts from lab reports, photos of medications and care plans…", symbols: ["photo", "doc"])
+                attachmentControl
+            }
+            .buttonStyle(.plain)
         }
     }
 

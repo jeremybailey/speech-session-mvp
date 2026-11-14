@@ -92,15 +92,20 @@ import SpeechSessionFeatures
             } catch is CancellationError {} catch {self.error=error.localizedDescription}
         }
     }
-    func request(id:UUID,kind:String,revision:Int,before:String,after:String,targets:[String],auth:KindeAuthManager,summaryEvidence:[StoryEvidence]? = nil) async throws -> [String:Any] {
+    func request(id:UUID,kind:String,revision:Int,before:String,after:String,targets:[String],auth:KindeAuthManager,summaryEvidence:[StoryEvidence]? = nil,recordID:UUID? = nil) async throws -> [String:Any] {
         var selected:[StoryEvidence]=[];var metadata:[String:String]=[:];var conversation:[[String:String]]=[]
         if let summaryEvidence {
             guard summaryEvidence.count<=200,summaryEvidence.reduce(0,{$0+$1.text.count})<=80000 else {throw StoryEditError.invalidMutation}
             selected=summaryEvidence
             metadata=["scope":"retrieval","availableCount":String(selected.count),"returnedCount":String(selected.count),"complete":"false"]
         } else {
-        let history=try await store.storyWorkspace().messages.filter{["user","assistant"].contains($0.role) && $0.id != id && ["saved","completed"].contains($0.state)}.suffix(20)
+        let history=try await store.storyWorkspace().messages.filter{["user","assistant"].contains($0.role) && $0.scopeRecordID == recordID && $0.id != id && ["saved","completed"].contains($0.state)}.suffix(20)
         let retrievalQuery=kind == "chat" ? history.filter{$0.role=="user"}.suffix(2).map(\.text).joined(separator:" ")+" "+after:after
+        conversation=history.map{["role":$0.role,"text":String($0.text.prefix(2000))]}
+        if let recordID {
+            selected = try await store.storyRecordEvidence(recordID: recordID, query: retrievalQuery)
+            metadata = ["scope":"retrieval","availableCount":String(selected.count),"returnedCount":String(selected.count),"complete":"false"]
+        } else {
         let scope=try await store.storyRetrievalMetadata(query:summaryEvidence == nil ? after:"",limit:100)
         let sources = try await store.storyEvidence(query:scope["scope"] == "retrieval" ? retrievalQuery:after,limit:100)
         let allFacts = try await store.storyTargetEvidence(targets)
@@ -111,10 +116,10 @@ import SpeechSessionFeatures
             if kind != "edit" {source.id="E"+String(selected.count+1)}
             characters+=source.text.count;selected.append(source)
         }
-        conversation=history.map{["role":$0.role,"text":String($0.text.prefix(2000))]}
         metadata=scope
         if selected.count != sources.count {metadata["complete"]="false"}
         metadata["returnedCount"]=String(selected.count)
+        }
         }
         let endpoint = URL(string:(Bundle.main.object(forInfoDictionaryKey:"CloudOpenAIBaseURL") as? String ?? "")+"/v1/health-processing/story-operations")!
         var payload:[String:Any] = ["id":id.uuidString.lowercased(),"version":"story-v1","kind":kind,"baseRevision":revision,"before":before,"after":after,"targetIDs":targets,"evidence":try JSONSerialization.jsonObject(with:JSONEncoder().encode(Array(selected)))]
@@ -177,14 +182,14 @@ import SpeechSessionFeatures
                 try await store.applyStoryEdit(edit.id,kind:value["kind"] as? String ?? "clarification",targets:value["targetIDs"] as? [String] ?? [],question:value["question"] as? String,actionUpdates:Dictionary((value["actionUpdates"] as? [[String:String]] ?? []).compactMap{a in guard let id=a["factID"],let status=a["status"] else{return nil};return (id,status)},uniquingKeysWith: {a,_ in a}))
             }
             let questions=try await store.storyWorkspace().messages.filter{$0.role=="user" && $0.state=="queued"}
-            for question in questions {activeQuestionID=question.id;try await answer(question.id,text:question.text,auth:auth)}
+            for question in questions {activeQuestionID=question.id;try await answer(question,auth:auth)}
             activeQuestionID=nil;answerDraft="";answerStatus=""
             await reload()
         } catch {self.error="Your question is saved. The answer couldn’t be loaded yet."}
     }
-    func ask(_ text: String, auth: KindeAuthManager) -> UUID? {
+    func ask(_ text: String, recordID: UUID? = nil, auth: KindeAuthManager) -> UUID? {
         guard !busy, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        let question = StoryMessage.queuedQuestion(text)
+        let question = StoryMessage.queuedQuestion(text, recordID: recordID)
         busy = true
         sendingQuestion = question
         answerDraft = ""
@@ -207,7 +212,7 @@ import SpeechSessionFeatures
             }
             activeQuestionID = question.id
             do {
-                try await answer(question.id, text: question.text, auth: auth)
+                try await answer(question, auth: auth)
             } catch {
                 self.error = "Your question is saved. The answer couldn’t be loaded yet."
             }
@@ -219,8 +224,9 @@ import SpeechSessionFeatures
         }
         return question.id
     }
-    private func answer(_ id:UUID,text:String,auth:KindeAuthManager) async throws {
-        let value=try await request(id:id,kind:"chat",revision:0,before:"",after:text,targets:[],auth:auth)
+    private func answer(_ question:StoryMessage,auth:KindeAuthManager) async throws {
+        let id = question.id
+        let value=try await request(id:id,kind:"chat",revision:0,before:"",after:question.text,targets:[],auth:auth,recordID:question.scopeRecordID)
         let response=value["kind"] as? String == "clarification" ? value["question"] as? String:value["text"] as? String
         try await store.completeStoryQuestion(id,text:response ?? "I couldn’t find an answer in these records.",citations:value["citationIDs"] as? [String] ?? [],evidence:evidence)
     }
@@ -246,6 +252,7 @@ struct StoryLabView: View {
     @Environment(\.scenePhase) private var scenePhase
     @ScaledMetric(relativeTo:.body) private var citationTextSize:CGFloat=StoryDesignTokens.bodyBaseSize
     @FocusState private var chatFocused:Bool
+    @State private var chatRecord: Session?
     @State private var visibleChatIDs:Set<UUID>=[]
     @StateObject private var sharing:StorySummaryGeneration
     @State private var chatContentBottom:CGFloat=0
@@ -271,7 +278,7 @@ struct StoryLabView: View {
     private var day:String {Calendar.current.startOfDay(for:Date()).formatted(.iso8601)}
     var body:some View {
         NavigationStack(path: $folderRouter.path) {
-            HomeView(home:appModel.home,recording:appModel.recording,store:appModel.store,storyRecords:true,storyNarrative:model.didLoadStory ? model.narrative : nil,retryStoryLoad:model.initialStoryLoadFailed ? {Task {await model.reload()}} : nil,storyBusy:model.busy,summaryStatus:sharing.homeStatus,summaryDrawer:{AnyView(StoryTemplateShareView(home:appModel.home,records:model.records,store:appModel.store,job:sharing))},askStory:openChat,refreshStory:{Task{await model.refreshNarrative(auth:auth)}},pendingSharedImportURL:$appModel.pendingSharedImportURL,advanceSharedImportQueue:appModel.enqueuePendingSharedImportIfAvailable)
+            HomeView(home:appModel.home,recording:appModel.recording,store:appModel.store,storyRecords:true,storyNarrative:model.didLoadStory ? model.narrative : nil,retryStoryLoad:model.initialStoryLoadFailed ? {Task {await model.reload()}} : nil,storyBusy:model.busy,summaryStatus:sharing.homeStatus,summaryDrawer:{AnyView(StoryTemplateShareView(home:appModel.home,records:model.records,store:appModel.store,job:sharing))},askStory:{openChat()},refreshStory:{Task{await model.refreshNarrative(auth:auth)}},pendingSharedImportURL:$appModel.pendingSharedImportURL,advanceSharedImportQueue:appModel.enqueuePendingSharedImportIfAvailable)
                 .navigationDestination(for: StoryRoute.self) { route in
                     StoryFolderDestination(route: route, store: appModel.store, home: appModel.home) { AnyView(currentPlan) }
                         .environment(\.storyRouter, folderRouter)
@@ -284,7 +291,9 @@ struct StoryLabView: View {
                 }
         }
         .environment(\.storyRouter, folderRouter)
+        .environment(\.askAboutRecord, { record in openChat(record: record) })
         .sheet(item: $folderRouter.capture, onDismiss: {
+            folderRouter.documentImportID = nil
             folderRouter.onCaptureDismiss?()
             folderRouter.onCaptureDismiss = nil
             if let id = folderRouter.finishedCapture {
@@ -292,7 +301,7 @@ struct StoryLabView: View {
                 folderRouter.open(.record(id))
             }
         }) { record in
-            StoryCaptureView(record: record, store: appModel.store, home: appModel.home) { completed in
+            StoryCaptureView(record: record, store: appModel.store, home: appModel.home, importDocument: folderRouter.documentImportID == record.id) { completed in
                 folderRouter.finishedCapture = completed
                 folderRouter.capture = nil
             }
@@ -326,7 +335,9 @@ struct StoryLabView: View {
         .sheet(item:$logAction){action in NavigationStack{Form{Text(action.text);TextEditor(text:$progressText).frame(minHeight:160);Button("Save progress"){let text=progressText;Task{await model.action{try await model.store.recordStoryCareEvent(actionID:action.id,kind:"progress",text:text,factIDs:action.factIDs,eventID:progressEventID)};progressText="";logAction=nil;await appModel.health.refresh()}}.disabled(progressText.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)}.navigationTitle("How is it going?")}}
         .alert("Saved writing",isPresented:Binding(get:{model.error != nil},set:{if !$0 {model.error=nil}})){Button("OK"){model.error=nil}} message:{Text(model.error ?? "")}
     }
-    private func openChat() {
+    private func openChat(record: Session? = nil) {
+        if chatRecord?.id != record?.id { message = "" }
+        chatRecord = record
         chatRouter.path = []
         missingChatRecord = false
         visibleChatIDs=[]
@@ -373,6 +384,7 @@ struct StoryLabView: View {
     private func openChatRecord(_ source: StoryEvidence) {
         chatFocused = false
         guard let id = source.recordID else { missingChatRecord = true; return }
+        if id == chatRecord?.id { showConversation = false; return }
         chatRouter.open(.record(id))
     }
     private var chatDrawer:some View {
@@ -382,7 +394,7 @@ struct StoryLabView: View {
                     VStack(alignment:.leading,spacing:24) {
                         if visibleChat.isEmpty {
                             Text("Ask anything").font(StoryDesignTokens.heading(.largeTitle)).padding(.top,32)
-                            Text("About your health story and records").font(StoryDesignTokens.body).foregroundStyle(.secondary)
+                            Text(chatRecord.map { "About " + $0.displayTitle } ?? "About your health story and records").font(StoryDesignTokens.body).foregroundStyle(.secondary)
                         }
                         ForEach(visibleChat){item in
                             VStack(alignment:.leading,spacing:12) {
@@ -392,9 +404,9 @@ struct StoryLabView: View {
                                         Text(item.text)
                                             .font(StoryDesignTokens.body)
                                             .lineSpacing(citationTextSize*0.22)
-                                            .foregroundStyle(Color.primary)
+                                            .foregroundStyle(StoryDesignTokens.bubbleContent)
                                             .padding(.horizontal,16).padding(.vertical,12)
-                                            .background(StoryDesignTokens.softSurface,in:RoundedRectangle(cornerRadius:22))
+                                            .background(StoryDesignTokens.bubbleFill,in:RoundedRectangle(cornerRadius:22))
                                             .fixedSize(horizontal:false,vertical:true)
                                             .textSelection(.enabled)
                                             .accessibilityLabel("You: "+item.text)
@@ -437,10 +449,10 @@ struct StoryLabView: View {
             }
             .safeAreaInset(edge:.bottom) {
                 HStack(alignment:.center) {
-                    TextField("Ask anything",text:$message,axis:.vertical).lineLimit(1...6).font(StoryDesignTokens.body).focused($chatFocused)
-                    if let id=model.activeQuestionID,model.busy {Button{Task{await model.stop(id,auth:auth)}}label:{Image(systemName:"stop.circle.fill").font(.title)}.accessibilityLabel("Stop answer")}
+                    TextField(chatRecord == nil ? "Ask anything" : "ask anything about this record",text:$message,axis:.vertical).lineLimit(1...6).font(StoryDesignTokens.body).focused($chatFocused)
+                    if let id=model.activeQuestionID,model.busy,showingActiveAnswer {Button{Task{await model.stop(id,auth:auth)}}label:{Image(systemName:"stop.circle.fill").font(.title)}.accessibilityLabel("Stop answer")}
                     else {Button {
-                        guard let id = model.ask(message, auth: auth) else { return }
+                        guard let id = model.ask(message, recordID: chatRecord?.id, auth: auth) else { return }
                         includeQuestion(id)
                         message = ""
                         chatFocused = false
@@ -486,10 +498,10 @@ struct StoryLabView: View {
                         if !model.didLoadStory {
                             if model.initialStoryLoadFailed { Button("Retry loading history"){Task{await model.reload()}} }
                             else { StoryLoadingPlaceholder(label:"Loading chat history",rows:3) }
-                        } else if !model.workspace.messages.contains(where:{$0.role=="user"}) {
+                        } else if !model.workspace.messages.contains(where:{$0.role=="user" && $0.scopeRecordID == chatRecord?.id}) {
                             Text("Your conversations will appear here.").foregroundStyle(Color.secondary)
                         }
-                        ForEach(model.workspace.messages.filter{$0.role=="user"}.reversed()) {question in
+                        ForEach(model.workspace.messages.filter{$0.role=="user" && $0.scopeRecordID == chatRecord?.id}.reversed()) {question in
                             Button {selectHistory(question)} label: {
                                 VStack(alignment:.leading,spacing:6) {
                                     Text(question.text).font(StoryDesignTokens.body)
@@ -549,41 +561,73 @@ struct StoryLabView: View {
     private var adoptedActions:[HealthCarePlan.Action]{actions.filter{adopted($0)}}
     @ViewBuilder private var currentPlan:some View {
         if model.didLoadStory {
-            if currentCarePlans.isEmpty && recordedCarePlans.isEmpty {
-                ScrollView { StoryCarePlanPreview { folderRouter.newCapture() } }
-            } else { loadedPlan }
+            loadedPlan
         }
         else if model.initialStoryLoadFailed {Button("Retry loading care plan"){Task{await model.reload()}}}
         else {StoryLoadingPlaceholder(label:"Loading care plan",rows:3).padding()}
     }
     private var loadedPlan: some View {
         ScrollView {
-            LazyVStack(alignment:.leading,spacing:32) {
-                careSectionHeading("Following now")
-                if currentCarePlans.isEmpty {
-                    Text("No actions marked as current yet.").font(StoryDesignTokens.body).foregroundStyle(.secondary)
-                } else {
-                    ForEach(currentCarePlans) {plan in carePlanGroup(plan,following:true)}
-                }
-                if !recordedCarePlans.isEmpty {
-                    VStack(alignment:.leading,spacing:6) {
-                        careSectionHeading("Recorded recommendations")
-                        Text("Not marked as part of your current plan.").font(StoryDesignTokens.caption).foregroundStyle(.secondary)
+            LazyVStack(alignment: .leading, spacing: 24) {
+                Text("My care plan")
+                    .font(StoryDesignTokens.sectionHeading)
+                    .accessibilityAddTraits(.isHeader)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    careSectionHeading("Following now")
+                    if currentCarePlans.isEmpty {
+                        Text("Actions you choose to follow will appear here.")
+                            .font(StoryDesignTokens.body).foregroundStyle(.secondary)
+                    } else {
+                        carePlanGroups(currentCarePlans, following: true)
                     }
-                    ForEach(recordedCarePlans) {plan in carePlanGroup(plan,following:false)}
-                } else if currentCarePlans.isEmpty {
-                    Text("Care recommendations will appear here when they’re identified in your records.").font(StoryDesignTokens.body).foregroundStyle(.secondary)
+                }
+
+                if !recordedCarePlans.isEmpty || currentCarePlans.isEmpty {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 12) {
+                        careSectionHeading("Recorded recommendations")
+                        if recordedCarePlans.isEmpty {
+                            Text("Upload your care plan to see what your care team recommended.")
+                                .font(StoryDesignTokens.body).foregroundStyle(.secondary)
+                        } else {
+                            Text("Not marked as part of your current plan.")
+                                .font(StoryDesignTokens.caption).foregroundStyle(.secondary)
+                            carePlanGroups(recordedCarePlans, following: false)
+                        }
+                    }
                 }
             }
-            .frame(maxWidth:.infinity,alignment:.leading)
-            .padding(.horizontal,20).padding(.vertical,24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+        }
+        .safeAreaInset(edge: .bottom) {
+            if currentCarePlans.isEmpty && recordedCarePlans.isEmpty {
+                Button { folderRouter.newCapture(importDocument: true) } label: {
+                    Label("Upload a care plan", systemImage: "paperclip")
+                        .font(StoryDesignTokens.label)
+                        .foregroundStyle(StoryDesignTokens.onAction)
+                        .frame(maxWidth: .infinity, minHeight: StoryDesignTokens.controlHeight)
+                }
+                .storyControlStyle(prominent: true)
+                .padding(.horizontal).padding(.vertical, 8)
+            }
         }
         .foregroundStyle(StoryDesignTokens.ink)
         .background(StoryDesignTokens.canvas)
     }
-    private func careSectionHeading(_ title:String)->some View {
-        StorySectionHeading(title: title)
+
+    private func careSectionHeading(_ title: String) -> some View {
+        Text(title).font(StoryDesignTokens.heading(.title3)).accessibilityAddTraits(.isHeader)
     }
+
+    private func carePlanGroups(_ plans: [HealthCarePlan], following: Bool) -> some View {
+        ForEach(plans) { plan in
+            if plan.id != plans.first?.id { Divider() }
+            carePlanGroup(plan, following: following)
+        }
+    }
+
     // Adoption comes only from saved patient status/events, never inferred from a recommendation.
     private var currentCarePlans:[HealthCarePlan] {
         appModel.health.carePlans.filter{!$0.fictional && $0.actions.contains(where:adopted)}
@@ -594,7 +638,7 @@ struct StoryLabView: View {
     private func carePlanGroup(_ plan:HealthCarePlan,following:Bool)->some View {
         VStack(alignment:.leading,spacing:20) {
             VStack(alignment:.leading,spacing:6) {
-                Text(HealthStoryText.displayName(plan.title)).font(StoryDesignTokens.heading(.title3)).accessibilityAddTraits(.isHeader)
+                Text(HealthStoryText.displayName(plan.title)).font(StoryDesignTokens.label).accessibilityAddTraits(.isHeader)
                 if let practitioner=plan.practitioner,!practitioner.isEmpty {
                     Text(practitioner).font(StoryDesignTokens.caption).foregroundStyle(.secondary)
                 }
@@ -617,8 +661,7 @@ struct StoryLabView: View {
                 }
             }
         }
-        .padding(16).frame(maxWidth:.infinity,alignment:.leading)
-        .background(StoryDesignTokens.surface,in:RoundedRectangle(cornerRadius:StoryDesignTokens.tileRadius))
+        .frame(maxWidth:.infinity,alignment:.leading)
     }
     private func careRow(_ action:HealthCarePlan.Action,plan:HealthCarePlan,following:Bool)->some View {
         VStack(alignment:.leading,spacing:8) {
@@ -656,9 +699,6 @@ struct StoryRecordsList:View {
     @ScaledMetric(relativeTo: .body) private var overviewTextSize = StoryDesignTokens.bodyBaseSize
     @ObservedObject var home:HomeViewModel
     var narrative:String?
-    @Environment(\.storyRouter) private var captureRouter
-    @State private var suggestRecord = false
-    @State private var addAfterPreview = false
     var showFirstRecordGuide = false
     var retryStoryLoad:(() -> Void)?
     var summaryStatus:String? = nil
@@ -682,16 +722,8 @@ struct StoryRecordsList:View {
                 else if let narrative { Text(narrative.isEmpty ? "Your overview will appear here as your records are organized.":narrative).font(StoryDesignTokens.body).lineSpacing(StoryDesignTokens.readingLineSpacing(for: overviewTextSize)).textSelection(.enabled).padding(.vertical,8).listRowSeparator(.hidden).listRowBackground(StoryDesignTokens.canvas)
                 } else if let retryStoryLoad { Button("Retry loading overview",action:retryStoryLoad) }
                 else {StoryLoadingPlaceholder(label:"Loading overview").listRowSeparator(.hidden)}
-                Group {
-                    if showFirstRecordGuide {
-                        Button { suggestRecord = true } label: { carePlanLabel }
-                            .buttonStyle(.plain)
-                            .accessibilityHint("Add a record to start your care plan")
-                    } else {
-                        NavigationLink(value: StoryRoute.carePlan) { carePlanLabel }
-                            .accessibilityHint("View your current plan and recorded recommendations")
-                    }
-                }
+                NavigationLink(value: StoryRoute.carePlan) { carePlanLabel }
+                    .accessibilityHint("View your current plan and recorded recommendations")
                 .listRowSeparator(.hidden).listRowBackground(StoryDesignTokens.canvas)
             }
             if let summaryStatus {
@@ -711,30 +743,6 @@ struct StoryRecordsList:View {
             }
             if showFirstRecordGuide { Section("Records") { StoryEmptyRecord() } }
             StoryTimelineSections(records: home.sessions)
-        }
-        .sheet(isPresented: $suggestRecord, onDismiss: {
-            if addAfterPreview {
-                addAfterPreview = false
-                captureRouter?.newCapture()
-            }
-        }) {
-            NavigationStack {
-                ScrollView {
-                    StoryCarePlanPreview {
-                        addAfterPreview = true
-                        suggestRecord = false
-                    }
-                }
-                .background(StoryDesignTokens.canvas)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close", systemImage: "xmark") { suggestRecord = false }
-                            .labelStyle(.iconOnly)
-                    }
-                }
-            }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
