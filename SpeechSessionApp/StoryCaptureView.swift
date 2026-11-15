@@ -216,7 +216,9 @@ struct StoryCaptureView: View {
     @FocusState private var writingNotes: Bool
 
     private var showCaptureGuide: Bool {
-        !writingNotes && !editor.hasContent && !editor.starting && editor.recordingSince == nil
+        guard home.revision > 0, !writingNotes, !editor.hasContent,
+              !editor.starting, editor.recordingSince == nil else { return false }
+        return !home.sessions.contains { $0.capture?.isDraft != true }
     }
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var importing = false
