@@ -125,8 +125,12 @@ private struct IntroAgreementView: View {
                 VStack(alignment: .leading, spacing: 28) {
                     welcome
                     if let acknowledge {
-                        Button("Continue to my health story", action: acknowledge)
-                            .buttonStyle(.borderedProminent)
+                        Button(action: acknowledge) {
+                            Text("Continue to my health story")
+                                .font(StoryDesignTokens.font(.headline, weight: .semibold))
+                                .foregroundStyle(StoryDesignTokens.onAction)
+                        }
+                        .storyControlStyle(prominent: true)
                     } else if let document = state.document {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Before you begin")
@@ -153,13 +157,14 @@ private struct IntroAgreementView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                             Button { Task { await state.accept(auth: auth) } } label: {
                                 HStack(spacing: 10) {
-                                    if state.busy { ProgressView().tint(.white) }
+                                    if state.busy { ProgressView().tint(StoryDesignTokens.onAction) }
                                     Text(state.busy ? "Confirming…" : document.action)
                                         .font(StoryDesignTokens.font(.headline, weight: .semibold))
                                 }
+                                .foregroundStyle(StoryDesignTokens.onAction)
                                 .frame(maxWidth: .infinity).padding(.vertical, 12)
                             }
-                            .buttonStyle(.borderedProminent)
+                            .storyControlStyle(prominent: true)
                             .buttonBorderShape(.roundedRectangle(radius: 16))
                             .disabled(state.busy)
                             Text("Agreement \(document.version)")
