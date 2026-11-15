@@ -14,7 +14,7 @@ def failures(e):
     for key,(target,kind) in gates.items():
         value=e.get(key)
         if not isinstance(value,(int,float)) or isinstance(value,bool) or not math.isfinite(value) or value<0 or (key in ['supportedPrecision','materialRecall','typicalCompletionRate'] and value>1) or (value<target if kind=='min' else value>target):bad.append(key)
-    for key in ['originalsPreserved','patientEditsPreserved','legacyReplayPassed','physicalDeviceRecoveryPassed','accessibilityPassed','sourceChangesPassed','databaseFaultsPassed']:
+    for key in ['originalsPreserved','patientEditsPreserved','legacyReplayPassed','physicalDeviceRecoveryPassed','accessibilityPassed','launchCTALightModePassed','launchCTADarkModePassed','sourceChangesPassed','databaseFaultsPassed']:
         if e.get(key) is not True:bad.append(key)
     if e.get('measuredUpdates',0)<100:bad.append('at least 100 measured updates required')
     return bad
