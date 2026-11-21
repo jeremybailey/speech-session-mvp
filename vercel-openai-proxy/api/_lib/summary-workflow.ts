@@ -140,6 +140,16 @@ export function validatePoints(raw:string,p:SummaryInput,s:Step,outputs:Record<s
  }
  const prose=/\b(?:is|are|was|were|has been|have been|(?:patient|clinician|doctor|provider|practitioner|midwife|parent|caregiver)\s+(?:reports?|reported|describes?|described|states?|stated|says|said|notes?|noted|indicates?|indicated)|records list|notes describe|not documented)\b/i;
  if(!Array.isArray(points)||points.length>(p.kind==='overview'?5:80)||points.some((b:any)=>!b||!headings(p).includes(b.heading)||typeof b.text!=='string'||!b.text.trim()||b.text.length>1500||!Array.isArray(b.citationIDs)||!b.citationIDs.length||!b.citationIDs.every((id:any)=>allowed.has(id))||[b.subjectCitation,b.responseCitation].some(id=>id!==null&&!b.citationIDs.includes(id))||p.template==='visit'&&!['Discussed','Decided','Next steps'].includes(b.visitSection)||p.kind==='practitioner'&&isConcisePublicationStep(p,s)&&(!/^\S+(?:\s+\S+){0,5} — \S+(?:\s+\S+){0,15}$/.test(b.text)||/[;.]$/.test(b.text)||b.text.includes(';')||prose.test(b.text))))throw Error('invalid_summary_output');
+ // A model may repeat a coverage ID on an additional point in another section.
+ // Remove that redundant annotation only after finding a correctly classified,
+ // source-supported representative. Never remove content or waive missing items.
+ if(coverage)for(const [field,heading,prefix] of [['historyIDs','Comprehensive Health History','history'],['coordinationIDs','Care Coordination Summary','coordination']] as const){
+  const required=coveragePoints(p,s,outputs,heading),represented=new Set<string>();
+  for(const point of points as Point[])if(point.heading===heading&&Array.isArray(point[field])){
+   for(const id of point[field]!) {const original=required.find((_,index)=>id===`${prefix}:${index}`);if(original&&point.citationIDs.some(ref=>original.citationIDs.includes(ref)))represented.add(id);}
+  }
+  for(const point of points as Point[])if(point.heading!==heading&&Array.isArray(point[field]))point[field]=point[field]!.filter(id=>!represented.has(id));
+ }
  // Older completed responses lack this field and remain readable/recoverable.
  // Every audited item must be represented. One item may legitimately split into
  // multiple concise bullets, so coverage is at-least-once, not exactly-once.

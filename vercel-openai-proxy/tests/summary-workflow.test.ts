@@ -493,5 +493,17 @@ test('a source-checked milestone may split across supported audit bullets',()=>{
  const split=[{...original,text:'Past surgery — procedure',historyIDs:['history:0'],coordinationIDs:[]},{...original,text:'Recovery — postoperative course',historyIDs:['history:0'],coordinationIDs:[]}];
  assert.equal(validatePoints(JSON.stringify({points:split}),p,audit,outputs).length,2);
  assert.throws(()=>validatePoints(JSON.stringify({points:split.map(b=>({...b,historyIDs:[]}))}),p,audit,outputs));
- assert.throws(()=>validatePoints(JSON.stringify({points:[{...split[0],heading:'Clinical Snapshot'},split[1]]}),p,audit,outputs));
+ assert.throws(()=>validatePoints(JSON.stringify({points:[{...split[0],heading:'Clinical Snapshot'}]}),p,audit,outputs));
+ const extra=validatePoints(JSON.stringify({points:[{...split[0],heading:'Clinical Snapshot'},split[1]]}),p,audit,outputs);
+ assert.deepEqual(extra[0].historyIDs,[]);assert.equal(extra[0].text,split[0].text);
+});
+
+test('duplicate provider coverage annotation in another section is removed only when already represented',()=>{
+ const p=input('practitioner');p.pipeline='compact-v2';const audit={...summaryPlan(p).find(s=>s.phase==='audit')!,dependencies:['merged']};
+ const provider={...point,heading:'Care Coordination Summary',text:'Dr Lee — treating neurologist',stance:null};
+ const outputs={'check:0':[provider],merged:[]};
+ const good={...provider,historyIDs:[],coordinationIDs:['coordination:0']};const extra={...good,heading:'Care Plan & Interventions',text:'Migraine — current treatment'};
+ const result=validatePoints(JSON.stringify({points:[good,extra]}),p,audit,outputs);
+ assert.deepEqual(result[0].coordinationIDs,['coordination:0']);assert.deepEqual(result[1].coordinationIDs,[]);assert.equal(result[1].text,extra.text);
+ assert.throws(()=>validatePoints(JSON.stringify({points:[extra]}),p,audit,outputs));
 });
