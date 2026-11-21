@@ -1,5 +1,14 @@
 export type SummaryTemporal={role:'event'|'ongoing'|'documented'|'unknown';start:string|null;end:string|null;approximate:boolean;sourceQuote:string|null;citationIDs:string[]};
 const normalize=(s:string)=>s.replace(/\s+/gu,' ').trim().toLowerCase();
+// Clinical evidence can contain JSON-encoded source passages. Compare against
+// decoded string values as well as plain text, without joining unrelated fields.
+function containsSourceQuote(text:string,quote:string):boolean {
+ if(normalize(text).includes(quote))return true;
+ for(const match of text.matchAll(/"(?:[^"\\]|\\.)*"/gu)){
+  try {if(normalize(JSON.parse(match[0])).includes(quote))return true;}catch{}
+ }
+ return false;
+}
 function validDate(value:string):boolean {
  if(!/^(?:19|20)\d{2}(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?)?$/.test(value))return false;
  if(value.length!==10)return true;
@@ -12,7 +21,7 @@ export function validateSummaryTemporal(value:any,pointCitations:string[],eviden
  }
  if(typeof value.start!=='string'||!validDate(value.start)||value.end!==null&&(typeof value.end!=='string'||!validDate(value.end)||value.end<value.start)||typeof value.sourceQuote!=='string'||!value.sourceQuote.trim()||value.sourceQuote.length>400||!value.citationIDs.length)throw Error('invalid_summary_temporal');
  const quote=normalize(value.sourceQuote);
- if(!evidence.some(e=>value.citationIDs.includes(e.id)&&normalize(e.text).includes(quote)))throw Error('invalid_summary_temporal');
+ if(!evidence.some(e=>value.citationIDs.includes(e.id)&&containsSourceQuote(e.text,quote)))throw Error('invalid_summary_temporal');
  // A quoted date or an explicit anchored arithmetic expression must support each year.
  const supported=new Set(quote.match(/\b(?:19|20)\d{2}\b/g)??[]);
  const relative=quote.match(/\b(?:(about|approximately|around|roughly)\s+)?(\d{1,3})(?:\s*[-–—]\s*(\d{1,3}))?\s+years?\s+(before|prior to|after)\s+(?:[a-z]+\s+)?((?:19|20)\d{2})\b/);

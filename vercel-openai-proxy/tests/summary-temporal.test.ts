@@ -12,3 +12,13 @@ test('point timing requires original evidence, precision and grounded arithmetic
  assert.throws(()=>validateSummaryTemporal({...timing,role:'event',start:'2024',approximate:true,sourceQuote:'Weakness about 10 years before Sep 2024.'},['e1'],evidence));
  validateSummaryTemporal({role:'unknown',start:null,end:null,approximate:false,sourceQuote:null,citationIDs:[]},['e1'],evidence);
 });
+
+test('date quotes match decoded clinical evidence without bridging unrelated fields',()=>{
+ const source='Breastfeeding documented\nSep 6, 2024.';
+ const encoded=[{id:'e1',text:'Clinical evidence: '+JSON.stringify({source})}];
+ validateSummaryTemporal(timing,['e1'],encoded);
+ const quoted={...timing,sourceQuote:'"Breastfeeding" documented Sep 6, 2024.'};
+ validateSummaryTemporal(quoted,['e1'],[{id:'e1',text:JSON.stringify({source:quoted.sourceQuote})}]);
+ assert.throws(()=>validateSummaryTemporal(timing,['e1'],[{id:'e1',text:JSON.stringify({topic:'Breastfeeding documented',date:'Sep 6, 2024.'})}]));
+ assert.throws(()=>validateSummaryTemporal({...timing,sourceQuote:'Breastfeeding documented Sep 6, 2025.'},['e1'],encoded));
+});
