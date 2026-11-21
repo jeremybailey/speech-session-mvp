@@ -460,3 +460,28 @@ test('explicit subject and response citations reconcile only within the allowed 
  assert.throws(()=>validatePoints(JSON.stringify({points:[{...b,responseCitation:'invented'}]}),p,s,{}));
  assert.throws(()=>validatePoints(JSON.stringify({points:[b]}),p,{...s,evidenceIDs:['1001']},{}));
 });
+
+test('source audits and publication protect history independently of lossy merged drafts',()=>{
+ const p=input('practitioner');p.pipeline='compact-v2';
+ p.evidence=[{id:'1001',text:'Appendectomy in 2012.'},{id:'1002',text:'Dr Smith previously treated headaches.'}];
+ const plan=summaryPlan(p),audit={...plan.find(s=>s.phase==='audit')!,dependencies:['merged']},final=plan.at(-1)!;
+ const history={...point,heading:'Comprehensive Health History',text:'Appendectomy — 2012',topic:'Appendectomy',stance:null};
+ const provider={...point,heading:'Care Coordination Summary',text:'Dr Smith — previous headache care',citationIDs:['1002'],subjectCitation:'1002',responseCitation:null,stance:null};
+ const checked={'check:0':[history,provider],[audit.dependencies[0]]:[]};
+ const auditInput=JSON.parse(summaryPayload(p,audit,checked,0).input);
+ assert.equal(auditInput.requiredHistory.length,1);assert.equal(auditInput.requiredCoordination.length,1);
+ const restored=[{...history,historyIDs:['history:0'],coordinationIDs:[]},{...provider,historyIDs:[],coordinationIDs:['coordination:0']}];
+ assert.throws(()=>validatePoints(JSON.stringify({points:[restored[1]]}),p,audit,checked));
+ assert.equal(validatePoints(JSON.stringify({points:restored}),p,audit,checked).length,2);
+ const audited={...checked,[audit.key]:restored};
+ // A multi-stage merge can erase the whole section. Its audited inventory survives.
+ const publication={...final,dependencies:['lost-merge']};
+ const outputs={...audited,'lost-merge':[]};
+ const body=JSON.parse(summaryPayload(p,publication,outputs,0).input);
+ assert.equal(body.mainDraft.length,0);assert.equal(body.requiredHistory.length,1);
+ assert.throws(()=>validatePoints(JSON.stringify({points:[]}),p,publication,outputs));
+ assert.throws(()=>validatePoints(JSON.stringify({points:[restored[1]]}),p,publication,outputs));
+ assert.equal(validatePoints(JSON.stringify({points:restored}),p,publication,outputs).length,2);
+ // Inventory IDs must not change with database row order.
+ assert.deepEqual(JSON.parse(summaryPayload(p,publication,Object.fromEntries(Object.entries(outputs).reverse()),0).input).requiredHistory,body.requiredHistory);
+});
