@@ -402,3 +402,43 @@ test('new publication responses account for audited history while old saved resp
  const split=validatePoints(JSON.stringify({points:[{...good[0],text:'Appendectomy — 2017; uncomplicated recovery'},good[1]]}),p,step,outputs);
  assert.equal(split.length,3);assert.deepEqual(split[1].historyIDs,[]);
 });
+
+test('coordination checklist prevents final editing from dropping named care relationships',()=>{
+ const p=input('practitioner'),step=summaryPlan(p).at(-1)!;
+ const first={...point,heading:'Care Coordination Summary',text:'Dr. Lee — treating neurologist'};
+ const second={...point,heading:'Care Coordination Summary',text:'Physiotherapy — referral contemplated'};
+ const outputs=Object.fromEntries(step.dependencies.map(key=>[key,[first,second]]));
+ const payload=summaryPayload(p,step,outputs,0),content=JSON.parse(payload.input);
+ assert.equal(content.requiredCoordination.length,2);
+ assert.match(payload.instructions,/Include a named provider even without an agreed new action/);
+ const good=[{...first,coordinationIDs:['coordination:0']},{...second,coordinationIDs:['coordination:1']}];
+ assert.equal(validatePoints(JSON.stringify({points:good}),p,step,outputs).length,2);
+ assert.throws(()=>validatePoints(JSON.stringify({points:good.slice(0,1)}),p,step,outputs));
+});
+test('point-specific time overrides grouped evidence timeline and preserves semantic role',()=>{
+ const p=input('practitioner');p.evidence[0].timelineLabel='Record: 2026-11-20';
+ const plan=summaryPlan(p),terminal=plan.at(-1)!;
+ const temporal={role:'ongoing' as const,start:'2024-09-06',end:null,approximate:false,sourceQuote:'Breastfeeding Sep 6, 2024',citationIDs:[p.evidence[0].id]};
+ const b={...point,heading:'Comprehensive Health History',text:'Breastfeeding — ongoing',temporal};
+ const result=summaryResult(p,plan,{[terminal.key]:[b]});
+ assert.deepEqual(result.bulletDates[0].labels,['Date: 2024-09-06']);assert.equal(result.bulletDates[0].temporal?.role,'ongoing');
+ const unknown={role:'unknown' as const,start:null,end:null,approximate:false,sourceQuote:null,citationIDs:[]};
+ assert.deepEqual(summaryResult(p,plan,{[terminal.key]:[{...b,temporal:unknown}]}).bulletDates[0].labels,['Record: 2026-11-20']);
+});
+
+test('identical wording at distinct supported event dates is not deduplicated',()=>{
+ const p=input('practitioner'),plan=summaryPlan(p),terminal=plan.at(-1)!;
+ const first={...point,heading:'Comprehensive Health History',text:'Back pain — recurrent',temporal:{role:'event' as const,start:'2024',end:null,approximate:false,sourceQuote:'Back pain 2024',citationIDs:[p.evidence[0].id]}};
+ const second={...first,temporal:{...first.temporal,start:'2025'}};
+ assert.equal(summaryResult(p,plan,{[terminal.key]:[first,second]}).points.length,2);
+});
+
+test('unfinished legacy stages do not suddenly require semantic metadata',()=>{
+ const p=input('practitioner');p.pipeline='compact-v2';const plan=summaryPlan(p),check=plan.find(s=>s.key==='check:0')!;
+ const legacy=summaryPayload(p,check,{'draft:0':[point]},0);
+ const schema:any=legacy.response_format.json_schema;
+ assert.equal(schema.schema.properties.points.items.properties.temporal,undefined);
+ assert.ok(!legacy.instructions.includes('POINT-SPECIFIC TIME'));
+ const fresh:any=summaryPayload(p,plan[0],{},0).response_format.json_schema;
+ assert.ok(fresh.schema.properties.points.items.properties.temporal);
+});

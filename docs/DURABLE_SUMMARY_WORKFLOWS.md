@@ -413,3 +413,15 @@ Removed Topic / Notes / Date and Treatment / Notes / Date header rows and yellow
 ### Founder build 209 — Restore Clinical Snapshot stripe
 
 Restored the red left accent alongside Clinical Snapshot column rows, including rows continued onto another page. Other styling remains unchanged. All 38 template tests passed and the rendered sample was visually checked.
+
+### Founder build 210 — Provider coverage and semantic point dates
+
+Root causes: practitioner evidence included eligible extracted facts but omitted separately saved care-team contacts and patient-linked practitioner assignments; the coordination prompt focused on responsibilities/handoffs rather than named care relationships. Date labels were inherited from evidence groups containing multiple facts rather than established for each point.
+
+New snapshots include saved provider name, role, organization and notes (not phone/email/address), plus patient-linked assignments. Merely saving a contact does not establish active treatment or responsibility. `includesCareTeam` preserves the source comparison contract for older unfinished snapshots. Draft/check/audit prompts retain named current, previous and proposed relationships, and the final coordination coverage checklist rejects omitted audited coordination points. This covers available evidence; it does not guarantee recovery of names absent from both saved contacts and extracted details.
+
+New practitioner points carry event/ongoing-observation/documentation/unknown roles, supported start/end precision, approximation, citation IDs and a quoted source basis. Validation checks quote membership, citation support, valid dates and explicit anchored year arithmetic. Event and observation dates render directly; documentation never becomes a historical event year. Old saved points retain legacy formatting, and unfinished stages with legacy dependencies retain their response shape. Exact-text deduplication now respects distinct temporal values. No new processing stages or retention paths were introduced. Practitioner JSON validation allowance is 80KB for the added bounded provenance; provider output token budget is unchanged.
+
+Validation: backend typecheck and 264 tests passed, 9 database-gated tests skipped. Forty Swift summary tests and eighteen workspace tests passed. Two actual-provider runs on fictional evidence retained treating, previous and contemplated providers; ongoing breastfeeding in 2024; c. 2014 weakness; 2018–2019 fractures; and unknown appendectomy event year. Outputs also passed the final strengthened arithmetic validator. The temporary build invoked its paid evaluation repeatedly; two runs passed and purged their payloads, then a later invocation tried to reuse a purged receipt and failed in the diagnostic harness. No real patient workflow was reset. Temporary payload cleanup was verified during activation.
+
+Build 210 installed on founder iPhone. Regeneration is required for provider/date content changes. New patient-specific summary quality and locked-phone UI acceptance remain to be observed; pilot deployment unchanged.

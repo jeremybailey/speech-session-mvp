@@ -578,6 +578,33 @@ final class StoryTemplateTests:XCTestCase {
         if let path=ProcessInfo.processInfo.environment["STORY_TOPIC_PREVIEW"] { try data.write(to:URL(fileURLWithPath:path)) }
     }
 
+    func testSummaryIncludesSavedCareTeamWithoutInventingActiveRelationship() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let store=try SessionStore(storageDirectory:root)
+        _ = try await store.saveCareTeamMember(CareTeamMember(name:"Dr. Example",role:"Neurologist",organization:"Example Clinic",email:"private@example.test",phone:"555-0100",notes:"Previous provider"))
+        let snapshot=try await store.storySummarySnapshot()
+        XCTAssertEqual(snapshot.includesCareTeam,true)
+        let text=snapshot.evidence.map(\.text).joined(separator:"\n")
+        XCTAssertTrue(text.contains("Dr. Example"));XCTAssertTrue(text.contains("Neurologist"));XCTAssertTrue(text.contains("Previous provider"))
+        XCTAssertFalse(text.contains("private@example.test"));XCTAssertFalse(text.contains("555-0100"))
+        let legacy=try await store.storySummarySnapshot(includeCareTeam:false)
+        XCTAssertFalse(legacy.evidence.contains{$0.id.hasPrefix("CARE-")})
+    }
+
+    func testSemanticDatesOverrideWordingAndDoNotTurnDocumentationIntoEventYears() throws {
+        let observation=StorySummaryTemporal(role:"ongoing",start:"2024-09-06",end:nil,approximate:false)
+        let historical=StorySummaryBulletDate(text:"Feeding — noted in a later record",labels:["Record: 2026-11-20"],temporal:observation)
+        XCTAssertEqual(historical.displayLabel(history:true),"2024")
+        XCTAssertEqual(historical.displayLabel(),"6 Sep 2024")
+        let documentation=StorySummaryBulletDate(text:"Operation — 2026 discussion of prior event",labels:["Record: 2026-11-20"],temporal:StorySummaryTemporal(role:"documented",start:"2026-11-20",end:nil,approximate:false))
+        XCTAssertNil(documentation.displayLabel(history:true))
+        let calculated=StorySummaryBulletDate(text:"Weakness — prolonged",labels:[],temporal:StorySummaryTemporal(role:"event",start:"2014",end:nil,approximate:true))
+        XCTAssertEqual(calculated.displayLabel(history:true),"c. 2014")
+        let encoded=try JSONEncoder().encode(calculated)
+        XCTAssertEqual(try JSONDecoder().decode(StorySummaryBulletDate.self,from:encoded),calculated)
+    }
+
     func testHistoryDatesPreferExplicitMilestonesWithoutGuessingBetweenEvents() {
         for point in ["Breastfeeding — documented Sep 6, 2024", "Right Achilles tendinosis — chronic, documented Aug 2024", "Pain — ongoing as of July 2024"] {
             XCTAssertEqual(StorySummaryBulletDate.historyDisplayDate(text:point,labels:[]),"2024")

@@ -16,7 +16,7 @@ public enum StorySummaryTemplate:String,CaseIterable,Codable,Sendable {
         \(sections.joined(separator:"\n"))
         Write a selective clinical handoff in chart shorthand, not an inventory of every saved fact. Maximum 18 words per bullet. No fixed total-word or page target. Retain all distinct clinically relevant context, concerns, medications, decisions, unresolved questions and next steps. Let relevant content determine length; remove repetition and procedural explanation rather than useful clinical points. Target 6–12 words per bullet. Consolidate related concerns and repeated history across sections. Select material concerns, current medication names/status, allergies, meaningful changes, decisions, questions and agreed follow-up. Omit procedural teaching, incidental anecdotes and missing-information commentary. Never weaken declined to deferred or remove meaningful uncertainty to save words. Rewrite rather than truncate. Every bullet has the form "- Topic — qualifier". Topic is a clinical noun phrase (1–6 words); qualifier is a short fragment (1–12 words). Usually 4–9 words total. Use active verbs or concise noun phrases. Avoid repeated wording and aim for one short line per bullet. Use w/ instead of with. Remove filler such as "that", "the patient", "according to the record" and "it was reported". Do not narrate where facts came from or repeatedly say information is not confirmed. Preserve a meaningful qualifier in a word or two (possible, suspected, declined, considering, per parent) when it changes the clinical meaning. Do not turn an uncertain diagnosis into a confirmed one or a suggestion into an agreed plan. No complete sentences, reporting lead-ins, semicolons or final periods. Keep one topic per line. Use separate bullets for each semicolon-separated item in the input. Repeat its topic, person, or condition where needed so each bullet stands on its own. Use separate bullets for unrelated decisions. No padding to fill a page.
         Style examples only (never add their facts): "- Ankle pain — intermittent, worse on stairs"; "- Brace — declined today, possible retrial next visit"; "- Follow-up — booked for Friday at 10 am". Preserve meaningful attribution with compact qualifiers such as "per parent" or "suspected". Omit boilerplate such as “patient reports” and “not documented”. Preserve uncertainty, timing and who proposed or agreed to an action when clinically meaningful. Use established, unambiguous clinical abbreviations across all sections (e.g. LDL); never invent an acronym. Give each distinct perspective an appropriate home. Write each section as concise bullet points. Start each point on its own line with '- '. Use one material finding or action per bullet and keep its qualifiers together.
-        SECTION PURPOSE AND COVERAGE: Clinical Snapshot gives the current clinical context, main concerns, functional impact, relevant personal circumstances and expressed patient priorities or practical constraints. Care Coordination Summary identifies who is responsible, handoffs and agreed responsibilities. Appointment Preparation Brief captures the recorded visit purpose, open questions and meaningful changes since the previous encounter; never invent questions or advice. Comprehensive Health History preserves the longitudinal story: relevant onset, diagnoses, major illnesses, procedures, pregnancy/birth milestones, prior treatment trials and responses, resolved conditions with ongoing relevance, and supported family/social background. Preserve each distinct documented major historical milestone during final editing, including resolved problems and milestones unrelated to the current appointment; do not collapse different years or treatment changes into a single generic history bullet. Use supported event dates or periods; never infer event dates from upload dates. Order dated historical milestones chronologically and put undated background last. Retain a historical event date or period in its point text when supplied. Condition-Specific Summary explains the course and current status of each condition, including response or progression beyond the snapshot. Care Plan & Interventions captures current and previous medications/interventions, status, response, tolerance and agreed next actions, without doses or schedules. Labs & Investigations captures supported abnormal results and trends; retain explicitly planned investigations as plans, never present them as results. Each section must serve its purpose, not receive leftovers. Avoid verbatim repetition, but allow a condition in multiple sections when each adds a distinct perspective: present impact, historical onset, treatment response or investigation trend. A brief current snapshot must not erase relevant historical milestones. During drafting, checking, source audits and final editing, check longitudinal coverage as well as current concerns, decisions and actions. Omit unsupported or empty sections; do not invent history to fill them. No fixed number of history entries or pages.
+        SECTION PURPOSE AND COVERAGE: Clinical Snapshot gives the current clinical context, main concerns, functional impact, relevant personal circumstances and expressed patient priorities or practical constraints. Care Coordination Summary includes relevant named current, referred, proposed and previous care providers and services, with their supported roles, relationships and responsibilities. Include providers without a new agreed action; distinguish proposed or former care from active care. Do not invent responsibility or omit a provider because treatment appears elsewhere. Appointment Preparation Brief captures the recorded visit purpose, open questions and meaningful changes since the previous encounter; never invent questions or advice. Comprehensive Health History preserves the longitudinal story: relevant onset, diagnoses, major illnesses, procedures, pregnancy/birth milestones, prior treatment trials and responses, resolved conditions with ongoing relevance, and supported family/social background. Preserve each distinct documented major historical milestone during final editing, including resolved problems and milestones unrelated to the current appointment; do not collapse different years or treatment changes into a single generic history bullet. Use supported event dates or periods; never infer event dates from upload dates. Order dated historical milestones chronologically and put undated background last. Retain a historical event date or period in its point text when supplied. Condition-Specific Summary explains the course and current status of each condition, including response or progression beyond the snapshot. Care Plan & Interventions captures current and previous medications/interventions, status, response, tolerance and agreed next actions, without doses or schedules. Labs & Investigations captures supported abnormal results and trends; retain explicitly planned investigations as plans, never present them as results. Each section must serve its purpose, not receive leftovers. Avoid verbatim repetition, but allow a condition in multiple sections when each adds a distinct perspective: present impact, historical onset, treatment response or investigation trend. A brief current snapshot must not erase relevant historical milestones. During drafting, checking, source audits and final editing, check longitudinal coverage as well as current concerns, decisions and actions. Omit unsupported or empty sections; do not invent history to fill them. No fixed number of history entries or pages.
         Keep all seven headings. Leave sections empty when no relevant facts qualify. Never imply a negative from missing evidence. Use bullets throughout. Omit nested headings and verbatim repetition; retain distinct historical milestones. Shorten by selecting material facts, never by dropping qualifiers from a retained fact. Supply citationIDs for factual claims. Use only the supplied evidence.
         """
     }
@@ -66,9 +66,29 @@ private final class StorySummaryDateCache: @unchecked Sendable {
     let values=NSCache<NSString,NSString>()
     init(){values.countLimit=256}
 }
+public struct StorySummaryTemporal: Codable, Equatable, Sendable {
+    public var role: String
+    public var start: String?
+    public var end: String?
+    public var approximate: Bool
+}
 public struct StorySummaryBulletDate:Codable,Equatable,Sendable {
     public var text:String
     public var labels:[String]
+    public var temporal: StorySummaryTemporal? = nil
+    public func displayLabel(history: Bool = false) -> String? {
+        guard let temporal else { return history ? Self.historyDisplayDate(text:text,labels:labels) : Self.displayDate(labels) }
+        guard ["event", "ongoing"].contains(temporal.role), let start=temporal.start else {
+            return history ? nil : Self.displayDate(labels.filter{$0.hasPrefix("Record: ")})
+        }
+        func format(_ date: String) -> String {
+            history ? String(date.prefix(4)) : Self.displayDate(["Date: " + date]) ?? date
+        }
+        let first=format(start)
+        let last=temporal.end.map(format)
+        let period=last != nil && last != first ? first + "–" + last! : first
+        return (temporal.approximate ? "c. " : "") + period
+    }
     /// Show only supported event years for history; record dates are not event dates.
     /// Multiple dates stay in the text; never guess which event they refer to.
     public static func historyDisplayDate(text: String, labels: [String]) -> String? {
@@ -151,11 +171,11 @@ public struct StorySummaryBulletDate:Codable,Equatable,Sendable {
 public struct StorySharedSummary:Codable,Equatable,Sendable {
     public var bulletDates:[StorySummaryBulletDate]? = nil
     public func dates(for text:String, section:String? = nil, displayDates:[StorySummaryBulletDate]? = nil)->[String] {
-        let labels=(displayDates ?? bulletDates ?? []).filter { StorySummaryDocument.shareShorthand($0.text)==text }.flatMap(\.labels)
+        let items=(displayDates ?? bulletDates ?? []).filter { StorySummaryDocument.shareShorthand($0.text)==text }
         if section == "Comprehensive Health History" {
-            return [StorySummaryBulletDate.historyDisplayDate(text:text,labels:labels) ?? "—"]
+            return [items.first?.displayLabel(history:true) ?? "—"]
         }
-        return StorySummaryBulletDate.displayDate(labels).map{[$0]} ?? []
+        return items.first?.displayLabel().map{[$0]} ?? []
     }
     public var labReadings:[StoryLabReading]? = nil
     public var patientNameEdited:Bool? = nil
@@ -327,19 +347,20 @@ public enum StorySummaryDocument {
             if case let .heading(title, level) = block, level == 2 { section = title }
             guard case let .bullet(point) = block else { output.append(block); continue }
             let pointLabels = labels(for: point)
+            let pointTemporal = bulletDates.first { entry in splitShareItems(.bullet(shareShorthand(entry.text))).contains(.bullet(point)) }?.temporal
             if let last = output.last, case let .bullet(previous) = last,
                let old = parts(previous), let next = parts(point),
                old.0.caseInsensitiveCompare(next.0) == .orderedSame,
                !needsSeparatePoints(old.1, next.1),
                (section != "Comprehensive Health History" || StorySummaryBulletDate.historyDisplayDate(text: previous, labels: []) == StorySummaryBulletDate.historyDisplayDate(text: point, labels: [])),
                let previousDates = dates.last,
-               Set(previousDates.labels) == Set(pointLabels) {
+               Set(previousDates.labels) == Set(pointLabels), previousDates.temporal == pointTemporal {
                 let joined = old.0 + " — " + old.1.trimmingCharacters(in: CharacterSet(charactersIn: ".")) + "; " + next.1
                 output[output.count - 1] = .bullet(joined)
-                dates[dates.count - 1] = StorySummaryBulletDate(text: joined, labels: previousDates.labels)
+                dates[dates.count - 1] = StorySummaryBulletDate(text: joined, labels: previousDates.labels, temporal: previousDates.temporal)
             } else {
                 output.append(block)
-                dates.append(StorySummaryBulletDate(text: point, labels: pointLabels))
+                dates.append(StorySummaryBulletDate(text: point, labels: pointLabels, temporal: pointTemporal))
             }
         }
         return (output, dates)

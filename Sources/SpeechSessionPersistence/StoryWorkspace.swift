@@ -538,7 +538,7 @@ extension SessionStore {
     }
     public func completeStorySharedSummary(_ operationID:UUID,summary:StorySharedSummary,expectedSnapshot:StorySummarySnapshot? = nil) throws {
         if let expectedSnapshot {
-            let current=try storySummarySnapshot(includeTimeline:expectedSnapshot.evidence.contains{$0.timelineLabel != nil})
+            let current=try storySummarySnapshot(includeTimeline:expectedSnapshot.evidence.contains{$0.timelineLabel != nil},includeCareTeam:expectedSnapshot.includesCareTeam == true)
             let saved=try loadEnvelope().story.sharedSummary
             // Older requests froze the display copy with recovered labs. Recreate
             // that same copy from current saved data; real edits still differ.
@@ -615,8 +615,9 @@ extension SessionStore {
         return selected
     }
 
-    public func storySummaryEvidence(legacyDates:Bool=false,includeTimeline:Bool=true) throws -> [StoryEvidence] {
-        let facts=HealthMemoryProjection.facts(in:try healthSnapshot()).filter{!$0.preference.hidden && HealthStoryEligibility.includes($0.displayEntry)}
+    public func storySummaryEvidence(legacyDates:Bool=false,includeTimeline:Bool=true,includeCareTeam:Bool=true) throws -> [StoryEvidence] {
+        let snapshot=try healthSnapshot()
+        let facts=HealthMemoryProjection.facts(in:snapshot).filter{!$0.preference.hidden && HealthStoryEligibility.includes($0.displayEntry)}
         let sessions=try loadAll()
         var output:[StoryEvidence]=[]
         for fact in facts.sorted(by:{($0.displayEntry.sourceSessionID?.uuidString ?? "",$0.id)<($1.displayEntry.sourceSessionID?.uuidString ?? "",$1.id)}) {
@@ -627,6 +628,10 @@ extension SessionStore {
             } else if !entry.dateNeedsReview {
                 if let recorded=entry.evidence?.eventDate {lines.append("Recorded date: "+recorded)}
                 else if let date=entry.relevantDate {lines.append("Clinical date: "+date.formatted(.iso8601))}
+            }
+            if includeCareTeam, let contactID=fact.preference.practitionerContactID,
+               let contact=snapshot.careTeam.first(where:{$0.id==contactID}) {
+                lines.append("Patient-linked care provider: " + contact.name + (contact.role.isEmpty ? "" : " — " + contact.role))
             }
             lines += entry.fields.map{$0.label+": "+$0.value}
             if let evidence=entry.evidence,let data=try? JSONEncoder().encode(evidence),var fields=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any] {
@@ -651,6 +656,16 @@ extension SessionStore {
             } else {
                 var item=StoryEvidence(id:"E"+String(output.count+1),text:content,recordID:sourceID,title:title)
                 item.timelineLabel=includeTimeline ? timeline:nil;output.append(item)
+            }
+        }
+        if includeCareTeam {
+            for contact in HealthFactMatching.displayContacts(snapshot.careTeam).sorted(by:{$0.id.uuidString<$1.id.uuidString}) where !contact.name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
+                let content=["Saved care-team contact: " + contact.name,
+                             contact.role.isEmpty ? "" : "Role: " + contact.role,
+                             contact.organization.isEmpty ? "" : "Organization: " + contact.organization,
+                             contact.notes.isEmpty ? "" : "Patient notes: " + contact.notes,
+                             "A saved contact alone does not establish current treatment, a referral, or responsibility."].filter{!$0.isEmpty}.joined(separator:"\n")
+                output.append(StoryEvidence(id:"CARE-"+contact.id.uuidString,text:content,recordID:nil,title:"Saved care team"))
             }
         }
         return output

@@ -248,8 +248,7 @@ public enum StorySummaryPDF {
                         if case .heading=blocks[nextIndex] {break}
                         guard case let .bullet(point)=blocks[nextIndex] else {break}
                         guard !StorySummaryDocument.topicAndNote(point).topic.isEmpty else {break}
-                        let labels=presentation.dates.filter{StorySummaryDocument.shareShorthand($0.text)==point}.flatMap(\.labels)
-                        let date=(value == "Comprehensive Health History" ? StorySummaryBulletDate.historyDisplayDate(text:point,labels:labels) : StorySummaryBulletDate.displayDate(labels)) ?? "—"
+                        let date=presentation.dates.first{StorySummaryDocument.shareShorthand($0.text)==point}?.displayLabel(history:value == "Comprehensive Health History") ?? "—"
                         let fields=StorySummaryDocument.topicAndNote(point)
                         let repeated = !fields.topic.isEmpty && fields.topic.caseInsensitiveCompare(precedingTopic) == .orderedSame
                         if value == "Comprehensive Health History" {
@@ -276,8 +275,8 @@ public enum StorySummaryPDF {
                     try table(headers:["Marker","Latest abnormal","Earlier results","Lab interval"],rows:rows,series:groups)
                 }
             case let .bullet(value):
-                let labels=presentation.dates.filter{StorySummaryDocument.shareShorthand($0.text)==value}.flatMap(\.labels)
-                try paragraph(value, bullet: true, dateTag: StorySummaryBulletDate.displayDate(labels), highlighted: section == "Clinical Snapshot")
+                let date=presentation.dates.first{StorySummaryDocument.shareShorthand($0.text)==value}?.displayLabel()
+                try paragraph(value, bullet: true, dateTag: date, highlighted: section == "Clinical Snapshot")
             case let .paragraph(value):try paragraph(value, highlighted: section == "Clinical Snapshot")
             case let .table(headers,rows):try table(headers:headers,rows:rows)
             }

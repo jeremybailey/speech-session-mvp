@@ -240,6 +240,7 @@ public struct StoryLabSparkline: View {
 }
 
 public struct StorySummarySnapshot: Codable, Sendable {
+    public var includesCareTeam:Bool? = nil
     public var serviceWorkflowVersion:String? = nil
     public var publicationSummary:StorySharedSummary? = nil
     public let evidence: [StoryEvidence]
@@ -261,12 +262,12 @@ public struct StorySummarySnapshot: Codable, Sendable {
 }
 
 extension SessionStore {
-    public func storySummarySnapshot(includeTimeline:Bool=true) throws -> StorySummarySnapshot {
+    public func storySummarySnapshot(includeTimeline:Bool=true,includeCareTeam:Bool=true) throws -> StorySummarySnapshot {
         let facts = HealthMemoryProjection.facts(in: try healthSnapshot())
         let readings = facts.filter { $0.category == .testsAndLabs && !$0.preference.hidden }
             .flatMap(\.occurrences).filter { HealthStoryEligibility.includes($0) }
             .flatMap(StoryLabReading.savedReadings)
-        return StorySummarySnapshot(evidence: try storySummaryEvidence(includeTimeline:includeTimeline), labs: readings)
+        return StorySummarySnapshot(includesCareTeam:includeCareTeam,evidence: try storySummaryEvidence(includeTimeline:includeTimeline,includeCareTeam:includeCareTeam), labs: readings)
     }
 }
 
@@ -287,10 +288,10 @@ extension SessionStore {
         let frozen = (try? JSONDecoder().decode(StorySummarySnapshot.self, from: data))?.evidence
             ?? (try? JSONDecoder().decode([StoryEvidence].self, from: data))
         guard let frozen else { return summary }
-        let current = try storySummarySnapshot(includeTimeline:frozen.contains{$0.timelineLabel != nil})
+        let current = try storySummarySnapshot(includeTimeline:frozen.contains{$0.timelineLabel != nil},includeCareTeam:frozen.contains{$0.id.hasPrefix("CARE-")})
         guard !current.labs.isEmpty else { return summary }
         if current.evidence != frozen {
-            guard try storySummaryEvidence(legacyDates: true,includeTimeline:frozen.contains{$0.timelineLabel != nil}) == frozen else { return summary }
+            guard try storySummaryEvidence(legacyDates: true,includeTimeline:frozen.contains{$0.timelineLabel != nil},includeCareTeam:frozen.contains{$0.id.hasPrefix("CARE-")}) == frozen else { return summary }
         }
         summary.labReadings = current.labs
         return summary
