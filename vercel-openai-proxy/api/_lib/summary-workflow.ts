@@ -1,4 +1,4 @@
-import {SummaryTemporal,validateSummaryTemporal} from './summary-temporal';
+import {SummaryTemporal,supportedSummaryTemporal} from './summary-temporal';
 import {splitHandoffItems} from './summary-punctuation';
 import {createHash} from 'node:crypto';
 import {Payload,validatePayload} from './ledger';
@@ -109,6 +109,14 @@ export function validatePoints(raw:string,p:SummaryInput,s:Step,outputs:Record<s
  const parsed=JSON.parse(raw);
  const points=p.kind==='practitioner'&&isConcisePublicationStep(p,s)&&Array.isArray(parsed?.points) ? parsed.points.flatMap((point:any)=>typeof point?.text==='string'?splitHandoffItems(point.text).map((text,index)=>({...point,text,...(index>0&&point.historyIDs!==undefined?{historyIDs:[]}: {}),...(index>0&&point.coordinationIDs!==undefined?{coordinationIDs:[]}: {})})): [point]) : parsed?.points;
  const allowed=new Set(s.phase==='audit'?s.evidenceIDs:[...s.evidenceIDs,...s.dependencies.flatMap(k=>(outputs[k]??[]).flatMap(b=>b.citationIDs))]);
+ // Subject/response fields are explicit citations too. Providers sometimes omit
+ // them from the redundant citationIDs list. Reconcile only references allowed
+ // for this step; invented or out-of-scope references still fail validation.
+ if(Array.isArray(points))for(const point of points){
+  if(!point||!Array.isArray(point.citationIDs))continue;
+  const explicit=[point.subjectCitation,point.responseCitation].filter((id):id is string=>typeof id==='string'&&allowed.has(id));
+  point.citationIDs=[...new Set([...point.citationIDs,...explicit])];
+ }
  const prose=/\b(?:is|are|was|were|has been|have been|(?:patient|clinician|doctor|provider|practitioner|midwife|parent|caregiver)\s+(?:reports?|reported|describes?|described|states?|stated|says|said|notes?|noted|indicates?|indicated)|records list|notes describe|not documented)\b/i;
  if(!Array.isArray(points)||points.length>(p.kind==='overview'?5:80)||points.some((b:any)=>!b||!headings(p).includes(b.heading)||typeof b.text!=='string'||!b.text.trim()||b.text.length>1500||!Array.isArray(b.citationIDs)||!b.citationIDs.length||!b.citationIDs.every((id:any)=>allowed.has(id))||[b.subjectCitation,b.responseCitation].some(id=>id!==null&&!b.citationIDs.includes(id))||p.template==='visit'&&!['Discussed','Decided','Next steps'].includes(b.visitSection)||p.kind==='practitioner'&&isConcisePublicationStep(p,s)&&(!/^\S+(?:\s+\S+){0,5} — \S+(?:\s+\S+){0,15}$/.test(b.text)||/[;.]$/.test(b.text)||b.text.includes(';')||prose.test(b.text))))throw Error('invalid_summary_output');
  // Older completed responses lack this field and remain readable/recoverable.
@@ -126,7 +134,7 @@ export function validatePoints(raw:string,p:SummaryInput,s:Step,outputs:Record<s
   }
   if(covered.size!==history.length)throw Error('invalid_summary_output');
  }
- if(p.kind==='practitioner')for(const point of points as Point[])if(point.temporal!==undefined)validateSummaryTemporal(point.temporal,point.citationIDs,p.evidence);
+ if(p.kind==='practitioner')for(const point of points as Point[])if(point.temporal!==undefined)point.temporal=supportedSummaryTemporal(point.temporal,point.citationIDs,p.evidence);
  if(p.kind==='practitioner'&&isConcisePublicationStep(p,s)&&points.some((point:Point)=>point.coordinationIDs!==undefined)){
   const required=(outputs[s.dependencies[0]]??[]).filter(point=>point.heading==='Care Coordination Summary');const covered=new Set<string>();
   for(const point of points as Point[]){

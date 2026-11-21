@@ -34,3 +34,11 @@ export function validateSummaryTemporal(value:any,pointCitations:string[],eviden
  }
  if(!supported.has(value.start.slice(0,4))||value.end&&!supported.has(value.end.slice(0,4)))throw Error('invalid_summary_temporal');
 }
+
+// Date labels are optional presentation metadata. An unsupported label must not
+// invalidate otherwise valid clinical points or spend another provider call.
+// Keep all source/citation/content validation in the caller; fail closed on time.
+export function supportedSummaryTemporal(value:unknown,pointCitations:string[],evidence:{id:string;text:string}[]):SummaryTemporal {
+ try {validateSummaryTemporal(value,pointCitations,evidence);return value as SummaryTemporal;}
+ catch {return {role:'unknown',start:null,end:null,approximate:false,sourceQuote:null,citationIDs:[]};}
+}

@@ -442,3 +442,21 @@ test('unfinished legacy stages do not suddenly require semantic metadata',()=>{
  const fresh:any=summaryPayload(p,plan[0],{},0).response_format.json_schema;
  assert.ok(fresh.schema.properties.points.items.properties.temporal);
 });
+
+test('invalid date metadata does not reject grounded points or bypass citation checks',()=>{
+ const p=input('practitioner'),s=summaryPlan(p)[0];
+ const b={...point,heading:'Care Plan & Interventions',temporal:{role:'event',start:'2024',end:null,approximate:false,sourceQuote:'Unsupported 2024 date',citationIDs:['1001']}};
+ const [result]=validatePoints(JSON.stringify({points:[b]}),p,s,{});
+ assert.equal(result.text,b.text);assert.deepEqual(result.citationIDs,b.citationIDs);
+ assert.equal(result.temporal?.role,'unknown');assert.equal(result.temporal?.start,null);
+ assert.throws(()=>validatePoints(JSON.stringify({points:[{...b,citationIDs:['invented']}]}),p,s,{}));
+});
+
+test('explicit subject and response citations reconcile only within the allowed source set',()=>{
+ const p=input('practitioner');p.evidence.push({id:'1002',text:'May reconsider next week.'});const s=summaryPlan(p)[0];
+ const b={...point,heading:'Care Plan & Interventions',responseCitation:'1002'};
+ const [result]=validatePoints(JSON.stringify({points:[b]}),p,s,{});
+ assert.deepEqual(result.citationIDs,['1001','1002']);assert.equal(result.text,b.text);
+ assert.throws(()=>validatePoints(JSON.stringify({points:[{...b,responseCitation:'invented'}]}),p,s,{}));
+ assert.throws(()=>validatePoints(JSON.stringify({points:[b]}),p,{...s,evidenceIDs:['1001']},{}));
+});

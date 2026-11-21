@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validateSummaryTemporal} from '../api/_lib/summary-temporal';
+import {validateSummaryTemporal,supportedSummaryTemporal} from '../api/_lib/summary-temporal';
 const evidence=[{id:'e1',text:'Breastfeeding documented Sep 6, 2024. Weakness about 10 years before Sep 2024. Fractures 5–6 years before Sep 2024.'}];
 const timing={role:'ongoing',start:'2024-09-06',end:null,approximate:false,sourceQuote:'Breastfeeding documented Sep 6, 2024.',citationIDs:['e1']};
 test('point timing requires original evidence, precision and grounded arithmetic',()=>{
@@ -21,4 +21,11 @@ test('date quotes match decoded clinical evidence without bridging unrelated fie
  validateSummaryTemporal(quoted,['e1'],[{id:'e1',text:JSON.stringify({source:quoted.sourceQuote})}]);
  assert.throws(()=>validateSummaryTemporal(timing,['e1'],[{id:'e1',text:JSON.stringify({topic:'Breastfeeding documented',date:'Sep 6, 2024.'})}]));
  assert.throws(()=>validateSummaryTemporal({...timing,sourceQuote:'Breastfeeding documented Sep 6, 2025.'},['e1'],encoded));
+});
+
+test('unsupported optional timing becomes unknown while supported timing survives',()=>{
+ assert.deepEqual(supportedSummaryTemporal(timing,['e1'],evidence),timing);
+ for(const bad of [{...timing,sourceQuote:'Invented evidence in 2024'},{...timing,start:'2025'},null]){
+  assert.deepEqual(supportedSummaryTemporal(bad,['e1'],evidence),{role:'unknown',start:null,end:null,approximate:false,sourceQuote:null,citationIDs:[]});
+ }
 });
