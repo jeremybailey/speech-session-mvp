@@ -131,6 +131,7 @@ export function summaryPayload(p:SummaryInput,s:Step,outputs:Record<string,Point
   p.kind==='practitioner'?'Use only the IDs from the top-level requiredHistory and requiredCoordination checklists for THIS request. Account for every checklist ID, combining duplicate facts and attaching all their IDs to the combined point. requiredCoordination is a mandatory coverage checklist. Preserve every listed provider/relationship in Care Coordination Summary. Populate coordinationIDs with the represented checklist IDs, empty for other points. Combine only duplicates; retain each supported name, role and relationship status with its evidence. Edit mainDraft into a selective practitioner handoff. supportingEvidence checks meaning; it is not material to append. The audited coverage checklists remain required even when mainDraft omitted their sections. Restore those points from the checklists. Use the existing practitioner headings and Topic — qualifier fragments. Preserve original citations and clinically meaningful uncertainty. Omit empty sections and all reporting boilerplate.': 'Edit the mainDraft into the final recap. supportingEvidence is for checking meaning, NOT extra material to append. Earlier stages already checked coverage. Completeness here means the essential concerns, named medications, explicit decisions, open questions and agreed actions; it does not mean retaining every distinct detail. Remove a low-priority explanatory point rather than expanding the recap. Use only the supplied category headings. Sweeps are Care Plans, never Medications. For Visit: Discussed holds concerns/options/questions/tentative preferences, Decided holds explicit choices, Next steps holds agreed actions and bookings. Preserve short noun-phrase topics and supported choice metadata. Retain subjectCitation and responseCitation among citationIDs. Other unsupported metadata stays null.',
   retry
  ].join('\n'):[common,p.kind==='record'?recordStyle:p.kind==='practitioner'?practitionerStyle:'Write a brief connected patient-friendly overview, up to five sentences. Each point is one sentence. Select the main concerns and care, never new advice.',p.template==='visit'?visitStyle:'',p.structuredLabs?'Structured lab results are rendered separately by the app. Do not repeat them.':'',instruction,attempt?'The previous response failed structural validation. Repair format and citations without adding claims.':''].join('\n');
+ if(coverage&&s.phase==='audit')instructions+=' CHECKLIST REFERENCE MAP (each ID must occur in its named section and cite at least one listed source; never renumber IDs): '+JSON.stringify([...requiredHistory.map(x=>({id:x.id,section:'Comprehensive Health History',sourceIDs:x.point.citationIDs})),...requiredCoordination.map(x=>({id:x.id,section:'Care Coordination Summary',sourceIDs:x.point.citationIDs}))])+'. ';
  if(coverage&&s.phase==='audit')instructions+=' REQUIRED SOURCE COVERAGE: requiredHistory and requiredCoordination contain independently source-checked facts that may have disappeared during consolidation. Recheck them against the original source and return every supported milestone/provider in its own section, including dates and meaningful qualifications. Include the checklist IDs represented by each point in historyIDs/coordinationIDs; use empty arrays otherwise. Merge duplicates only, accounting for all their IDs. Do not drop historical milestones because they are resolved, undated, or unrelated to the current visit.';
  const content=publication?{patientIdentity:p.patientName??null,workflow:p.id,step:s.key,attempt,records:originals,mainDraft:dependencies[0]?.points??[],supportingEvidence:dependencies.slice(1),...(p.kind==='practitioner'?{requiredHistory,requiredCoordination}:{})}:{patientIdentity:p.patientName??null,workflow:p.id,step:s.key,attempt,records:originals,candidates:dependencies,...(coverage?{requiredHistory,requiredCoordination}:{})};
  return validatePayload({stage:'whole-history-overview',workload_type:'incremental',instructions:temporalEnabled?instructions:instructions.replace(practitionerTemporal,''),input:JSON.stringify(content),response_format:{type:'json_schema',json_schema:{name:'durable_summary_points_v1',strict:true,schema:object({points:{type:'array',items:point,maxItems:pointLimit(p,s)}})}}});
@@ -210,6 +211,23 @@ export function validatePoints(raw:string,p:SummaryInput,s:Step,outputs:Record<s
  if(isConcisePublicationStep(p,s)&&!(allowEditorialRepair&&p.kind==='practitioner'))validateRecordRecap(points,p.kind==='record');
  if(Buffer.byteLength(JSON.stringify(points))>(p.kind==='practitioner'?80000:40000))throw Error('invalid_summary_output');
  return points;
+}
+export function auditCoverageReferenceFailure(raw:string,p:SummaryInput,s:Step,outputs:Record<string,Point[]>):boolean {
+ if(p.kind!=='practitioner'||s.phase!=='audit')return false;
+ try {
+  const parsed=JSON.parse(raw);if(!Array.isArray(parsed?.points)||!parsed.points.length)return false;
+  // Eligibility only: source/shape checks must pass independently. This stripped
+  // copy is never published; the replacement still has to pass full coverage.
+  validatePoints(JSON.stringify({points:parsed.points.map(sourcePoint)}),p,s,outputs);
+  for(const [field,heading,prefix] of [['historyIDs','Comprehensive Health History','history'],['coordinationIDs','Care Coordination Summary','coordination']] as const){
+   const required=coveragePoints(p,s,outputs,heading);
+   for(const point of parsed.points)for(const id of point[field]??[]){
+    const index=required.findIndex((_,i)=>id===`${prefix}:${i}`);if(index<0)return false;
+    if(point.heading!==heading||!point.citationIDs.some((ref:string)=>required[index].citationIDs.includes(ref)))return true;
+   }
+  }
+ }catch {return false;}
+ return false;
 }
 // Repair a misplaced audit checklist annotation using the independently checked
 // original, never by reclassifying or rewriting the model's clinical statement.

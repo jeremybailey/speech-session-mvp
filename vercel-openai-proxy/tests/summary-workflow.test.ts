@@ -640,3 +640,19 @@ test('misfiled audit coverage restores checked original without rewriting or los
  assert.equal(repairAuditCoverage(JSON.stringify({points:[{...misplaced,historyIDs:['history:9']}]}),p,step,outputs),undefined);
  assert.equal(repairAuditCoverage(JSON.stringify({points:[]}),p,step,outputs),undefined);
 });
+
+test('audit reference mismatch permits bounded repair but never validates the mismatched response',async()=>{
+ const {auditCoverageReferenceFailure}=await import('../api/_lib/summary-workflow');
+ const p=input('practitioner');p.evidence.push({id:'1002',text:'A previous procedure.'});
+ const step={key:'audit:0',phase:'audit' as const,dependencies:['check:0'],evidenceIDs:['1001','1002']};
+ const original={...point,heading:'Comprehensive Health History',citationIDs:['1002'],subjectCitation:'1002',responseCitation:null,text:'Past procedure — historical'};
+ const outputs={'check:0':[original]};
+ const wrong={...original,citationIDs:['1001'],subjectCitation:'1001',historyIDs:['history:0'],coordinationIDs:[]};
+ const raw=JSON.stringify({points:[wrong]});
+ assert.throws(()=>validatePoints(raw,p,step,outputs));
+ assert.equal(auditCoverageReferenceFailure(raw,p,step,outputs),true);
+ assert.equal(auditCoverageReferenceFailure(JSON.stringify({points:[{...wrong,citationIDs:['invented']}]}),p,step,outputs),false);
+ const payload=summaryPayload(p,step,outputs,2);
+ assert.match(payload.instructions,/CHECKLIST REFERENCE MAP/);
+ assert.match(payload.instructions,/sourceIDs.*1002/);
+});
