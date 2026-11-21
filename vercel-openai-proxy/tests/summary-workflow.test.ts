@@ -595,3 +595,27 @@ test('wording repair retains checked originals instead of accepting changed fact
  assert.throws(()=>applyEditorialRepair(JSON.stringify({repairs:[]}),candidates,p,step,outputs,true));
  assert.throws(()=>applyEditorialRepair(raw,[{...candidates[0],citationIDs:['invented']},candidates[1]],p,step,outputs,true));
 });
+
+test('presentation expansion cannot discard a valid response at the generated-point limit',()=>{
+ const p=input('practitioner');p.pipeline='compact-v2';const plan=summaryPlan(p),step=plan.at(-1)!;
+ const points=Array.from({length:116},(_,i)=>({...point,heading:'Clinical Snapshot',text:`Concern ${i} — intermittent symptoms; prior symptoms`,stance:null,historyIDs:[],coordinationIDs:[]}));
+ const outputs={[step.dependencies[0]]:points};
+ const raw=JSON.stringify({points});
+ const candidate=editorialRepairCandidate(raw,p,step,outputs)!;
+ assert.ok(candidate);assert.equal(candidate.length,116);
+ assert.deepEqual(candidate.map(b=>b.text),points.map(b=>b.text));
+ const result=summaryResult(p,plan,{...outputs,[step.key]:candidate});
+ assert.equal(result.preservedCheckedWording,true);assert.equal(result.points.length,116);
+ assert.ok(result.text.includes(points[115].text));
+ assert.throws(()=>validatePoints(JSON.stringify({points:[...points,...points]}),p,step,outputs,true));
+ const ungrounded=points.map((b,i)=>i?b:{...b,citationIDs:['invented'],subjectCitation:null,responseCitation:null});
+ assert.equal(editorialRepairCandidate(JSON.stringify({points:ungrounded}),p,step,outputs),undefined);
+});
+
+test('presentation metadata expansion retains the bounded original instead of failing its byte cap',()=>{
+ const p=input('practitioner');p.pipeline='compact-v2';const step=summaryPlan(p).at(-1)!;
+ const points=Array.from({length:60},(_,i)=>({...point,heading:'Clinical Snapshot',text:`Concern ${i} — intermittent symptoms; prior symptoms`,topic:'x'.repeat(500),stance:null,historyIDs:[],coordinationIDs:[]}));
+ assert.ok(Buffer.byteLength(JSON.stringify(points))<80000);
+ const candidate=editorialRepairCandidate(JSON.stringify({points}),p,step,{[step.dependencies[0]]:points})!;
+ assert.ok(candidate);assert.equal(candidate.length,60);assert.deepEqual(candidate.map(b=>b.text),points.map(b=>b.text));
+});

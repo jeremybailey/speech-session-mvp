@@ -135,9 +135,27 @@ export function summaryPayload(p:SummaryInput,s:Step,outputs:Record<string,Point
  const content=publication?{patientIdentity:p.patientName??null,workflow:p.id,step:s.key,attempt,records:originals,mainDraft:dependencies[0]?.points??[],supportingEvidence:dependencies.slice(1),...(p.kind==='practitioner'?{requiredHistory,requiredCoordination}:{})}:{patientIdentity:p.patientName??null,workflow:p.id,step:s.key,attempt,records:originals,candidates:dependencies,...(coverage?{requiredHistory,requiredCoordination}:{})};
  return validatePayload({stage:'whole-history-overview',workload_type:'incremental',instructions:temporalEnabled?instructions:instructions.replace(practitionerTemporal,''),input:JSON.stringify(content),response_format:{type:'json_schema',json_schema:{name:'durable_summary_points_v1',strict:true,schema:object({points:{type:'array',items:point,maxItems:pointLimit(p,s)}})}}});
 }
+// Splitting is presentation-only. Never reject or truncate a valid model response
+// because duplicating its metadata for display would exceed the response budget.
+// Keep the original bullets in that case; the app already splits them for display.
+function presentationPoints(raw:any[],limit:number,bytes:number):any[]{
+ const expanded:any[]=[];let size=2;
+ for(const point of raw){
+  const items=typeof point?.text==='string'?splitHandoffItems(point.text):[point?.text];
+  for(const [index,text] of items.entries()){
+   const value=typeof point?.text==='string'?{...point,text,...(index>0&&point.historyIDs!==undefined?{historyIDs:[]}:{}),...(index>0&&point.coordinationIDs!==undefined?{coordinationIDs:[]}: {})}:point;
+   size+=Buffer.byteLength(JSON.stringify(value))+1;
+   if(expanded.length>=limit||size>bytes)return raw;
+   expanded.push(value);
+  }
+ }
+ return expanded;
+}
 export function validatePoints(raw:string,p:SummaryInput,s:Step,outputs:Record<string,Point[]>,allowEditorialRepair=false):Point[]{
  const parsed=JSON.parse(raw);
- const points=p.kind==='practitioner'&&isConcisePublicationStep(p,s)&&Array.isArray(parsed?.points) ? parsed.points.flatMap((point:any)=>typeof point?.text==='string'?splitHandoffItems(point.text).map((text,index)=>({...point,text,...(index>0&&point.historyIDs!==undefined?{historyIDs:[]}: {}),...(index>0&&point.coordinationIDs!==undefined?{coordinationIDs:[]}: {})})): [point]) : parsed?.points;
+ const bytes=p.kind==='practitioner'?80000:40000;
+ if(!Array.isArray(parsed?.points)||parsed.points.length>pointLimit(p,s)||Buffer.byteLength(JSON.stringify(parsed.points))>bytes)throw Error('invalid_summary_output');
+ const points=p.kind==='practitioner'&&isConcisePublicationStep(p,s)?presentationPoints(parsed.points,pointLimit(p,s),bytes):parsed.points;
  const coverage=coverageRequired(p,s);
  const allowed=new Set(s.phase==='audit'?s.evidenceIDs:[...s.evidenceIDs,...s.dependencies.flatMap(k=>(outputs[k]??[]).flatMap(b=>b.citationIDs)),...(coverage?[...coveragePoints(p,s,outputs,'Comprehensive Health History'),...coveragePoints(p,s,outputs,'Care Coordination Summary')].flatMap(b=>b.citationIDs):[])]);
  // Subject/response fields are explicit citations too. Providers sometimes omit
