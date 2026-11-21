@@ -217,3 +217,5 @@ $(SRCROOT)/vercel-openai-proxy/migrations/013_summary_workflows.sql
 $(SRCROOT)/vercel-openai-proxy/package-lock.json
 $(SRCROOT)/vercel-openai-proxy/package.json
 $(SRCROOT)/vercel-openai-proxy/vercel.json
+$(SRCROOT)/Sources/TransferZip
+$(SRCROOT)/SpeechSessionApp/BrandFonts
