@@ -184,6 +184,7 @@ public struct StorySummaryBulletDate:Codable,Equatable,Sendable {
     }
 }
 public struct StorySharedSummary:Codable,Equatable,Sendable {
+    public var pointReferences:[StorySummaryPointReference]? = nil
     public var bulletDates:[StorySummaryBulletDate]? = nil
     public var providerContacts:[CareTeamMember]? = nil
     public func dates(for text:String, section:String? = nil, displayDates:[StorySummaryBulletDate]? = nil)->[String] {
@@ -431,7 +432,7 @@ public enum StorySummaryDocument {
         return (output, dates)
     }
 
-    private static func splitShareItems(_ block: StorySummaryBlock) -> [StorySummaryBlock] {
+    static func splitShareItems(_ block: StorySummaryBlock) -> [StorySummaryBlock] {
         let text: String
         switch block {
         case let .bullet(value), let .paragraph(value): text = value

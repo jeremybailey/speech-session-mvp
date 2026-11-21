@@ -303,6 +303,8 @@ struct StoryLabView: View {
     @State private var composerAddsRecord=false
     @State private var showConversation=false
     @State private var showCheckIn=false
+    @State private var showCareOverviewSummary=false
+    @State private var showRecordedRecommendations=false
     @State private var selectedSource:StoryEvidence?
     @State private var sourceChoices:[StoryEvidence]=[]
     @State private var showSourceChoices=false
@@ -684,7 +686,9 @@ struct StoryLabView: View {
         else {StoryLoadingPlaceholder(label:"Loading care plan",rows:3).padding()}
     }
     private var loadedPlan: some View {
-        ScrollView {
+        let saved=sharing.summary ?? model.workspace.sharedSummary
+        let overview=saved.map(PractitionerCarePlan.init(summary:))
+        return ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
                 Text("My care plan")
                     .font(StoryDesignTokens.pageTitle)
@@ -700,7 +704,12 @@ struct StoryLabView: View {
                     }
                 }
 
-                if !recordedCarePlans.isEmpty || currentCarePlans.isEmpty {
+                if let saved,let overview,!overview.groups.isEmpty {
+                    Divider()
+                    careOverview(overview,summary:saved)
+                }
+
+                if !recordedCarePlans.isEmpty || (currentCarePlans.isEmpty && overview?.groups.isEmpty != false) {
                     Divider()
                     VStack(alignment: .leading, spacing: 12) {
                         careSectionHeading("Recorded recommendations")
@@ -710,7 +719,13 @@ struct StoryLabView: View {
                         } else {
                             Text("Not marked as part of your current plan.")
                                 .font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
-                            carePlanGroups(recordedCarePlans, following: false)
+                            if overview?.groups.isEmpty == false {
+                                DisclosureGroup("Original details",isExpanded:$showRecordedRecommendations) {
+                                    carePlanGroups(recordedCarePlans,following:false).padding(.top,12)
+                                }.tint(StoryDesignTokens.ink)
+                            } else {
+                                carePlanGroups(recordedCarePlans, following: false)
+                            }
                         }
                     }
                 }
@@ -719,7 +734,7 @@ struct StoryLabView: View {
             .padding()
         }
         .safeAreaInset(edge: .bottom) {
-            if currentCarePlans.isEmpty && recordedCarePlans.isEmpty {
+            if currentCarePlans.isEmpty && recordedCarePlans.isEmpty && overview?.groups.isEmpty != false {
                 Button { folderRouter.newCapture(importDocument: true) } label: {
                     Label("Upload a care plan", systemImage: "paperclip")
                         .font(StoryDesignTokens.label)
@@ -733,6 +748,46 @@ struct StoryLabView: View {
         .foregroundStyle(StoryDesignTokens.ink)
         .background(StoryDesignTokens.canvas)
         .storyLoadIn()
+    }
+
+    private func careOverview(_ overview:PractitionerCarePlan,summary:StorySharedSummary)->some View {
+        VStack(alignment:.leading,spacing:20) {
+            VStack(alignment:.leading,spacing:6) {
+                careSectionHeading("Treatments & next steps")
+                Text("From your practitioner summary · "+summary.generatedAt.formatted(date:.abbreviated,time:.omitted))
+                    .font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
+            }
+            ForEach(overview.groups) { group in
+                VStack(alignment:.leading,spacing:10) {
+                    Text(group.title).font(StoryDesignTokens.label).accessibilityAddTraits(.isHeader)
+                    ForEach(group.items) { item in
+                        HStack(alignment:.top,spacing:10) {
+                            Text("•").font(StoryDesignTokens.body).accessibilityHidden(true)
+                            VStack(alignment:.leading,spacing:6) {
+                                Text(item.note).font(StoryDesignTokens.body).fixedSize(horizontal:false,vertical:true).textSelection(.enabled)
+                                if let date=item.date {
+                                    Text(date).font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
+                                }
+                                if !item.citationIDs.isEmpty {
+                                    Button("Sources",systemImage:"link") {
+                                        sourceChoices=summary.evidence.filter{item.citationIDs.contains($0.id)}
+                                        showSourceChoices=true
+                                    }.font(StoryDesignTokens.caption).buttonStyle(.borderless)
+                                        .accessibilityLabel("Sources for "+group.title)
+                                }
+                            }.frame(maxWidth:.infinity,alignment:.leading)
+                        }
+                    }
+                }
+                if group.id != overview.groups.last?.id {Divider()}
+            }
+            Button("View practitioner summary",systemImage:"doc.text") {showCareOverviewSummary=true}
+                .font(StoryDesignTokens.caption)
+        }
+        .sheet(isPresented:$showCareOverviewSummary) {
+            StoryTemplateShareView(home:appModel.home,records:model.records,store:appModel.store,job:sharing)
+                .environmentObject(auth)
+        }
     }
 
     private func careSectionHeading(_ title: String) -> some View {
@@ -1420,6 +1475,13 @@ private struct SummaryStageFailure:Error {
                     throw NSError(domain:"SummaryPublication",code:2,userInfo:[NSLocalizedDescriptionKey:"The completed summary’s source references couldn’t be verified. Your previous summary is unchanged."])
                 }
                 var document=StorySharedSummary(templateID:template.rawValue,text:valid,evidence:request.evidence.filter{citations.contains($0.id)},patientName:patientName)
+                if let raw=output["points"],JSONSerialization.isValidJSONObject(raw) {
+                    let references=try JSONDecoder().decode([StorySummaryPointReference].self,from:JSONSerialization.data(withJSONObject:raw))
+                    guard references.allSatisfy({!$0.citationIDs.isEmpty && Set($0.citationIDs).isSubset(of:Set(citations))}) else {
+                        throw NSError(domain:"SummaryPublication",code:2,userInfo:[NSLocalizedDescriptionKey:"The completed summary’s source references couldn’t be verified. Your previous summary is unchanged."])
+                    }
+                    document.pointReferences=references
+                }
                 document.providerContacts=frozen.providerContacts
                 document.patientNameEdited=nameEdited || summary?.patientNameEdited == true
                 if let raw=output["bulletDates"],JSONSerialization.isValidJSONObject(raw) {
