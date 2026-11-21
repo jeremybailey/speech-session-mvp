@@ -10,6 +10,7 @@ import SpeechSessionFeatures
     @Published var records: [Session] = []
     @Published var error: String?
     @Published var busy = false
+    @Published var refreshingNarrative = false
     @Published var didLoadStory = false
     @Published var initialStoryLoadFailed = false
     @Published var narrative = ""
@@ -53,7 +54,7 @@ import SpeechSessionFeatures
         }
     }
     func refreshNarrative(auth:KindeAuthManager) async {
-        guard !busy else {return};busy=true;defer{busy=false}
+        guard !refreshingNarrative else {return};refreshingNarrative=true;defer{refreshingNarrative=false}
         do {
             await narrativeSave?.value;narrativeSave=nil
             let snapshot=try await store.storyWorkspace()
@@ -167,7 +168,7 @@ import SpeechSessionFeatures
             do {
                 let (body, response) = try await URLSession.shared.data(for:req)
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                if (kind == "refresh" || summaryEvidence != nil), [429, 502, 503, 504].contains(status), transientFailures < 3 {
+                if (kind == "chat" || kind == "refresh" || summaryEvidence != nil), [429, 502, 503, 504].contains(status), transientFailures < 3 {
                     transientFailures += 1
                     try await Task.sleep(nanoseconds: UInt64(transientFailures) * 1_000_000_000)
                     continue
@@ -178,7 +179,7 @@ import SpeechSessionFeatures
                 }
                 transientFailures = 0
                 data = body
-            } catch let error as URLError where (kind == "refresh" || summaryEvidence != nil) && transientFailures < 3 &&
+            } catch let error as URLError where (kind == "chat" || kind == "refresh" || summaryEvidence != nil) && transientFailures < 3 &&
                 [.timedOut,.networkConnectionLost,.cannotConnectToHost].contains(error.code) {
                 transientFailures += 1
                 try await Task.sleep(nanoseconds: UInt64(transientFailures) * 1_000_000_000)
@@ -238,7 +239,8 @@ import SpeechSessionFeatures
             do {
                 try await answer(question, auth: auth)
             } catch {
-                self.error = "Your question is saved. The answer couldn’t be loaded yet."
+                self.error = "Your question is saved. Tap Retry answer to retrieve it."
+                UserDefaults.standard.set(["code":String((error as NSError).code),"domain":(error as NSError).domain,"operationID":question.id.uuidString],forKey:"storyLab.lastChatFailure")
             }
             do {
                 workspace = try await store.storyWorkspace()
@@ -317,7 +319,7 @@ struct StoryLabView: View {
     private var day:String {Calendar.current.startOfDay(for:Date()).formatted(.iso8601)}
     var body:some View {
         NavigationStack(path: $folderRouter.path) {
-            HomeView(home:appModel.home,recording:appModel.recording,store:appModel.store,storyRecords:true,storyNarrative:model.didLoadStory ? model.narrative : nil,retryStoryLoad:model.initialStoryLoadFailed ? {Task {await model.reload()}} : nil,storyBusy:model.busy,summaryStatus:sharing.homeStatus,summaryDrawer:{AnyView(StoryTemplateShareView(home:appModel.home,records:model.records,store:appModel.store,job:sharing))},askStory:{openChat()},refreshStory:{Task{await model.refreshNarrative(auth:auth)}},pendingSharedImportURL:$appModel.pendingSharedImportURL,advanceSharedImportQueue:appModel.enqueuePendingSharedImportIfAvailable)
+            HomeView(home:appModel.home,recording:appModel.recording,store:appModel.store,storyRecords:true,storyNarrative:model.didLoadStory ? model.narrative : nil,retryStoryLoad:model.initialStoryLoadFailed ? {Task {await model.reload()}} : nil,storyBusy:model.busy || model.refreshingNarrative,summaryStatus:sharing.homeStatus,summaryDrawer:{AnyView(StoryTemplateShareView(home:appModel.home,records:model.records,store:appModel.store,job:sharing))},askStory:{openChat()},refreshStory:{Task{await model.refreshNarrative(auth:auth)}},pendingSharedImportURL:$appModel.pendingSharedImportURL,advanceSharedImportQueue:appModel.enqueuePendingSharedImportIfAvailable)
                 .navigationDestination(for: StoryRoute.self) { route in
                     StoryFolderDestination(route: route, store: appModel.store, home: appModel.home) { AnyView(currentPlan) }
                         .environment(\.storyRouter, folderRouter)
@@ -348,7 +350,7 @@ struct StoryLabView: View {
             .environment(\.storyRouter, folderRouter)
         }
         .task(id:auth.isSignedIn){if auth.isSignedIn {await model.flushCancellationRequests(auth:auth);await sharing.restore(auth:auth)}}
-        .sheet(isPresented:$showConversation){chatDrawer.storyLoadIn().presentationDetents([.large]).presentationDragIndicator(.visible)}
+        .sheet(isPresented:$showConversation){chatDrawer.task {await model.reconcile(auth:auth)}.storyLoadIn().presentationDetents([.large]).presentationDragIndicator(.visible)}
         .tint(StoryDesignTokens.action)
         .environmentObject(appModel.health)
         .task {
@@ -374,6 +376,7 @@ struct StoryLabView: View {
                 appModel.enqueuePendingSharedImportIfAvailable()
                 Task {
                     guard auth.isSignedIn else { return }
+                    Task {await model.reconcile(auth:auth)}
                     await sharing.resumeWhenActive(auth:auth)
                     await model.reload()
                     await model.flushCancellationRequests(auth:auth)
@@ -398,6 +401,7 @@ struct StoryLabView: View {
         chatRouter.path = []
         missingChatRecord = false
         visibleChatIDs=[]
+        for question in model.workspace.messages where question.role == "user" && question.state == "queued" && question.scopeRecordID == record?.id {includeQuestion(question.id)}
         showConversation=true
     }
     private func includeQuestion(_ id:UUID) {

@@ -153,6 +153,21 @@ final class StoryWorkspaceTests:XCTestCase {
         let records=try await s.loadAll(),state=try await s.storyWorkspace();XCTAssertEqual(records.count,1);XCTAssertEqual(state.messages.count,2)
         let reopened=try SessionStore(storageDirectory:await s.storageDirectory);let reloaded=try await reopened.storyWorkspace();XCTAssertEqual(reloaded.messages.count,2)
     }
+    func testUnfinishedChatReusesFrozenRequestAcrossSummaryWorkAndReopen() async throws {
+        let s = try store()
+        let id = try await s.addStoryMessage(role:"user", text:"What was discussed?", state:"queued")
+        let original = "{\"id\":\"same-operation\",\"evidence\":[]}"
+        _ = try await s.storyRequestBody(id, proposed:original)
+        let summaryID = try await s.addStoryMessage(role:"system", text:"Share template: practitioner", state:"queued")
+        let reopened = try SessionStore(storageDirectory:await s.storageDirectory)
+        let retryBody = try await reopened.storyRequestBody(id, proposed:"replacement")
+        XCTAssertEqual(retryBody, original)
+        try await reopened.completeStoryQuestion(id,text:"Saved answer",citations:[],evidence:[])
+        try await reopened.completeStoryQuestion(id,text:"Duplicate",citations:[],evidence:[])
+        let state = try await reopened.storyWorkspace()
+        XCTAssertEqual(state.messages.filter {$0.role == "assistant"}.map(\.text), ["Saved answer"])
+        XCTAssertEqual(state.messages.first {$0.id == summaryID}?.state, "queued")
+    }
     func testProgressDoesNotStopRecurringPlanAndDailyPreferenceSurvives() async throws {
         let s=try store();try await s.recordStoryCareEvent(actionID:"a",kind:"adopted",text:"Walk daily")
         try await s.recordStoryCareEvent(actionID:"a",kind:"progress",text:"Walked; felt more pain")
