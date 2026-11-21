@@ -628,6 +628,25 @@ final class StoryTemplateTests:XCTestCase {
         XCTAssertEqual(StorySummaryBulletDate.historyDisplayDate(text:"Treatment — started 2025, changed 2026",labels:[]),nil)
         XCTAssertNil(StorySummaryBulletDate.historyDisplayDate(text:"Surgery — uncomplicated recovery",labels:["Record: 2026-11-20"]))
     }
+    func testUnknownTemporalMetadataDoesNotSuppressExplicitHistoryYears() throws {
+        let unknown=StorySummaryTemporal(role:"unknown",start:nil,end:nil,approximate:false)
+        let points=["Last menstrual period — listed as 2025-10-26", "Knee pain — reported August 26, 2024", "Breastfeeding — documented in September 2024", "Farm work — weakness afterward, about 10 years before September 2024", "Childhood headaches — onset at age eight"]
+        let dates=points.map { StorySummaryBulletDate(text:$0,labels:["Record: 2026-11-20"],temporal:unknown) }
+        XCTAssertEqual(dates.map { $0.displayLabel(history:true) },["2025","2024","2024","c. 2014",nil])
+        let documented=StorySummaryTemporal(role:"documented",start:"2026-11-20",end:nil,approximate:false)
+        XCTAssertEqual(StorySummaryBulletDate(text:points[2],labels:[],temporal:documented).displayLabel(history:true),"2024")
+        XCTAssertNil(StorySummaryBulletDate(text:"Operation — 2026 discussion of prior event",labels:[],temporal:unknown).displayLabel(history:true))
+        XCTAssertNil(StorySummaryBulletDate(text:"Old injury — date uncertain",labels:["Record: 2024-09-01"],temporal:unknown).displayLabel(history:true))
+        let text="## Comprehensive Health History\n"+points.map { "- "+$0 }.joined(separator:"\n")
+        let presentation=StorySummaryDocument.practitionerPresentation(text,hasAbnormalLabs:false,bulletDates:dates)
+        let ordered=presentation.blocks.compactMap { if case let .bullet(value)=$0 { return value }; return nil }
+        XCTAssertEqual(ordered,[points[3],points[1],points[2],points[0],points[4]])
+        let data=try StorySummaryPDF.render(text:text,title:"Practitioner summary",generatedAt:Date(timeIntervalSince1970:0),bulletDates:dates)
+        let pdf=try XCTUnwrap(PDFDocument(data:data));let extracted=try XCTUnwrap(pdf.string)
+        XCTAssertTrue(extracted.contains("c. 2014"));XCTAssertTrue(extracted.contains("2024"));XCTAssertTrue(extracted.contains("2025"))
+        if let path=ProcessInfo.processInfo.environment["CC_HISTORY_YEARS_PREVIEW"] {try data.write(to:URL(fileURLWithPath:path))}
+    }
+
     func testHistoryTablePreservesMilestonesAndRepeatsHeaderAcrossPages() throws {
         let milestones=(0..<35).map { "Milestone \($0) — historical treatment in \(1980+$0), subsequent course" }
         let text="## Comprehensive Health History\n"+milestones.map{"- "+$0}.joined(separator:"\n")

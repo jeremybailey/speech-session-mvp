@@ -79,7 +79,7 @@ public struct StorySummaryBulletDate:Codable,Equatable,Sendable {
     public func displayLabel(history: Bool = false) -> String? {
         guard let temporal else { return history ? Self.historyDisplayDate(text:text,labels:labels) : Self.displayDate(labels) }
         guard ["event", "ongoing"].contains(temporal.role), let start=temporal.start else {
-            return history ? nil : Self.displayDate(labels.filter{$0.hasPrefix("Record: ")})
+            return history ? Self.historyDisplayDate(text:text,labels:[]) : Self.displayDate(labels.filter{$0.hasPrefix("Record: ")})
         }
         func format(_ date: String) -> String {
             history ? String(date.prefix(4)) : Self.displayDate(["Date: " + date]) ?? date
@@ -100,6 +100,7 @@ public struct StorySummaryBulletDate:Codable,Equatable,Sendable {
             text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
         }
         if contains(#"\b(?:before|prior to)\b"#) { return nil }
+        if contains(#"\b(?:discussion|review|documentation|record|note)\b"#) && contains(#"\b(?:prior|previous|past|childhood|historical)\b"#) { return nil }
         if contains(#"\b(?:as of|documented|recorded|reported in|reported on)\b"#) {
             let pastEvent = contains(#"\b(?:history of|historical|previous|prior|past|childhood|resolved|recalled|recollection|used to|no longer|stopped|ceased)\b"#)
             let ongoingState = contains(#"\b(?:ongoing|current|currently|active|persistent|chronic|continuing|continues|still|breastfeeding|breast-feeding|lactating|pregnant)\b"#)
@@ -362,6 +363,23 @@ public enum StorySummaryDocument {
                 output.append(block)
                 dates.append(StorySummaryBulletDate(text: point, labels: pointLabels, temporal: pointTemporal))
             }
+        }
+        // Use the same resolved year in the table and its ordering. Unknown date
+        // metadata must not leave explicitly dated history stranded out of order.
+        if let heading = output.firstIndex(of: .heading("Comprehensive Health History", level: 2)) {
+            let end = output[(heading + 1)...].firstIndex { if case .heading = $0 { return true }; return false } ?? output.endIndex
+            let range = (heading + 1)..<end
+            let entries = output[range].enumerated().map { offset, block -> (Int, StorySummaryBlock, Int?) in
+                guard case let .bullet(text) = block,
+                      let label = dates.first(where: { $0.text == text })?.displayLabel(history: true),
+                      let match = label.range(of: #"\b(?:19|20)\d{2}\b"#, options: .regularExpression),
+                      let year = Int(label[match]) else { return (offset, block, nil) }
+                return (offset, block, year)
+            }.sorted { a, b in
+                if a.2 != b.2 { return (a.2 ?? Int.max) < (b.2 ?? Int.max) }
+                return a.0 < b.0
+            }
+            output.replaceSubrange(range, with: entries.map { $0.1 })
         }
         return (output, dates)
     }
