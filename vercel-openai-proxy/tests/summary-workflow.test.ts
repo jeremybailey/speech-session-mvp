@@ -521,3 +521,14 @@ test('publication never exposes colliding coverage IDs from earlier audit batche
  }
  assert.deepEqual(outputs['audit:1'][0].historyIDs,['history:0']);
 });
+
+test('long practitioner publication has room for history and providers together',()=>{
+ const p=input('practitioner');p.pipeline='compact-v2';const step=summaryPlan(p).at(-1)!;
+ const b={...point,heading:'Comprehensive Health History',text:'Surgery — prior procedure',stance:null};
+ const outputs={[step.dependencies[0]]:[b]};
+ const payload:any=summaryPayload(p,step,outputs,0);
+ assert.equal(payload.response_format.json_schema.schema.properties.points.maxItems,160);
+ assert.equal(validatePoints(JSON.stringify({points:Array.from({length:100},()=>b)}),p,step,outputs).length,100);
+ assert.throws(()=>validatePoints(JSON.stringify({points:Array.from({length:161},()=>b)}),p,step,outputs));
+ const draft=summaryPlan(p)[0];assert.equal((summaryPayload(p,draft,{},0).response_format.json_schema as any).schema.properties.points.maxItems,80);
+});
