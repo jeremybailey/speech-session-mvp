@@ -6,7 +6,7 @@ import {database,transaction,submitWithinTransaction,jsonbPayload} from './ledge
 import {runJob} from './worker';
 import {mayReplaceUnconfirmedStep} from './summary-retry-policy';
 import {jobQueue} from './queue';
-import {canonical,digest,validateSummaryInput,summaryPlan,summaryPayload,validatePoints,editorialRepairCandidate,applyEditorialRepair,summaryResult,SummaryInput,Step,Point,confirmedSummaryProviderFailure,confirmedSummaryOutputLimit,isConcisePublicationStep} from './summary-workflow';
+import {canonical,digest,validateSummaryInput,summaryPlan,summaryPayload,validatePoints,repairAuditCoverage,editorialRepairCandidate,applyEditorialRepair,summaryResult,SummaryInput,Step,Point,confirmedSummaryProviderFailure,confirmedSummaryOutputLimit,isConcisePublicationStep} from './summary-workflow';
 const active=['queued','running','retry_scheduled'];
 export const summaryTopic='summary-workflows';
 export function summariesEnabled(kind?:string){return process.env.AI_DURABLE_ENABLED==='true'&&process.env.AI_QUEUE_ENABLED==='true'&&process.env.AI_SUMMARY_WORKFLOWS_ENABLED==='true'&&(!kind||(process.env.AI_SUMMARY_WORKFLOW_KINDS??'practitioner').split(',').includes(kind));}
@@ -142,8 +142,12 @@ export async function resumeSummary(owner:string,id:string,expectedRevision?:num
    LEFT JOIN ai_jobs j ON j.id=s.job_id LEFT JOIN ai_payloads p ON p.job_id=j.id AND p.expires_at>now() WHERE s.workflow_id=$1`,[id])).rows;
   const outputs=Object.fromEntries(rows.filter((r:any)=>r.state==='completed').map((r:any)=>[r.key,r.output]));
   const unfinished=rows.filter((r:any)=>r.state!=='completed');
-  const recoverable=p&&unfinished.length>0&&unfinished.every((r:any)=>{
+  const completedFailures=unfinished.filter((r:any)=>r.state==='running'&&r.job_state==='completed');
+  const recoverable=p&&completedFailures.length>0&&unfinished.every((r:any)=>{
+   if(r.state==='queued'||r.state==='running'&&['queued','running'].includes(r.job_state))return true;
    if(r.state!=='running'||r.job_state!=='completed')return false;
+   const auditStep=p.plan.find((s:Step)=>s.key===r.key);
+   if(auditStep&&repairAuditCoverage(r.result?.output,p.input,auditStep,outputs))return true;
    try{const step=p.plan.find((s:Step)=>s.key===r.key);if(r.output){applyEditorialRepair(r.result?.output,r.output,p.input,step,outputs,true);return true;}return r.attempt>=3&&!!editorialRepairCandidate(r.result?.output,p.input,step,outputs);}catch{return false;}
   });
   if(recoverable){
@@ -174,7 +178,11 @@ export async function advanceSummary(id:string):Promise<string[]>{return transac
   let failure:string|undefined;let editorialRepair=false;
   if(row.job_state==='completed'){
    try {const step=plan.find(s=>s.key===row.key)!;const result=row.output?applyEditorialRepair(row.result?.output,row.output,input,step,outputs,true):validatePoints(row.result?.output,input,step,outputs);outputs[row.key]=result;row.state='completed';await db.query("UPDATE ai_summary_steps SET state='completed',output=$3 WHERE workflow_id=$1 AND key=$2",[id,row.key,jsonbPayload(result)]);continue;}
-   catch {failure='invalid_summary_output';if(!row.output){const candidate=editorialRepairCandidate(row.result?.output,input,plan.find(s=>s.key===row.key)!,outputs);if(candidate){
+   catch {
+    const step=plan.find(s=>s.key===row.key)!;
+    const repaired=repairAuditCoverage(row.result?.output,input,step,outputs);
+    if(repaired){outputs[row.key]=repaired;row.state='completed';await db.query("UPDATE ai_summary_steps SET state='completed',output=$3,error_code=NULL WHERE workflow_id=$1 AND key=$2",[id,row.key,jsonbPayload(repaired)]);continue;}
+    failure='invalid_summary_output';if(!row.output){const candidate=editorialRepairCandidate(row.result?.output,input,plan.find(s=>s.key===row.key)!,outputs);if(candidate){
     if(row.attempt>=3){outputs[row.key]=candidate;row.state='completed';await db.query("UPDATE ai_summary_steps SET state='completed',output=$3 WHERE workflow_id=$1 AND key=$2",[id,row.key,jsonbPayload(candidate)]);continue;}
     row.output=candidate;editorialRepair=true;await db.query('UPDATE ai_summary_steps SET output=$3 WHERE workflow_id=$1 AND key=$2',[id,row.key,jsonbPayload(candidate)]);}}}
   }else failure=confirmedSummaryProviderFailure(row)?'provider_failed':row.job_state==='uncertain'?'provider_outcome_unknown':row.job_state??'missing_provider_result';

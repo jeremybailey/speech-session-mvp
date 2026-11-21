@@ -619,3 +619,24 @@ test('presentation metadata expansion retains the bounded original instead of fa
  const candidate=editorialRepairCandidate(JSON.stringify({points}),p,step,{[step.dependencies[0]]:points})!;
  assert.ok(candidate);assert.equal(candidate.length,60);assert.deepEqual(candidate.map(b=>b.text),points.map(b=>b.text));
 });
+
+test('misfiled audit coverage restores checked original without rewriting or losing the other point',async()=>{
+ const {repairAuditCoverage}=await import('../api/_lib/summary-workflow');
+ const p=input('practitioner');
+ const original={...point,heading:'Comprehensive Health History',text:'Past surgery — 2012'};
+ const step={key:'audit:0',phase:'audit' as const,dependencies:['check:0'],evidenceIDs:['1001']};
+ const outputs={'check:0':[original]};
+ const misplaced={...original,heading:'Condition-Specific Summary',text:'Surgery — ongoing recovery',historyIDs:['history:0'],coordinationIDs:[]};
+ const raw=JSON.stringify({points:[misplaced]});
+ assert.throws(()=>validatePoints(raw,p,step,outputs));
+ const repaired=repairAuditCoverage(raw,p,step,outputs)!;
+ assert.equal(repaired.length,2);
+ assert.equal(repaired[0].text,misplaced.text);
+ assert.deepEqual(repaired[0].historyIDs,[]);
+ assert.equal(repaired[1].text,original.text);
+ assert.equal(repaired[1].heading,'Comprehensive Health History');
+ assert.deepEqual(repaired[1].historyIDs,['history:0']);
+ assert.equal(repairAuditCoverage(JSON.stringify({points:[{...misplaced,citationIDs:['invented'],subjectCitation:null,responseCitation:null}]}),p,step,outputs),undefined);
+ assert.equal(repairAuditCoverage(JSON.stringify({points:[{...misplaced,historyIDs:['history:9']}]}),p,step,outputs),undefined);
+ assert.equal(repairAuditCoverage(JSON.stringify({points:[]}),p,step,outputs),undefined);
+});

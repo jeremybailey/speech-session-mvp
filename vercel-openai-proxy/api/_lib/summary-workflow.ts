@@ -211,6 +211,26 @@ export function validatePoints(raw:string,p:SummaryInput,s:Step,outputs:Record<s
  if(Buffer.byteLength(JSON.stringify(points))>(p.kind==='practitioner'?80000:40000))throw Error('invalid_summary_output');
  return points;
 }
+// Repair a misplaced audit checklist annotation using the independently checked
+// original, never by reclassifying or rewriting the model's clinical statement.
+export function repairAuditCoverage(raw:string,p:SummaryInput,s:Step,outputs:Record<string,Point[]>):Point[]|undefined {
+ if(p.kind!=='practitioner'||s.phase!=='audit')return;
+ try {
+  const parsed=JSON.parse(raw);if(!Array.isArray(parsed?.points))return;
+  let restored=false;
+  for(const [field,heading,prefix] of [['historyIDs','Comprehensive Health History','history'],['coordinationIDs','Care Coordination Summary','coordination']] as const){
+   const required=coveragePoints(p,s,outputs,heading);
+   required.forEach((original,index)=>{
+    const id=`${prefix}:${index}`;
+    const linked=(point:Point)=>Array.isArray(point[field])&&point[field]!.includes(id)&&Array.isArray(point.citationIDs)&&point.citationIDs.some(ref=>original.citationIDs.includes(ref));
+    if(parsed.points.some((point:Point)=>point.heading===heading&&linked(point)))return;
+    if(!parsed.points.some((point:Point)=>point.heading!==heading&&linked(point)))return;
+    parsed.points.push({...sourcePoint(original),historyIDs:field==='historyIDs'?[id]:[],coordinationIDs:field==='coordinationIDs'?[id]:[]});restored=true;
+   });
+  }
+  if(restored)return validatePoints(JSON.stringify(parsed),p,s,outputs);
+ }catch {return;}
+}
 function practitionerPointStyleValid(point:Point):boolean {
  const prose=/\b(?:is|are|was|were|has been|have been|(?:patient|clinician|doctor|provider|practitioner|midwife|parent|caregiver)\s+(?:reports?|reported|describes?|described|states?|stated|says|said|notes?|noted|indicates?|indicated)|records list|notes describe|not documented)\b/i;
  if(!/^\S+(?:\s+\S+){0,5} — \S+(?:\s+\S+){0,15}$/.test(point.text)||/[;.]$/.test(point.text)||point.text.includes(';')||prose.test(point.text))return false;
