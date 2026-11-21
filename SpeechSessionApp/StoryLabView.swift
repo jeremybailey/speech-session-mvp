@@ -1105,14 +1105,8 @@ private struct StoryTemplateShareView:View {
                         }
                     }
                     if let summary=job.summary {
-                        if job.needsFormatUpdate {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Previously saved summary").font(StoryDesignTokens.section)
-                                if !job.generating {
-                                    Button(job.operationID == nil ? "Update to short bullets" : "Retry unfinished summary") { job.start(auth: auth, retryUnfinished: true) }
-                                        .disabled(!auth.isSignedIn || !job.restored)
-                                }
-                            }
+                        if job.generating || job.operationID != nil {
+                            Text("Previously saved summary").font(StoryDesignTokens.section)
                         }
                         let abnormalLabs = (summary.labReadings ?? []).filter { $0.abnormalLabel != nil }
                         let presentation = StorySummaryDocument.practitionerPresentation(summary.text, hasAbnormalLabs: !abnormalLabs.isEmpty, bulletDates: summary.bulletDates ?? [], providerContacts: summary.providerContacts ?? [], patientName: job.patientName)
@@ -1271,12 +1265,9 @@ private struct SummaryStageFailure:Error {
     let store:SessionStore
     let runner:StoryLabModel
     let template=StorySummaryTemplate.practitioner
-    @Published var summary:StorySharedSummary? {
-        didSet {
-            needsFormatUpdate = summary.map { template.validatedHandoff($0.text) == nil } ?? false
-        }
-    }
-    private(set) var needsFormatUpdate = false
+    // Readiness follows the saved operation, not prose style. A checked original
+    // bullet can intentionally remain longer than the preferred writing format.
+    @Published var summary:StorySharedSummary?
     @Published var error:String?
     @Published var patientName=""
     var nameEdited=false
