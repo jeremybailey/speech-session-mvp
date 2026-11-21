@@ -1,3 +1,4 @@
+import {summaryActivity} from './summary-progress';
 import {isRecordDeploymentActive} from './record-runtime';
 import {newSummaryExecutionPolicy,summaryConcurrency,summaryReasoning,knownSummaryExecutionPolicy} from './summary-execution-policy';
 import {createHmac} from 'node:crypto';
@@ -63,6 +64,7 @@ async function purgeSummary(db:any,id:string){
 }
 export async function summaryStatus(owner:string,id:string){
  const row=(await database().query(`SELECT w.id,w.state,w.error_code,w.revision,w.expires_at,w.received_at,w.calls,w.max_calls,
+ (SELECT coalesce(jsonb_agg(jsonb_build_object('key',key,'state',state,'repair',output IS NOT NULL)), '[]'::jsonb) FROM ai_summary_steps WHERE workflow_id=w.id) activity_steps,
  (SELECT count(*)::int FROM ai_summary_steps WHERE workflow_id=w.id) total,
  (SELECT count(*)::int FROM ai_summary_steps WHERE workflow_id=w.id AND state='completed') completed,
  CASE WHEN w.state='completed' AND w.expires_at>now() THEN p.result ELSE NULL END output
@@ -70,7 +72,8 @@ export async function summaryStatus(owner:string,id:string){
  if(!row)return null;
  if(row.state==='needs_attention'&&row.calls>=row.max_calls)row.error_code='workflow_limit';
  if(new Date(row.expires_at).getTime()<=Date.now()&&!row.received_at){row.state='expired';row.output=null;}
- return {...row,...(row.output?{digest:digest(row.output)}:{})};
+ const activity=summaryActivity(row.state,row.activity_steps);delete row.activity_steps;
+ return {...row,activity,...(row.output?{digest:digest(row.output)}:{})};
 }
 export async function acknowledgeSummary(owner:string,id:string,hash:string){return transaction(async db=>{
  await db.query('SELECT pg_advisory_xact_lock(hashtext($1))',['summary:'+owner]);

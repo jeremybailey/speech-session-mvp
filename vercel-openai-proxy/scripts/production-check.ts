@@ -44,7 +44,10 @@ async function main() {
     }
     checkpoint = 'shared-budget';
     const budget=(await db.query('SELECT limit_nusd,used_nusd,reserved_nusd FROM ai_budgets WHERE id=$1',[process.env.AI_BUDGET_ID])).rows[0];
-    assert.ok(budget&&BigInt(budget.limit_nusd)<=(process.env.STORY_LAB_ENABLED==='true'?10000000000n:20000000000n),'Shared ceiling exceeds approved allowance');
+    // Founder explicitly approved $25 on 2026-11-21; other installations retain their existing ceiling.
+    const approvedFounder=process.env.VERCEL_PROJECT_ID==='prj_H9I9bkd1KzkiqxAW8grLUb4LQp3n' && process.env.AI_BUDGET_ID==='storylab-v1';
+    const approvedCeiling=approvedFounder?25000000000n:(process.env.STORY_LAB_ENABLED==='true'?10000000000n:20000000000n);
+    assert.ok(budget&&BigInt(budget.limit_nusd)<=approvedCeiling,'Shared ceiling exceeds approved allowance');
     if(process.env.STORY_LAB_ENABLED==='true')assert.ok((await db.query("SELECT to_regclass('public.ai_story_operations') AS name")).rows[0].name,'Story migration missing');
     checkpoint = 'shared-budget-remaining';
     assert.ok(BigInt(budget.used_nusd)+BigInt(budget.reserved_nusd)<BigInt(budget.limit_nusd),'Pilot budget exhausted');

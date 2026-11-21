@@ -1494,8 +1494,8 @@ private struct SummaryStageFailure:Error {
                 let request=try await store.prepareServiceSummary(ServiceSummaryRequest(id:serviceID,kind:"practitioner",target:"practitioner",sourceRevision:sourceKey,publicationRevision:id.uuidString,template:"practitioner",evidence:frozen.evidence,structuredLabs:!frozen.labs.isEmpty,patientName:frozen.patientName))
                 let value=try JSONSerialization.jsonObject(with:encoder.encode(request)) as! [String:Any]
                 generationStatus=Self.preparingLabel
-                let output=try await serviceTransport.summaryWorkflow(value, retryUnfinished: retryUnfinished) { [weak self] completed,total in
-                    let label="Preparing summary… \(completed) of \(total) steps"
+                let output=try await serviceTransport.summaryWorkflow(value, retryUnfinished: retryUnfinished) { [weak self] completed,total,activity in
+                    let label="Preparing summary… \(completed)/\(total) · \(activity ?? "Preparing summary")"
                     if self?.generationStatus != label {self?.generationStatus=label}
                 }
                 guard let text=output["text"] as? String,let valid=template.validatedServiceHandoff(text,preservedCheckedWording:output["preservedCheckedWording"] as? Bool == true) else {

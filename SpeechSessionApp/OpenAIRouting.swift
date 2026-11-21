@@ -471,7 +471,7 @@ extension OpenAIChatTransport {
         return state
     }
 
-    func summaryWorkflow(_ value: [String: Any], retryUnfinished: Bool = false, onProgress: (@MainActor @Sendable (Int, Int) -> Void)? = nil) async throws -> [String: Any] {
+    func summaryWorkflow(_ value: [String: Any], retryUnfinished: Bool = false, onProgress: (@MainActor @Sendable (Int, Int, String?) -> Void)? = nil) async throws -> [String: Any] {
         guard usesSummaryWorkflows, let jobs = durableJobsURL,
               let id = value["id"] as? String else { throw URLError(.unsupportedURL) }
         let base = jobs.deletingLastPathComponent().appendingPathComponent("summary-workflows")
@@ -534,7 +534,7 @@ extension OpenAIChatTransport {
             let status=try await exchange(statusURL,"GET")
             if let completed=status["completed"] as? Int, let total=status["total"] as? Int,
                total > 0, completed >= 0, completed <= total {
-                await onProgress?(completed,total)
+                await onProgress?(completed,total,status["activity"] as? String)
             }
             switch status["state"] as? String {
             case "completed":
