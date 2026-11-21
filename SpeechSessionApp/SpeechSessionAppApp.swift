@@ -9,6 +9,7 @@ struct SpeechSessionAppApp: App {
     @StateObject private var kindeAuth = KindeAuthManager()
 
     init() {
+        FounderLoadAudit.mark("start")
         StoryDesignTokens.configureNavigationTypography()
         do {
             let store = try SessionStore.appDefault()
@@ -51,5 +52,23 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             SharedImportURLInbox.shared.enqueue(url)
         }
         return true
+    }
+}
+
+// Optional founder-device launch timing. Only stage names and elapsed time are emitted.
+@MainActor enum FounderLoadAudit {
+    #if DEBUG
+    private static let enabled = ProcessInfo.processInfo.arguments.contains("--founder-load-audit")
+    private static let start = ProcessInfo.processInfo.systemUptime
+    private static var seen = Set<String>()
+    #endif
+
+    static func mark(_ stage: String) {
+        #if DEBUG
+        guard enabled, seen.insert(stage).inserted else { return }
+        let origin = start
+        let ms = Int((ProcessInfo.processInfo.systemUptime - origin) * 1000)
+        FileHandle.standardOutput.write(Data("FOUNDER_LOAD \(stage) \(ms) ms\n".utf8))
+        #endif
     }
 }

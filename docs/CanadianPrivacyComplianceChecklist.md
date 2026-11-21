@@ -21,7 +21,7 @@ Separately assess the path **device → your proxy → OpenAI**:
 - **Subprocessors**: OpenAI and your hosting provider (for example Vercel) should appear in disclosures where personal health information may be included.
 - **Logs & storage**: Confirm inference routes do not persist request bodies or unnecessary identifiers; rate limiting may use stable subject IDs from JWT `sub` if implemented.
 - **Cross-border transfer**: Document whether processing occurs outside Canada and what contractual or consent bases apply.
-- **Retention**: Confirm no server-side retention of clinical content beyond what you deliberately store (this architecture targets **no** transcript persistence on the proxy).
+- **Retention**: Cloud summarization may temporarily retain prepared text, checkpoints and results solely to finish processing and recover interruptions, as described in pilot agreement 2026-10-19.1. Purge live job content after the phone confirms a durable result save; unacknowledged work has a seven-day expiry and cleanup policy. Retries must not extend that deadline. Verify backup, hosting-log and provider retention separately; application expiry is not a physical-erasure guarantee for those systems. Original files stay on the phone for this summary-coordination workflow.
 
 ## App Store
 

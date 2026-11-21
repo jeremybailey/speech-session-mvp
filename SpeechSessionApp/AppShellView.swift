@@ -138,7 +138,7 @@ private struct IntroAgreementView: View {
                                 .font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                         }
                     } else if state.busy {
-                        ProgressView("Loading agreement…")
+                        StoryLoadingPlaceholder(label: "Loading agreement", rows: 2, layout: .narrative)
                             .frame(maxWidth: .infinity).padding(24)
                     }
                     if let error = state.error {
@@ -158,6 +158,7 @@ private struct IntroAgreementView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(BrandPalette.canvas.ignoresSafeArea())
+            .storyLoadIn(ready: !state.busy || state.document != nil)
             .navigationTitle("CollectiveCare")
             .navigationBarTitleDisplayMode(.inline)
         }
@@ -368,7 +369,7 @@ struct SignInGateView: View {
             }
             .frame(maxWidth: .infinity)
             .background(BrandPalette.canvas.ignoresSafeArea())
-            .navigationTitle("")
+            .storyLoadIn().navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
         }
         .task {

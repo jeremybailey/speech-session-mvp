@@ -14,17 +14,36 @@ public enum StorySummaryTemplate:String,CaseIterable,Codable,Sendable {
         If evidence explicitly identifies the patient by name, start with one line "Patient name: <name>". Otherwise omit that line. Never infer the patient name from the account, a clinician name, or a document title alone.
         Use these exact headings in this order, each on its own line prefixed with ##:
         \(sections.joined(separator:"\n"))
-        Write a selective two-page handoff. Aim for 2200–3000 characters including headings, shorter for sparse evidence. Give each fact one home. Write each section as concise bullet points. Start each point on its own line with '- '. Use one material finding or action per bullet and keep its qualifiers together.
-        Clinical Snapshot: one or two bullets on the main concerns, functional impact and patient priorities.
-        Care Coordination Summary: documented allergies or sensitivities and who is coordinating care.
-        Appointment Preparation Brief: recorded reason, patient questions or changes requiring discussion.
-        Comprehensive Health History: relevant dated milestones and background. Never infer clinical dates from upload dates.
-        Condition-Specific Summary: material course or status beyond the snapshot. Keep suspected, excluded and established conditions distinct.
-        Care Plan & Interventions: document current medications and adopted actions here once. Keep dose, units, timing, conditions, attribution and conflicting regimens together. Distinguish recommendations from adopted actions and previous treatments. Attribute reported responses.
-        Labs & Investigations: relevant dated results, units, supplied ranges and documented interpretation or follow-up. Do not infer trends.
-        Keep all seven headings. Where evidence is missing use “Not documented.” Never imply a negative from missing evidence. Use at most one short Markdown table for genuinely comparable rows, with a header, separator and consistent columns. Omit nested headings and repeated history. Shorten by selecting material facts, never by dropping qualifiers from a retained fact. Supply citationIDs for factual claims. Use only the supplied evidence.
+        Write a selective clinical handoff in chart shorthand, not an inventory of every saved fact. Maximum 18 words per bullet. No fixed total-word or page target. Retain all distinct clinically relevant context, concerns, medications, decisions, unresolved questions and next steps. Let relevant content determine length; remove repetition and procedural explanation rather than useful clinical points. Target 6–12 words per bullet. Consolidate related concerns and repeated history across sections. Select material concerns, current medication names/status, allergies, meaningful changes, decisions, questions and agreed follow-up. Omit procedural teaching, incidental anecdotes and missing-information commentary. Never weaken declined to deferred or remove meaningful uncertainty to save words. Rewrite rather than truncate. Every bullet has the form "- Topic — qualifier". Topic is a clinical noun phrase (1–6 words); qualifier is a short fragment (1–12 words). Usually 4–9 words total. Use active verbs or concise noun phrases. Avoid repeated wording and aim for one short line per bullet. Use w/ instead of with. Remove filler such as "that", "the patient", "according to the record" and "it was reported". Do not narrate where facts came from or repeatedly say information is not confirmed. Preserve a meaningful qualifier in a word or two (possible, suspected, declined, considering, per parent) when it changes the clinical meaning. Do not turn an uncertain diagnosis into a confirmed one or a suggestion into an agreed plan. No complete sentences, reporting lead-ins, semicolons or final periods. Keep one topic per line. Use separate bullets for each semicolon-separated item in the input. Repeat its topic, person, or condition where needed so each bullet stands on its own. Use separate bullets for unrelated decisions. No padding to fill a page.
+        Style examples only (never add their facts): "- Ankle pain — intermittent, worse on stairs"; "- Brace — declined today, possible retrial next visit"; "- Follow-up — booked for Friday at 10 am". Preserve meaningful attribution with compact qualifiers such as "per parent" or "suspected". Omit boilerplate such as “patient reports” and “not documented”. Preserve uncertainty, timing and who proposed or agreed to an action when clinically meaningful. Use established, unambiguous clinical abbreviations across all sections (e.g. LDL); never invent an acronym. Give each distinct perspective an appropriate home. Write each section as concise bullet points. Start each point on its own line with '- '. Use one material finding or action per bullet and keep its qualifiers together.
+        SECTION PURPOSE AND COVERAGE: Clinical Snapshot gives the current clinical context, main concerns, functional impact, relevant personal circumstances and expressed patient priorities or practical constraints. Care Coordination Summary identifies who is responsible, handoffs and agreed responsibilities. Appointment Preparation Brief captures the recorded visit purpose, open questions and meaningful changes since the previous encounter; never invent questions or advice. Comprehensive Health History preserves the longitudinal story: relevant onset, diagnoses, major illnesses, procedures, pregnancy/birth milestones, prior treatment trials and responses, resolved conditions with ongoing relevance, and supported family/social background. Preserve each distinct documented major historical milestone during final editing, including resolved problems and milestones unrelated to the current appointment; do not collapse different years or treatment changes into a single generic history bullet. Use supported event dates or periods; never infer event dates from upload dates. Order dated historical milestones chronologically and put undated background last. Retain a historical event date or period in its point text when supplied. Condition-Specific Summary explains the course and current status of each condition, including response or progression beyond the snapshot. Care Plan & Interventions captures current and previous medications/interventions, status, response, tolerance and agreed next actions, without doses or schedules. Labs & Investigations captures supported abnormal results and trends; retain explicitly planned investigations as plans, never present them as results. Each section must serve its purpose, not receive leftovers. Avoid verbatim repetition, but allow a condition in multiple sections when each adds a distinct perspective: present impact, historical onset, treatment response or investigation trend. A brief current snapshot must not erase relevant historical milestones. During drafting, checking, source audits and final editing, check longitudinal coverage as well as current concerns, decisions and actions. Omit unsupported or empty sections; do not invent history to fill them. No fixed number of history entries or pages.
+        Keep all seven headings. Leave sections empty when no relevant facts qualify. Never imply a negative from missing evidence. Use bullets throughout. Omit nested headings and verbatim repetition; retain distinct historical milestones. Shorten by selecting material facts, never by dropping qualifiers from a retained fact. Supply citationIDs for factual claims. Use only the supplied evidence.
         """
     }
+    /// Apply the current writing contract to newly generated content, including repaired responses.
+    /// Previously saved summaries use the original document validator.
+    public func validatedHandoff(_ raw: String) -> String? {
+        guard let validated = validatedText(raw) else { return nil }
+        let text = StorySummaryDocument.shareShorthand(validated)
+        let prose = #"(?i)\b(?:is|are|was|were|has been|have been|(?:patient|clinician|doctor|provider|practitioner|midwife|parent|caregiver)\s+(?:reports?|reported|describes?|described|states?|stated|says|said|notes?|noted|indicates?|indicated)|records list|notes describe|not documented)\b"#
+        for block in StorySummaryDocument.blocks(StorySummaryDocument.body(text)) {
+            switch block {
+            case .heading(_, level: 2): continue
+            case let .bullet(line):
+                let words = line.split(whereSeparator: \.isWhitespace).count
+                guard words <= 18 else { return nil }
+                let fields = line.components(separatedBy: " — ")
+                guard fields.count == 2,
+                      (1...6).contains(fields[0].split(whereSeparator: \.isWhitespace).count),
+                      (1...16).contains(fields[1].split(whereSeparator: \.isWhitespace).count),
+                      !line.hasSuffix("."), !line.contains(";"),
+                      line.range(of: prose, options: .regularExpression) == nil else { return nil }
+            default: return nil
+            }
+        }
+        return text
+    }
+
     public func validatedText(_ raw:String)->String? {
         let text=raw.replacingOccurrences(of:#"\[E\d+(?:\s*[,;]\s*E\d+)*\]"#,with:"",options:.regularExpression).trimmingCharacters(in:.whitespacesAndNewlines)
         // Verification can restyle a heading without changing its meaning. Normalize
@@ -43,7 +62,101 @@ public enum StorySummaryTemplate:String,CaseIterable,Codable,Sendable {
         return normalized
     }
 }
+private final class StorySummaryDateCache: @unchecked Sendable {
+    let values=NSCache<NSString,NSString>()
+    init(){values.countLimit=256}
+}
+public struct StorySummaryBulletDate:Codable,Equatable,Sendable {
+    public var text:String
+    public var labels:[String]
+    /// Show only supported event years for history; record dates are not event dates.
+    /// Multiple dates stay in the text; never guess which event they refer to.
+    public static func historyDisplayDate(text: String, labels: [String]) -> String? {
+        if let relativeYear = relativeHistoryYear(text) { return relativeYear }
+        // Citation dates can describe a later discussion, not the historical event.
+        // An explicitly dated observation can establish when a state was ongoing,
+        // but a later note about a past event cannot establish that event's year.
+        func contains(_ pattern: String) -> Bool {
+            text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+        }
+        if contains(#"\b(?:before|prior to)\b"#) { return nil }
+        if contains(#"\b(?:as of|documented|recorded|reported in|reported on)\b"#) {
+            let pastEvent = contains(#"\b(?:history of|historical|previous|prior|past|childhood|resolved|recalled|recollection|used to|no longer|stopped|ceased)\b"#)
+            let ongoingState = contains(#"\b(?:ongoing|current|currently|active|persistent|chronic|continuing|continues|still|breastfeeding|breast-feeding|lactating|pregnant)\b"#)
+            guard ongoingState && !pastEvent else { return nil }
+        }
+        let pattern = #"\b(?:\d{4}-\d{2}-\d{2}|\d{4}\s*[-–—]\s*\d{4}|(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}|\d{4})\b"#
+        guard let regex=try? NSRegularExpression(pattern:pattern,options:.caseInsensitive) else {return nil}
+        let source=text as NSString
+        let matches=regex.matches(in:text,range:NSRange(location:0,length:source.length)).compactMap { match -> String? in
+            let token=source.substring(with:match.range)
+            let tail=source.substring(from:NSMaxRange(match.range))
+            if token.count == 4, tail.range(of:#"^\s*(?:IU|mg|mcg|µg|g|mL|mmol|units|steps|calories)\b"#,options:[.regularExpression,.caseInsensitive]) != nil {return nil}
+            return token
+        }
+        let dates=Array(Set(matches))
+        return historyYear(dates.count == 1 ? dates[0] : nil)
+    }
+    /// Resolve only explicit year offsets with an explicit calendar anchor; never use upload dates.
+    private static func relativeHistoryYear(_ text: String) -> String? {
+        let pattern = #"\b(?:(about|approximately|around|roughly)\s+)?(\d{1,3})(?:\s*[-–—]\s*(\d{1,3}))?\s+years?\s+(before|prior to|after)\s+(?:(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+)?((?:19|20)\d{2})\b"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
+        let source = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: source.length))
+        guard matches.count == 1, let match = matches.first else { return nil }
+        func capture(_ index: Int) -> String? {
+            let range = match.range(at: index)
+            return range.location == NSNotFound ? nil : source.substring(with: range)
+        }
+        guard let offset = capture(2).flatMap(Int.init), let anchor = capture(5).flatMap(Int.init) else { return nil }
+        let otherOffset = capture(3).flatMap(Int.init) ?? offset
+        let direction = capture(4)?.lowercased() == "after" ? 1 : -1
+        let years = [anchor + direction * offset, anchor + direction * otherOffset].sorted()
+        let value = years[0] == years[1] ? String(years[0]) : "\(years[0])–\(years[1])"
+        return capture(1) == nil ? value : "c. " + value
+    }
+    private static func historyYear(_ value: String?) -> String? {
+        guard let value,
+              let regex = try? NSRegularExpression(pattern: #"\b\d{4}(?:\s*[-–—]\s*\d{4})?\b"#),
+              let match = regex.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)),
+              let range = Range(match.range, in: value) else { return nil }
+        return String(value[range])
+    }
+    /// Prefer an event date; identify record-date fallbacks explicitly to preserve meaning.
+    private static let cache=StorySummaryDateCache()
+    public static func displayDate(_ labels:[String])->String? {
+        let key=labels.sorted().joined(separator:"\u{0}") as NSString
+        if let saved=cache.values.object(forKey:key) {return saved.length==0 ? nil:saved as String}
+        let formats=["yyyy-MM-dd", "MMM d, yyyy", "d MMM yyyy", "MMMM d, yyyy", "d MMMM yyyy", "yyyy-MM", "MMM yyyy", "MMMM yyyy", "yyyy"]
+        var events:[(Date,String)]=[]
+        var records:[(Date,String)]=[]
+        for label in labels where label.hasPrefix("Date: ") || label.hasPrefix("Record: ") {
+            let isEvent=label.hasPrefix("Date: ")
+            let raw=String(label.dropFirst(isEvent ? 6 : 8)).trimmingCharacters(in:.whitespacesAndNewlines)
+            for format in formats {
+                let parser=DateFormatter();parser.locale=Locale(identifier:"en_US_POSIX");parser.timeZone=TimeZone(secondsFromGMT:0);parser.dateFormat=format;parser.isLenient=false
+                guard let date=parser.date(from:raw),parser.string(from:date).caseInsensitiveCompare(raw) == .orderedSame else {continue}
+                let display=DateFormatter();display.locale=Locale(identifier:"en_US_POSIX");display.timeZone=parser.timeZone
+                display.dateFormat=format == "yyyy" ? "yyyy" : ["yyyy-MM","MMM yyyy","MMMM yyyy"].contains(format) ? "MMM yyyy" : "d MMM yyyy"
+                if isEvent {events.append((date,display.string(from:date)))}
+                else {records.append((date,"Recorded " + display.string(from:date)))}
+                break
+            }
+        }
+        let result=events.max{$0.0<$1.0}?.1 ?? records.max{$0.0<$1.0}?.1
+        cache.values.setObject((result ?? "") as NSString,forKey:key)
+        return result
+    }
+}
 public struct StorySharedSummary:Codable,Equatable,Sendable {
+    public var bulletDates:[StorySummaryBulletDate]? = nil
+    public func dates(for text:String, section:String? = nil, displayDates:[StorySummaryBulletDate]? = nil)->[String] {
+        let labels=(displayDates ?? bulletDates ?? []).filter { StorySummaryDocument.shareShorthand($0.text)==text }.flatMap(\.labels)
+        if section == "Comprehensive Health History" {
+            return [StorySummaryBulletDate.historyDisplayDate(text:text,labels:labels) ?? "—"]
+        }
+        return StorySummaryBulletDate.displayDate(labels).map{[$0]} ?? []
+    }
     public var labReadings:[StoryLabReading]? = nil
     public var patientNameEdited:Bool? = nil
     public var patientName:String? = nil
@@ -135,6 +248,140 @@ public enum StorySummaryDocument {
         }
         return output
     }
+    /// Apply the same familiar abbreviation to the preview, PDF and new saved handoffs.
+    public static func shareShorthand(_ text: String) -> String {
+        var quote: Character?
+        return text.components(separatedBy: "\n").map { line in
+            let isQuoted = quote != nil || line.contains("“") || line.contains("”") || line.contains("\"")
+            for character in line {
+                if character == "“" { quote = "”" }
+                else if character == "”" { quote = nil }
+                else if character == "\"" { quote = quote == nil ? "\"" : nil }
+            }
+            guard !isQuoted, !line.hasPrefix("Patient name:") else { return line }
+            return line.replacingOccurrences(of: #"(?i)\bwith\b"#, with: "w/", options: .regularExpression)
+        }.joined(separator: "\n")
+    }
+
+    public static func practitionerBlocks(_ text: String, hasAbnormalLabs: Bool) -> [StorySummaryBlock] {
+        var result: [StorySummaryBlock] = []
+        var headings: [StorySummaryBlock] = []
+        for block in blocks(shareShorthand(text)).flatMap(splitShareItems) {
+            switch block {
+            case let .heading(title, level):
+                if level == 2 { headings.removeAll() }
+                headings.append(block)
+                if title != "Labs & Investigations" || !hasAbnormalLabs { continue }
+            case let .bullet(value), let .paragraph(value):
+                if ["not documented", "not documented in the available saved details"].contains(
+                    value.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))) { continue }
+                result.append(contentsOf: headings)
+                headings.removeAll()
+                result.append(block)
+                continue
+            case .table:
+                result.append(contentsOf: headings)
+                headings.removeAll()
+                result.append(block)
+                continue
+            }
+            result.append(contentsOf: headings)
+            headings.removeAll()
+        }
+        return result
+    }
+
+    public static func topicAndNote(_ point: String) -> (topic: String, note: String) {
+        guard let range = point.range(of: " — ") else { return ("", point) }
+        return (String(point[..<range.lowerBound]), String(point[range.upperBound...]))
+    }
+    public static func displayNote(_ point: String, after previous: StorySummaryBlock?) -> String {
+        guard case let .bullet(old)? = previous else { return point }
+        let current = topicAndNote(point), preceding = topicAndNote(old)
+        return !current.topic.isEmpty && current.topic.caseInsensitiveCompare(preceding.topic) == .orderedSame ? current.note : point
+    }
+
+    /// A read-only presentation: saved bullets and their source evidence stay unchanged.
+    public static func practitionerPresentation(_ text: String, hasAbnormalLabs: Bool, bulletDates: [StorySummaryBulletDate]) -> (blocks: [StorySummaryBlock], dates: [StorySummaryBulletDate]) {
+        var output: [StorySummaryBlock] = []
+        var dates: [StorySummaryBulletDate] = []
+        func labels(for point: String) -> [String] {
+            bulletDates.filter { entry in
+                splitShareItems(.bullet(shareShorthand(entry.text))).contains(.bullet(point))
+            }.flatMap(\.labels)
+        }
+        func parts(_ point: String) -> (String, String)? {
+            guard let range = point.range(of: " — ") else { return nil }
+            return (String(point[..<range.lowerBound]), String(point[range.upperBound...]))
+        }
+        func needsSeparatePoints(_ first: String, _ second: String) -> Bool {
+            let states = [#"\b(?:declined|stopped|discontinued)\b"#, #"\b(?:agreed|accepted|started|used|taking)\b"#, #"\b(?:deferred|undecided|tentative|considering|unconfirmed)\b"#, #"\bresolved\b"#]
+            func matches(_ body: String) -> Set<Int> {
+                Set(states.indices.filter { body.range(of: states[$0], options: [.regularExpression, .caseInsensitive]) != nil })
+            }
+            let a = matches(first), b = matches(second)
+            return !a.isEmpty && !b.isEmpty && a != b
+        }
+        var section = ""
+        for block in practitionerBlocks(text, hasAbnormalLabs: hasAbnormalLabs) {
+            if case let .heading(title, level) = block, level == 2 { section = title }
+            guard case let .bullet(point) = block else { output.append(block); continue }
+            let pointLabels = labels(for: point)
+            if let last = output.last, case let .bullet(previous) = last,
+               let old = parts(previous), let next = parts(point),
+               old.0.caseInsensitiveCompare(next.0) == .orderedSame,
+               !needsSeparatePoints(old.1, next.1),
+               (section != "Comprehensive Health History" || StorySummaryBulletDate.historyDisplayDate(text: previous, labels: []) == StorySummaryBulletDate.historyDisplayDate(text: point, labels: [])),
+               let previousDates = dates.last,
+               Set(previousDates.labels) == Set(pointLabels) {
+                let joined = old.0 + " — " + old.1.trimmingCharacters(in: CharacterSet(charactersIn: ".")) + "; " + next.1
+                output[output.count - 1] = .bullet(joined)
+                dates[dates.count - 1] = StorySummaryBulletDate(text: joined, labels: previousDates.labels)
+            } else {
+                output.append(block)
+                dates.append(StorySummaryBulletDate(text: point, labels: pointLabels))
+            }
+        }
+        return (output, dates)
+    }
+
+    private static func splitShareItems(_ block: StorySummaryBlock) -> [StorySummaryBlock] {
+        let text: String
+        switch block {
+        case let .bullet(value), let .paragraph(value): text = value
+        default: return [block]
+        }
+        // Keep quoted language and parenthetical qualifications together.
+        var quote: Character?
+        var depth = 0
+        var items: [String] = []
+        var start = text.startIndex
+        for index in text.indices {
+            let character = text[index]
+            if let closing = quote {
+                if character == closing { quote = nil }
+                continue
+            }
+            if character == "“" { quote = "”" }
+            else if character == "\"" { quote = "\"" }
+            else if character == "(" || character == "[" { depth += 1 }
+            else if character == ")" || character == "]" { depth = max(0, depth - 1) }
+            else if character == ";", depth == 0 {
+                items.append(String(text[start..<index]))
+                start = text.index(after: index)
+            }
+        }
+        guard !items.isEmpty else { return [block] }
+        items.append(String(text[start...]))
+        let topic = items[0].range(of: " — ").map { String(items[0][..<$0.upperBound]) }
+        return items.compactMap { item in
+            let trimmed = item.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            let value = topic != nil && !trimmed.contains(" — ") ? topic! + trimmed : trimmed
+            return .bullet(value)
+        }
+    }
+
     private static func parsedBlocks(_ text:String)->[StorySummaryBlock] {
         let lines=text.components(separatedBy:"\n").filter{!$0.trimmingCharacters(in:.whitespaces).isEmpty};var result:[StorySummaryBlock]=[];var index=0
         func cells(_ line:String)->[String]? {

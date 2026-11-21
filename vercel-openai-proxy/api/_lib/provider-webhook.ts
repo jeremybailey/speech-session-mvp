@@ -3,6 +3,8 @@ import OpenAI from "openai";
 import { resumeRecordJob } from "./incremental-workflow";
 import { database } from "./ledger";
 import { runWholeHistory } from "./whole-history-background";
+import { wakeSummaryForChild } from "./summary-completion";
+import { dispatchSummaries } from "./summary-workflow-store";
 
 async function readEvent(req: VercelRequest): Promise<string> {
   const chunks: Buffer[] = [];
@@ -57,6 +59,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       [id, response.id]
     )).rows.length;
     if (matched) {
+      // Summary children have their own durable coordinator. Queue its existing
+      // work immediately instead of waiting for the polling interval.
+      if (await wakeSummaryForChild(id)) {
+        await dispatchSummaries();
+        return res.status(204).end();
+      }
       const incremental = process.env.AI_INCREMENTAL_RECORDS_ENABLED === "true" && await resumeRecordJob(id);
       if (!incremental) await runWholeHistory(id);
     }

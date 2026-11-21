@@ -408,7 +408,7 @@ struct HealthSummaryView: View {
                 return
             }
             #endif
-            await model.refresh()
+            if structuredOnly { await model.loadForNavigation() } else { await model.refresh() }
             if resumePendingSummaryJobIfPossible() { return }
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--summary-error-qa") {
@@ -775,7 +775,7 @@ struct HealthSummaryView: View {
                 Button("Edit", systemImage: "pencil") { open(fact) }
                 if !structuredOnly { Button("Assign condition", systemImage: "tag") { taskSheet = .condition(fact.id) } }
                 if !fact.isReviewed {
-                    Button("Mark as verified", systemImage: "checkmark.seal") {
+                    Button("Mark as reviewed", systemImage: "checkmark") {
                         Task {
                             guard let current = model.facts.first(where: { $0.id == fact.id }) else { return }
                             var preference = current.preference
@@ -1144,9 +1144,9 @@ struct HealthFactRow: View {
         if fact.category != .practitionerContact && (!isCare || fact.hasKnownStatus || fact.preference.actionStatus != nil) {
             RecordStatusTag(text: statusOverride ?? CareInstructionPresentation.status(fact))
         }
-        if fact.isReviewed { RecordStatusTag(text: "Verified") }
+        if fact.isReviewed { RecordStatusTag(text: "Reviewed by you") }
         else {
-            RecordStatusTag(text: "Unverified", review: true)
+            RecordStatusTag(text: "Not reviewed", review: true)
                 .accessibilityHint("Not yet checked by you. " + (isCare ? CareInstructionPresentation.reviewIndicator(fact) ?? "Open to review the original source." : fact.reviewReasons.joined(separator: " ")))
         }
     }
@@ -1165,8 +1165,8 @@ private struct RecordStatusTag: View {
     @Environment(\.colorScheme) private var colorScheme
     private var tint: Color {
         switch text {
-        case "Verified", "Completed", "Current": return StoryDesignTokens.ink
-        case "Unverified", "Paused": return colorScheme == .dark ? .orange : Color(red: 0.58, green: 0.28, blue: 0.02)
+        case "Reviewed by you", "Completed", "Current": return StoryDesignTokens.ink
+        case "Not reviewed", "Paused": return colorScheme == .dark ? .orange : Color(red: 0.58, green: 0.28, blue: 0.02)
         case "Needs another try": return .red
         default: return StoryDesignTokens.secondaryInk
         }

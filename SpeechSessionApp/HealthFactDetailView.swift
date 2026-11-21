@@ -9,15 +9,23 @@ struct HealthFactDetailView: View {
     @ObservedObject var model: HealthSummaryModel
     @ObservedObject var home: HomeViewModel
     let store: SessionStore
+    var removeFromRecord: (() async throws -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
+
+    private var selectedFact: HealthFact? {
+        let named = model.facts.first { $0.id == factID }
+        guard let preferredEntryID else { return named }
+        if named?.occurrences.contains(where: { $0.id == preferredEntryID }) == true { return named }
+        return model.facts.first { $0.occurrences.contains { $0.id == preferredEntryID } }
+    }
 
     var body: some View {
         Group {
             if let sourceOnlyEntry, let fact = HealthMemoryProjection.facts(in: HealthMemorySnapshot(
                 sessions: [Session(transcript: "", summaryEntries: [sourceOnlyEntry])], preferences: model.snapshot.preferences), verifiedOnly: false).first {
                 HealthFactEditor(fact: fact, preferredEntryID: sourceOnlyEntry.id, model: model, home: home, store: store, addingFromSource: true)
-            } else if let fact = model.facts.first(where: { $0.id == factID }) {
-                HealthFactEditor(fact: fact, preferredEntryID: preferredEntryID, model: model, home: home, store: store)
+            } else if let fact = selectedFact {
+                HealthFactEditor(fact: fact, preferredEntryID: preferredEntryID, model: model, home: home, store: store, removeFromRecord: removeFromRecord)
             } else {
                 ContentUnavailableView("Detail unavailable", systemImage: "doc")
                     .toolbar { Button("Done") { dismiss() } }
@@ -28,11 +36,14 @@ struct HealthFactDetailView: View {
 
 private struct HealthFactEditor: View {
     let fact: HealthFact
+    let initialDisplayEntry: SummaryEntry
     let originalEntry: SummaryEntry
     var addingFromSource: Bool = false
     @ObservedObject var model: HealthSummaryModel
     @ObservedObject var home: HomeViewModel
     let store: SessionStore
+    let removeFromRecord: (() async throws -> Void)?
+    @State private var removalError: String?
     @Environment(\.dismiss) private var dismiss
     @State private var entry: SummaryEntry
     @State private var dateText: String
@@ -52,7 +63,8 @@ private struct HealthFactEditor: View {
     @State private var source: Session?
     @State private var remove = false
 
-    init(fact: HealthFact, preferredEntryID: UUID?, model: HealthSummaryModel, home: HomeViewModel, store: SessionStore, addingFromSource: Bool = false) {
+    init(fact: HealthFact, preferredEntryID: UUID?, model: HealthSummaryModel, home: HomeViewModel, store: SessionStore, addingFromSource: Bool = false, removeFromRecord: (() async throws -> Void)? = nil) {
+        self.removeFromRecord = removeFromRecord
         self.addingFromSource = addingFromSource
         self.fact = fact; self.model = model; self.home = home; self.store = store
         let sourceEntry = preferredEntryID.flatMap { id in fact.occurrences.first { $0.id == id } } ?? fact.latest
@@ -70,6 +82,7 @@ private struct HealthFactEditor: View {
         _careReview = State(initialValue: sourceEntry.evidence?.careInstruction?.reviewTiming ?? "")
         _recurring = State(initialValue: sourceEntry.evidence?.careInstruction?.isRecurring)
         _practitionerID = State(initialValue: fact.preference.practitionerContactID)
+        initialDisplayEntry = displayEntry
         _entry = State(initialValue: displayEntry)
         _dateText = State(initialValue: displayEntry.evidence?.eventDate ?? "")
         _reviewed = State(initialValue: fact.isReviewed)
@@ -81,8 +94,16 @@ private struct HealthFactEditor: View {
 
     var body: some View {
         Form {
-            Section(fact.category.displayTitle) {
-                TextField(CareInstructionPresentation.applies(entry) ? "Instruction" : "Title", text: $entry.title, axis: .vertical).font(StoryDesignTokens.font(.headline, weight: .semibold))
+            Section {
+                Picker("Category", selection: $entry.category) {
+                    ForEach(SummaryEntryCategory.allCases.filter { $0 != .followUp || originalEntry.category == .followUp }, id: \.self) { category in
+                        Text(category.displayTitle).tag(category)
+                    }
+                }
+                if originalEntry.origin == .generated && originalEntry.recordDetailHeading != entry.title {
+                    Text(originalEntry.recordDetailHeading).font(StoryDesignTokens.font(.headline, weight: .semibold))
+                }
+                TextField(CareInstructionPresentation.applies(entry) ? "Instruction" : "Title", text: $entry.title, axis: .vertical).font(StoryDesignTokens.font(.body))
                 careField(CareInstructionPresentation.applies(entry) ? "Additional directions" : "Details", text: $entry.details)
                 if CareInstructionPresentation.applies(entry) {
                     careField("Goal", text: $careGoal)
@@ -146,12 +167,6 @@ private struct HealthFactEditor: View {
                     }
                 }
             }
-            Section {
-                if fact.needsReview {
-                    ForEach(fact.reviewReasons, id: \.self) { Text($0).foregroundStyle(StoryDesignTokens.secondaryInk) }
-                }
-                Toggle("I have checked this detail", isOn: $reviewed)
-            } footer: { Text("You can leave information unknown. Checking a detail does not mean a clinician has verified it.") }
             Section("From your records") {
                 ForEach(fact.occurrences) { occurrence in
                     VStack(alignment: .leading, spacing: 8) {
@@ -179,7 +194,31 @@ private struct HealthFactEditor: View {
                 }
             }
             Section {
-                Button("Remove from summary", role: .destructive) { remove = true }
+                if reviewed {
+                    Label("You checked this detail", systemImage: "checkmark.circle")
+                    Button("Undo check") { reviewed = false }
+                } else {
+                    Text("Does this detail match your record?")
+                        .font(StoryDesignTokens.font(.headline))
+                        .accessibilityAddTraits(.isHeader)
+                    Button("Yes, it matches") { reviewed = true }
+                    let notes = fact.reviewReasons.filter { $0 != SummaryVerification.sourceLinkedNotice }
+                    if !notes.isEmpty {
+                        DisclosureGroup("Things to check") {
+                            ForEach(notes, id: \.self) { Text($0) }
+                        }
+                    }
+                }
+            } footer: {
+                if reviewed != fact.isReviewed {
+                    Text("Tap Save to keep this change.")
+                }
+                if fact.isAction && originalEntry.evidence?.actionKind == "self_directed" && actionStatus == .current {
+                    Text("Once you check this step, it can appear in Next steps.")
+                }
+            }
+            Section {
+                Button(removeFromRecord == nil ? "Remove from summary" : "Remove from this record", role: .destructive) { remove = true }
             } footer: { Text("Removing a detail keeps your original records.") }
         }
         .storyListCanvas()
@@ -202,14 +241,26 @@ private struct HealthFactEditor: View {
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { source = nil } } }
             }
         }
-        .confirmationDialog("Remove this detail from the summary?", isPresented: $remove, titleVisibility: .visible) {
+        .confirmationDialog(removeFromRecord == nil ? "Remove this detail from the summary?" : "Remove this detail from this record?", isPresented: $remove, titleVisibility: .visible) {
             Button("Remove detail", role: .destructive) {
-                Task { await model.removeFromSummary(fact); if model.error == nil { dismiss() } }
+                if let removeFromRecord { removeLocal(removeFromRecord) }
+                else { Task { await model.removeFromSummary(fact); if model.error == nil { dismiss() } } }
             }
         } message: { Text("The original records and history will be kept.") }
+        .alert("Could not remove detail", isPresented: Binding(get: { removalError != nil }, set: { if !$0 { removalError = nil } })) {
+            if let removeFromRecord { Button("Retry") { removeLocal(removeFromRecord) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text(removalError ?? "") }
         .alert("Could not save", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }
+    }
+
+    private func removeLocal(_ action: @escaping () async throws -> Void) {
+        Task {
+            do { try await action(); dismiss() }
+            catch { removalError = error.localizedDescription }
+        }
     }
 
     private func careField(_ label: String, text: Binding<String>) -> some View {
@@ -222,6 +273,25 @@ private struct HealthFactEditor: View {
     private func save() async {
         saving = true
         defer { saving = false }
+        var categoryOnly = initialDisplayEntry
+        categoryOnly.category = entry.category
+        let unchangedFields = dateText == (initialDisplayEntry.evidence?.eventDate ?? "") &&
+            careGoal == (originalEntry.evidence?.careInstruction?.goal ?? "") &&
+            careSchedule == (originalEntry.evidence?.careInstruction?.schedule ?? "") &&
+            careReview == (originalEntry.evidence?.careInstruction?.reviewTiming ?? "") &&
+            recurring == originalEntry.evidence?.careInstruction?.isRecurring
+        if entry.category != originalEntry.category && entry == categoryOnly && !addingFromSource && unchangedFields &&
+            practitionerID == fact.preference.practitionerContactID && reviewed == fact.isReviewed &&
+            status == (fact.hasKnownStatus ? fact.clinicalStatus : nil) && actionStatus == fact.actionStatus &&
+            reminder == fact.preference.reminderEnabled && (!reminder || reminderDate == fact.preference.dueDate) {
+            var corrected = originalEntry
+            corrected.category = entry.category
+            corrected.updatedAt = Date()
+            guard await model.save(corrected) else { return }
+            await home.loadSessions()
+            dismiss()
+            return
+        }
         var updated = entry
         for i in updated.fields.indices where updated.fields[i].label.lowercased() == "details" && originalEntry.fields.first(where: { $0.id == updated.fields[i].id })?.value == originalEntry.details {
             updated.fields[i].value = updated.details
@@ -243,7 +313,12 @@ private struct HealthFactEditor: View {
             updated.relevantDate = EvidenceValidation.exactDate(evidence.eventDate)
             updated.dateNeedsReview = evidence.eventDate == nil
         }
-        if updated != originalEntry || addingFromSource {
+        if entry.category != originalEntry.category {
+            if entry.title == initialDisplayEntry.title { updated.title = originalEntry.title }
+            if entry.details == initialDisplayEntry.details { updated.details = originalEntry.details }
+            if entry.fields == initialDisplayEntry.fields { updated.fields = originalEntry.fields }
+        }
+        if (entry != initialDisplayEntry || !unchangedFields) && updated != originalEntry || addingFromSource {
             // Preserve the shared fact's identity when its title is corrected.
             updated.factKey = updated.factKey ?? HealthMemoryProjection.normalize(originalEntry.title)
             updated.origin = updated.origin == .userAdded ? .userAdded : .userEdited
@@ -259,12 +334,12 @@ private struct HealthFactEditor: View {
             restored.hidden = false
             guard await model.save(restored) else { return }
         }
-        guard let current = model.facts.first(where: { $0.id == fact.id }) else { return }
+        guard let current = model.facts.first(where: { $0.occurrences.contains { $0.id == updated.id } }) else { return }
         var preference = current.preference
         if addingFromSource { preference.hidden = false }
         preference.practitionerContactID = practitionerID
-        preference.clinicalStatus = status
-        preference.actionStatus = actionStatus
+        if status != (fact.hasKnownStatus ? fact.clinicalStatus : nil) { preference.clinicalStatus = status }
+        if actionStatus != fact.actionStatus { preference.actionStatus = actionStatus }
         preference.reviewedRevision = reviewed ? current.revision : nil
         guard await model.save(preference) else { return }
         if fact.isAction {
@@ -283,12 +358,23 @@ private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
+struct RecordDetailDraft: Identifiable {
+    let recordID: UUID
+    let id: String
+    let text: String
+    let quote: String?
+    let category: SummaryEntryCategory
+}
+
 struct HealthManualEntryView: View {
     @ObservedObject var model: HealthSummaryModel
     @ObservedObject var home: HomeViewModel
     let store: SessionStore
     let topicID: UUID?
     var initialCategory: SummaryEntryCategory = .otherNotes
+    var recordDraft: RecordDetailDraft?
+    @State private var initialized = false
+    @State private var saveFailed = false
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
     @State private var details = ""
@@ -315,37 +401,49 @@ struct HealthManualEntryView: View {
             .sheet(isPresented: $choosingPractitioner) {
                 PractitionerPicker(model: model) { practitionerID = $0 }
             }
-            .navigationTitle("Add health detail")
-            .onAppear { category = initialCategory }
+            .navigationTitle(recordDraft == nil ? "Add health detail" : "Add new detail")
+            .onAppear {
+                guard !initialized else { return }
+                category = recordDraft?.category ?? initialCategory
+                details = recordDraft?.text ?? ""
+                initialized = true
+            }
+            .alert("Your detail couldn’t be saved. Please try again.", isPresented: $saveFailed) { Button("OK") {} }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         saving = true
                         Task {
-                            let id = UUID()
+                            let id = recordDraft?.recordID ?? UUID()
                             var entry = SummaryEntry(category: category, title: title, details: details,
                                 fields: [], relevantDate: nil, dateNeedsReview: true, sourceSessionID: id,
                                 provenance: "Added by you", origin: .userAdded, clinicalStatus: .current)
                             var evidence = ClinicalEvidence(); evidence.statusExplicit = true
-                            if category == .carePlan || category == .followUp { evidence.actionKind = "self_directed" }
+                            if recordDraft == nil && (category == .carePlan || category == .followUp) { evidence.actionKind = "self_directed" }
                             entry.evidence = evidence
-                            let session = Session(id: id, transcript: "\(title)\n\(details)", title: title,
-                                summary: "## \(category.displayTitle)\n- \(title): \(details)", summaryEntries: [entry],
-                                inputType: .documentFile, entryIntent: .personalJournal)
                             do {
-                                var saved = session; saved.extractionVersion = RecordSummaryProcessor.version
-                                try await store.upsert(saved)
+                                if let recordDraft {
+                                    entry.linkedSummaryBlockKey = recordDraft.id
+                                    entry.sourceExcerpt = recordDraft.quote
+                                    try await store.saveSummaryEntry(entry)
+                                } else {
+                                    let session = Session(id: id, transcript: "\(title)\n\(details)", title: title,
+                                        summary: "## \(category.displayTitle)\n- \(title): \(details)", summaryEntries: [entry],
+                                        inputType: .documentFile, entryIntent: .personalJournal)
+                                    var saved = session; saved.extractionVersion = RecordSummaryProcessor.version
+                                    try await store.upsert(saved)
+                                }
                                 await model.refresh()
                                 if let fact = model.facts.first(where: { $0.latest.id == entry.id }) {
                                     var preference = fact.preference
-                                    preference.practitionerContactID = practitionerID
-                                    preference.topicIDs = topicID.map { [$0] } ?? []
+                                    if recordDraft == nil || practitionerID != nil { preference.practitionerContactID = practitionerID }
+                                    if recordDraft == nil { preference.topicIDs = topicID.map { [$0] } ?? [] }
                                     preference.reviewedRevision = fact.revision
                                     _ = await model.save(preference)
                                 }
                                 await home.loadSessions(); dismiss()
-                            } catch { model.error = "Your detail could not be saved. Please try again." }
+                            } catch { saveFailed = true }
                             saving = false
                         }
                     }.disabled(saving || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

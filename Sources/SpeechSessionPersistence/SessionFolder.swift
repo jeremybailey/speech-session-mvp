@@ -179,6 +179,7 @@ extension SessionStore {
         guard let index = env.sessions.firstIndex(where: { $0.id == recordID }) else {
             throw SessionStoreError.ioFailed("This record is no longer available.")
         }
+        let priorCount = env.folders.count
         for folder in folders {
             if let existing = env.folders.first(where: { $0.id == folder.id }) {
                 guard existing.isDeleted != true else { throw SessionStoreError.ioFailed("A selected folder was deleted.") }
@@ -188,7 +189,8 @@ extension SessionStore {
         }
         env.sessions[index].selectedFolderIDs = Set(folders.map(\.id))
         env.sessions[index].folderID = nil
-        try saveEnvelope(env)
+        try saveMetadata(env, recordID: recordID, fields: .init(selectedFolderIDs: env.sessions[index].selectedFolderIDs),
+                         newFolders: env.folders[priorCount...])
     }
 
     /// Soft deletion makes automatic-folder suppression and Undo survive a backup.

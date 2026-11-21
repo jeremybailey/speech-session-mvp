@@ -16,6 +16,8 @@ public actor SessionStore {
     private let fileURL: URL
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+    var synchronizedStoryRevision: UInt64?
+    public private(set) var contentRevision: UInt64 = 0
     private var cachedEnvelope: SessionsEnvelope?
     private let sqliteEnabled: Bool
 
@@ -119,7 +121,7 @@ public actor SessionStore {
 
     // Transfer operations are actor-isolated alongside ordinary record writes.
     func transferEnvelope() throws -> SessionsEnvelope { try loadEnvelope() }
-    func invalidateTransferCache() { cachedEnvelope = nil }
+    func invalidateTransferCache() { cachedEnvelope = nil; contentRevision &+= 1 }
 
     func saveEnvelope(_ envelope: SessionsEnvelope) throws {
         var env = envelope
@@ -133,6 +135,20 @@ public actor SessionStore {
         if sqliteEnabled { try SQLiteSessionStorage(directory:directoryURL).save(data) }
         else { try atomicWrite(data) }
         cachedEnvelope = env
+        contentRevision &+= 1
+    }
+
+    func saveMetadata(_ env: SessionsEnvelope, recordID: UUID? = nil,
+                      fields: SQLiteSessionStorage.MetadataEdit = .init(),
+                      newFolders: ArraySlice<SessionFolder> = [], member: (Int, CareTeamMember)? = nil,
+                      draft: (position: Int, record: Session, insert: Bool)? = nil) throws {
+        if sqliteEnabled, try SQLiteSessionStorage(directory: directoryURL).saveMetadata(
+            recordID: recordID, fields: fields, newFolders: newFolders, member: member, draft: draft, encoder: encoder) {
+            cachedEnvelope = env
+            contentRevision &+= 1
+        } else {
+            try saveEnvelope(env)
+        }
     }
 
     private func invalidateFolderSummary(_ envelope: inout SessionsEnvelope, folderID: UUID?) {
@@ -165,6 +181,13 @@ public actor SessionStore {
         if let removed = env.sessions.first(where: { $0.id == id }) {
             invalidateFolderSummary(&env, folderID: removed.folderID)
         }
+        for index in env.story.messages.indices where env.story.messages[index].text.hasPrefix("Service summary:") &&
+            (env.story.messages[index].scopeRecordID == id || env.story.messages[index].evidence?.contains(where:{$0.recordID == id}) == true) {
+            env.story.messages[index].state="cancelled"
+            env.story.messages[index].cancellationPending=true
+            env.story.messages[index].requestJSON=nil
+            env.story.messages[index].evidence=nil
+        }
         env.sessions.removeAll { $0.id == id }
         env.carePlanCards.removeAll { $0.sessionID == id }
         try saveEnvelope(env)
@@ -180,6 +203,7 @@ public actor SessionStore {
     public func upsert(_ session: Session) throws {
         var env = try loadEnvelope()
         let previous = env.sessions.first { $0.id == session.id }
+        let originalOrder = env.sessions.map(\.id)
         invalidateFolderSummary(&env, folderID: previous?.folderID)
         if previous?.folderID != session.folderID {
             invalidateFolderSummary(&env, folderID: session.folderID)
@@ -197,6 +221,22 @@ public actor SessionStore {
                 }
                 updated.capture = capture
             }
+            updated.removedRecordDetails = env.sessions[index].removedRecordDetails
+            if let hidden = updated.removedRecordDetails, !hidden.isEmpty {
+                let retained = Set((updated.summaryEntries ?? []).flatMap(Session.removalKeys))
+                let absent = (env.sessions[index].summaryEntries ?? []).filter {
+                    retained.isDisjoint(with: Session.removalKeys($0)) && !hidden.isDisjoint(with: Session.removalKeys($0))
+                }
+                if !absent.isEmpty { updated.summaryEntries = (updated.summaryEntries ?? []) + absent }
+            }
+            updated.recordBullets = env.sessions[index].recordBullets
+            updated.recordTemplateSelection = env.sessions[index].recordTemplateSelection
+            updated.appliedRecordTemplate = env.sessions[index].appliedRecordTemplate
+            updated.recordSummarySource = env.sessions[index].recordSummarySource
+            updated.recordSummaryWork = env.sessions[index].recordSummaryWork
+            if previous?.capture?.isDraft == false {
+                updated.capture?.needsRecordSummary = previous?.capture?.needsRecordSummary
+            }
             updated.summaryParagraphEdits = env.sessions[index].summaryParagraphEdits ?? session.summaryParagraphEdits
             if let selection = env.sessions[index].selectedFolderIDs {
                 updated.selectedFolderIDs = selection
@@ -207,6 +247,21 @@ public actor SessionStore {
             env.sessions.append(session)
         }
         env.sessions.sort { $0.date > $1.date }
+        // Only a plain capture draft lives entirely in the records table.
+        // Folder-cache invalidations or normalized child changes use the full transaction.
+        if session.capture?.isDraft == true, session.folderID == nil, previous?.folderID == nil,
+           let index = env.sessions.firstIndex(where: { $0.id == session.id }) {
+            let saved = env.sessions[index]
+            let simple = [previous, saved].compactMap { $0 }.allSatisfy {
+                $0.capture?.isDraft == true && $0.summaryEntries == nil && $0.summaryRun == nil && $0.summaryRevisions == nil
+            }
+            var expected = originalOrder
+            if previous == nil { expected.insert(saved.id, at: index) }
+            if simple && expected == env.sessions.map(\.id) {
+                try saveMetadata(env, draft: (index, saved, previous == nil))
+                return
+            }
+        }
         try saveEnvelope(env)
     }
 
@@ -238,12 +293,14 @@ public actor SessionStore {
         try saveEnvelope(env)
     }
 
-    public func healthSnapshot() throws -> HealthMemorySnapshot {
+    public func healthSnapshot(recordID: UUID? = nil) throws -> HealthMemorySnapshot {
         var env = try loadEnvelope()
+        let indices = env.sessions.indices.filter { recordID == nil || env.sessions[$0].id == recordID }
+
         let protected = Set(env.preferences.map(\.id))
         var changed = false
         var keys = HealthFactKeyCache()
-        for i in env.sessions.indices where !protected.isEmpty {
+        for i in indices where !protected.isEmpty {
             guard var entries = env.sessions[i].summaryEntries else { continue }
             for j in entries.indices {
                 let currentKey = keys.key(entries[j])
@@ -265,7 +322,11 @@ public actor SessionStore {
                 preferences[index].practitionerContactID = parent
             }
         }
-        return HealthMemorySnapshot(sessions: env.sessions, folders: env.folders, topics: env.topics,
+        for i in indices {
+            guard let removed = env.sessions[i].removedRecordDetails, !removed.isEmpty else { continue }
+            env.sessions[i].summaryEntries?.removeAll { !removed.isDisjoint(with: Session.removalKeys($0)) }
+        }
+        return HealthMemorySnapshot(sessions: indices.map { env.sessions[$0] }, folders: env.folders, topics: env.topics,
                                   careTeam: HealthFactMatching.displayContacts(env.careTeam), preferences: preferences, profile: env.profile)
     }
 
@@ -539,11 +600,12 @@ public actor SessionStore {
         try saveEnvelope(env)
     }
 
-    public func saveCareTeamMember(_ member: CareTeamMember) throws {
+    @discardableResult public func saveCareTeamMember(_ member: CareTeamMember) throws -> [CareTeamMember] {
         var env = try loadEnvelope()
-        if let index = env.careTeam.firstIndex(where: { $0.id == member.id }) { env.careTeam[index] = member }
-        else { env.careTeam.append(member) }
-        try saveEnvelope(env)
+        let index = env.careTeam.firstIndex(where: { $0.id == member.id }) ?? env.careTeam.endIndex
+        if index == env.careTeam.endIndex { env.careTeam.append(member) } else { env.careTeam[index] = member }
+        try saveMetadata(env, member: (index, member))
+        return HealthFactMatching.displayContacts(env.careTeam)
     }
 
     public func deleteCareTeamMember(id: UUID) throws {
@@ -659,7 +721,30 @@ public actor SessionStore {
             throw SessionStoreError.ioFailed("The original record is no longer available.")
         }
         var updated = entry
-        if let previous = env.sessions[index].summaryEntries?.first(where: { $0.id == entry.id }), !CareInstructionPresentation.applies(previous) {
+        let previous = env.sessions[index].summaryEntries?.first { $0.id == entry.id }
+        if let previous, previous.category != updated.category {
+            updated.originalCategory = previous.originalCategory ?? previous.category
+            updated.origin = previous.origin == .userAdded ? .userAdded : .userEdited
+            let identity = HealthMemoryProjection.key(for: previous)
+            let sharesIdentity = env.sessions.contains { session in
+                (session.summaryEntries ?? []).contains { $0.id != entry.id && HealthMemoryProjection.key(for: $0) == identity }
+            }
+            let newIdentity = sharesIdentity ? "record-detail|" + entry.id.uuidString : identity
+            if updated.evidence == nil { updated.evidence = ClinicalEvidence() }
+            updated.evidence?.factIdentity = newIdentity
+            let isInstruction = CareInstructionPresentation.applies(updated)
+            updated.evidence?.instructionIdentity = isInstruction ? newIdentity : nil
+            if var bullets = env.sessions[index].recordBullets {
+                for i in bullets.indices where bullets[i].heading == previous.category.displayTitle &&
+                    (bullets[i].detailEntryIDs?.contains(entry.id) == true || bullets[i].supports(previous)) {
+                    if bullets[i].detailEntryIDs?.contains(entry.id) != true {
+                        bullets[i].detailEntryIDs = (bullets[i].detailEntryIDs ?? []) + [entry.id]
+                    }
+                    bullets[i].heading = updated.category == .followUp ? SummaryEntryCategory.carePlan.displayTitle : updated.category.displayTitle
+                }
+                env.sessions[index].recordBullets = RecordBullet.groupedByCategory(bullets)
+            }
+        } else if let previous, !CareInstructionPresentation.applies(previous) {
             let identity = HealthMemoryProjection.key(for: previous)
             for i in env.sessions.indices {
                 guard var rows = env.sessions[i].summaryEntries else { continue }
@@ -963,10 +1048,12 @@ public actor SessionStore {
     public func editRecordMetadata(id: UUID, title: String? = nil, time: Date? = nil, members: Set<UUID>? = nil) throws {
         var env = try loadEnvelope()
         guard let i = env.sessions.firstIndex(where: { $0.id == id }) else { throw StoryEditError.notFound }
-        if let title { env.sessions[i].editedRecordTitle = title.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let trimmedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmedTitle { env.sessions[i].editedRecordTitle = trimmedTitle }
         if let time { env.sessions[i].visitTime = time }
         if let members { env.sessions[i].linkedMemberIDs = members }
-        try saveEnvelope(env)
+        try saveMetadata(env, recordID: id, fields: .init(editedRecordTitle: trimmedTitle,
+                                                          visitTime: time, linkedMemberIDs: members))
     }
 
     /// Commit one extraction checkpoint against the current row, preserving simultaneous filing and detail edits.

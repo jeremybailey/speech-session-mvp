@@ -470,8 +470,12 @@ extension SessionStore {
             envelope.wholeHistoryOverview=nil;envelope.wholeHistorySourceFingerprint=nil;envelope.wholeHistoryOverviewSourceFingerprint=nil
             envelope.story=StoryWorkspace() // A cross-history narrative is not evidence for a selected-record import.
         }
+        // Imported cloud jobs belong to the exporting device/account and must not resume.
+        envelope.story.messages.removeAll { $0.text.hasPrefix("Service summary:") }
+        envelope.story.messages.append(contentsOf:try serviceSummaryDeletionTombstones())
         try DataTransferArchive.validateEnvelope(envelope)
         for i in envelope.sessions.indices {
+            if envelope.sessions[i].recordSummaryWork?.serviceWorkflowVersion != nil {envelope.sessions[i].recordSummaryWork=nil}
             envelope.sessions[i].summaryRun = nil; envelope.sessions[i].summaryDrafts = nil
             envelope.sessions[i].processingState = nil; envelope.sessions[i].processingError = nil
         }
@@ -504,9 +508,20 @@ extension SessionStore {
         let work = DataTransferArchive.workRoot(storageDirectory)
         let incoming = work.appendingPathComponent("incoming")
         try DataTransferArchive.createDirectory(incoming)
-        try DataTransferArchive.write(DataTransferArchive.encoder().encode(SessionsEnvelope(sessions: [], folders: [])),
+        var empty=SessionsEnvelope(sessions: [], folders: [])
+        empty.story.messages=try serviceSummaryDeletionTombstones()
+        try DataTransferArchive.write(DataTransferArchive.encoder().encode(empty),
                                       to: incoming.appendingPathComponent(Self.sessionsFileName))
         try commitIncomingHistory(incoming, work: work)
+    }
+
+    private func serviceSummaryDeletionTombstones() throws -> [StoryMessage] {
+        try loadEnvelope().story.messages.filter{$0.text.hasPrefix("Service summary:")}.map { message in
+            var tombstone=message
+            tombstone.state="cancelled";tombstone.cancellationPending=true
+            tombstone.evidence=nil;tombstone.requestJSON=nil;tombstone.scopeRecordID=nil
+            return tombstone
+        }
     }
 
     private func commitIncomingHistory(_ incoming: URL, work: URL) throws {

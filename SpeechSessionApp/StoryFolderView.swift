@@ -52,7 +52,13 @@ struct StoryFolderDestination: View {
     @EnvironmentObject private var health: HealthSummaryModel
     let carePlan: () -> AnyView
     var body: some View {
-        if !health.hasLoaded { StoryLoadingPlaceholder(label: "Loading health details") .padding() }
+        if case .record(let id) = route,
+           let record = health.snapshot.sessions.first(where: { $0.id == id }) ?? home.sessions.first(where: { $0.id == id }) {
+            SessionDetailView(session: record, store: store, home: home)
+        } else if !health.hasLoaded {
+            StoryLoadingPlaceholder(label: "Loading health details", rows: 3)
+                .frame(maxHeight: .infinity, alignment: .topLeading).padding()
+        }
         else if health.snapshotReadFailed && health.snapshot.sessions.isEmpty {
             ContentUnavailableView { Label("Couldn’t load your records", systemImage:"doc.text") } actions: { Button("Retry"){Task{await health.refresh()}} }
         } else { destination }
@@ -65,10 +71,7 @@ struct StoryFolderDestination: View {
             HealthSummaryView(model: health, home: home, store: store, structuredOnly: true)
                 .navigationTitle("All details")
         case .folder(let id): StoryFolderPage(id: id, store: store)
-        case .record(let id):
-            if let record = health.snapshot.sessions.first(where: { $0.id == id }) ?? home.sessions.first(where: { $0.id == id }) {
-                SessionDetailView(session: record, store: store, home: home)
-            } else { ContentUnavailableView("Record unavailable", systemImage: "doc") }
+        case .record: ContentUnavailableView("Record unavailable", systemImage: "doc")
         case let .fact(id, entry, original):
             HealthFactDetailView(factID: id, preferredEntryID: entry, sourceOnlyEntry: original,
                                  model: health, home: home, store: store)
@@ -113,7 +116,7 @@ private struct StoryFolderBrowser: View {
                 searchResults(term)
             }
         }
-        .scrollContentBackground(.hidden).background(StoryDesignTokens.canvas)
+        .storyListCanvas()
         .navigationTitle("Conditions")
         .searchable(text: $query, prompt: "Search health records")
         .sheet(isPresented: $creating) {
@@ -208,7 +211,7 @@ private struct StoryFolderPage: View {
                 if ids.isEmpty { ContentUnavailableView("No records yet", systemImage: folder.symbol) }
                 StoryTimelineSections(records: health.snapshot.sessions.filter { ids.contains($0.id) })
             }
-            .listStyle(.plain).scrollContentBackground(.hidden).background(StoryDesignTokens.canvas)
+            .listStyle(.plain).storyListCanvas()
             .navigationTitle(folder.name)
             .toolbar {
                 Menu {
@@ -336,7 +339,7 @@ struct RecordFolderPicker: View {
                     .accessibilityAddTraits(selection.contains(folder.id) ? .isSelected : [])
                 }
             }
-            .scrollContentBackground(.hidden).background(StoryDesignTokens.canvas)
+            .storyListCanvas()
         .searchable(text: $query, prompt: "Search conditions")
             .navigationTitle("Record conditions").navigationBarTitleDisplayMode(.inline)
             .onAppear {
@@ -354,8 +357,8 @@ struct RecordFolderPicker: View {
                             do {
                                 try await prepareRecord?()
                                 try await store.setRecordFolders(recordID: recordID, folders: folders.filter { selection.contains($0.id) })
-                                await health.refresh()
                                 dismiss()
+                                await health.refresh()
                             } catch { self.error = error.localizedDescription }
                             saving = false
                         }

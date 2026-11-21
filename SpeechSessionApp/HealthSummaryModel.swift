@@ -80,7 +80,8 @@ final class HealthSummaryModel: ObservableObject {
     }
     private(set) var recordFolders = RecordFolderLibrary(snapshot: HealthMemorySnapshot(), conditions: [])
     @Published private(set) var snapshot = HealthMemorySnapshot()
-    @Published private(set) var facts: [HealthFact] = []
+    @Published private(set) var facts: [HealthFact] = [] { didSet { factsRevision &+= 1 } }
+    private(set) var factsRevision: UInt64 = 0
     @Published private(set) var carePlans: [HealthCarePlan] = []
     @Published private(set) var needsConditionOrganization = false
     @Published private(set) var conditionFacts: [HealthFact] = []
@@ -489,6 +490,24 @@ final class HealthSummaryModel: ObservableObject {
         updateStates=[.details:.ready,.conditions:.ready,.overview:retained==0 && wholeHistory.narrative != nil ? .ready:.needsAttention]
     }
 
+    private var displayedRevision: UInt64?
+    private var navigationLoad: (revision: UInt64, task: Task<Void, Never>)?
+
+    // Navigation can reuse a successful projection. Explicit refreshes after
+    // edits, imports or changes to separately stored summaries still run.
+    func loadForNavigation() async {
+        let revision = await store.contentRevision
+        if hasLoaded && !snapshotReadFailed && displayedRevision == revision { return }
+        if let existing = navigationLoad, existing.revision == revision {
+            await existing.task.value
+            return
+        }
+        let task = Task { await refresh() }
+        navigationLoad = (revision, task)
+        await task.value
+        if navigationLoad?.revision == revision { navigationLoad = nil }
+    }
+
     func refresh() async {
         let started = Date()
         defer { Logger(subsystem: "com.CollectiveCare.storylab", category: "SummaryPerformance").info("refresh seconds=\(Date().timeIntervalSince(started), privacy: .public)") }
@@ -544,6 +563,7 @@ final class HealthSummaryModel: ObservableObject {
                 try await store.importLegacySummary(sessionID: session.id, expectedSummary: markdown, entries: entries)
             }
             if !isImportedHistory { try await store.consolidateHealthFacts() }
+            let snapshotRevision = await store.contentRevision
             saved = try await store.healthSnapshot()
             let projectionSnapshot = saved
             let projected = await Task.detached(priority: .userInitiated) {
@@ -614,6 +634,10 @@ final class HealthSummaryModel: ObservableObject {
             if stoppedForCurrentSources && !isUpdatingStory && !isProcessing && updateStates.isEmpty {
                 updateStates = [.details: .interrupted, .conditions: .interrupted, .overview: .interrupted]
             }
+            if revision == refreshRevision {
+                displayedRevision = snapshotRevision
+                FounderLoadAudit.mark("health-details-ready")
+            }
         } catch { guard revision == refreshRevision else {return}; snapshotReadFailed = true; self.error = "Your records could not be loaded. \(error.localizedDescription)" }
     }
 
@@ -666,7 +690,11 @@ final class HealthSummaryModel: ObservableObject {
     }
 
     func save(_ member: CareTeamMember) async -> Bool {
-        do { try await store.saveCareTeamMember(member); await refresh(); return true }
+        do {
+            snapshot.careTeam = try await store.saveCareTeamMember(member)
+            Task { await refresh() }
+            return true
+        }
         catch { self.error = "This contact could not be saved. Please try again."; return false }
     }
 

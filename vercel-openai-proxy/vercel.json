@@ -7,6 +7,10 @@
     {
       "path": "/api/v1/health-processing/record-recovery",
       "schedule": "15 4 * * *"
+    },
+    {
+      "path": "/api/v1/health-processing/summary-recovery",
+      "schedule": "* * * * *"
     }
   ],
   "functions": {
@@ -61,6 +65,16 @@
         {
           "type": "queue/v2beta",
           "topic": "health-record-recovery",
+          "maxDeliveries": 20
+        }
+      ]
+    },
+    "api/v1/health-processing/summary-workflow-queue.ts": {
+      "maxDuration": 300,
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "summary-workflows",
           "maxDeliveries": 20
         }
       ]

@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import {cleanupSummaries} from "../../_lib/summary-workflow-store";
 import { cleanup, database } from "../../_lib/ledger";
 import { cleanupConditionWorkflows } from "../../_lib/condition-workflow-store";
 import {cleanupConditionUploads} from '../../_lib/condition-upload';
@@ -20,6 +21,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if((await database().query("SELECT to_regclass('public.ai_condition_uploads') AS name")).rows[0].name) await cleanupConditionUploads();
     if((await database().query("SELECT to_regclass('public.ai_record_updates') AS name")).rows[0].name)
       await database().query("DELETE FROM ai_record_updates WHERE expires_at<=now()");
+    await cleanupSummaries();
     await cleanup(); return res.status(200).json({ cleaned: true });
   }
   catch { return res.status(503).json({ error: { code: "cleanup_unavailable" } }); }

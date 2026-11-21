@@ -103,6 +103,7 @@ extension View {
     func storyListCanvas() -> some View {
         scrollContentBackground(.hidden)
             .background(StoryDesignTokens.canvas.ignoresSafeArea())
+            .storyLoadIn()
     }
 
     /// Default Liquid Glass rounded surface over grouped screen chrome.

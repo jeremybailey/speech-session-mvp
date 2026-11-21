@@ -199,13 +199,16 @@ extension View {
 struct StorySourceTag: View {
     let title: String
     var systemImage = "link"
+    var inlineLineHeight: CGFloat? = nil
     var body: some View {
         Label(title, systemImage: systemImage)
-            .font(StoryDesignTokens.font(.body, weight: .medium))
+            .font(StoryDesignTokens.font(.footnote, weight: .medium))
             .foregroundStyle(StoryDesignTokens.action)
-            .padding(.horizontal, 12).padding(.vertical, 7)
+            .padding(.horizontal, 10)
+            .padding(.vertical, inlineLineHeight == nil ? 5 : 0)
+            .frame(height: inlineLineHeight)
             .background(StoryDesignTokens.softSurface, in: Capsule())
-            .frame(minHeight: 44)
+            .frame(minWidth: 44, minHeight: inlineLineHeight ?? 44)
             .contentShape(Rectangle())
     }
 }
@@ -230,27 +233,49 @@ struct StorySectionHeading: View {
     }
 }
 
-// Only drawn while the first local snapshot is pending. One accessible status
+private struct StoryScreenArrival: ViewModifier {
+    let ready: Bool
+    @State private var appeared = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.22)) { view in
+                view.opacity(reduceMotion || (appeared && ready) ? 1 : 0.82)
+            }
+            .onAppear { appeared = true }
+    }
+}
+
+extension View {
+    func storyLoadIn(ready: Bool = true) -> some View {
+        modifier(StoryScreenArrival(ready: ready))
+    }
+}
+
+// One accessible status
 // replaces the decorative lines; Reduce Motion keeps the silhouette still.
 struct StoryLoadingPlaceholder: View {
     let label: String
     var rows = 1
+    enum Layout { case list, narrative, summary }
+    var layout: Layout = .list
+    @ScaledMetric(relativeTo: .body) private var lineHeight: CGFloat = 12
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var sweeping = false
 
     var body: some View {
         lines
         .foregroundStyle(StoryDesignTokens.ink.opacity(0.12))
         .overlay {
             if !reduceMotion {
-                GeometryReader { g in
-                    LinearGradient(colors: [.clear, StoryDesignTokens.canvas.opacity(0.8), .clear],
-                                   startPoint: .leading, endPoint: .trailing)
-                        .frame(width: g.size.width * 0.7)
-                        .offset(x: sweeping ? g.size.width : -g.size.width * 0.7)
-                        .animation(.linear(duration: 1.6).repeatForever(autoreverses: false), value: sweeping)
-                        .onAppear { sweeping = true }
-                        .onDisappear { sweeping = false }
+                TimelineView(.animation(minimumInterval: 1.0 / 30)) { tick in
+                    let phase = tick.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
+                    GeometryReader { g in
+                        LinearGradient(colors: [.clear, StoryDesignTokens.canvas.opacity(0.8), .clear],
+                                       startPoint: .leading, endPoint: .trailing)
+                            .frame(width: g.size.width * 0.7)
+                            .offset(x: g.size.width * (1.7 * phase - 0.7))
+                    }
                 }
                 .mask { lines }
             }
@@ -262,12 +287,29 @@ struct StoryLoadingPlaceholder: View {
     }
     private var lines: some View {
         VStack(alignment: .leading, spacing: 22) {
-            ForEach(0..<rows, id: \.self) { _ in
-                VStack(alignment: .leading, spacing: 9) {
-                    Capsule().frame(height: 13)
-                    Capsule().frame(maxWidth: 175).frame(height: 11)
+            ForEach(0..<rows, id: \.self) { row in
+                if layout == .list {
+                    VStack(alignment: .leading, spacing: 9) {
+                        Capsule().frame(height: 13)
+                        Capsule().frame(maxWidth: 175).frame(height: 11)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: lineHeight * 0.8) {
+                        if layout == .summary {
+                            line(row.isMultiple(of: 2) ? 0.38 : 0.5, height: lineHeight * 1.35)
+                        }
+                        line(0.96, height: lineHeight)
+                        line(0.87, height: lineHeight)
+                        line(row.isMultiple(of: 2) ? 0.67 : 0.52, height: lineHeight)
+                    }
                 }
             }
         }
+    }
+    private func line(_ fraction: CGFloat, height: CGFloat) -> some View {
+        GeometryReader { geometry in
+            Capsule().frame(width: geometry.size.width * fraction)
+        }
+        .frame(height: height)
     }
 }

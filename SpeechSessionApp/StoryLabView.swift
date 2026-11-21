@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import PDFKit
+import CryptoKit
 import SpeechSessionPersistence
 import SpeechSessionFeatures
 
@@ -32,9 +33,12 @@ import SpeechSessionFeatures
                 try await store.save([Session(id:id,transcript:"I have neck discomfort after sitting. My clinician recommended walking for ten minutes if comfortable.",title:"Synthetic visit",summaryEntries:[SummaryEntry(category:.symptoms,title:"I have neck discomfort after sitting.",sourceSessionID:id,sourceExcerpt:"I have neck discomfort after sitting.",origin:.userAdded),care])])
             }
             #endif
+            FounderLoadAudit.mark("home-read-start")
             records = try await store.loadAll()
             if narrativeSave == nil { narrative = try await store.storyNarrativeText() }
+            workspace = try await store.storyWorkspace()
             didLoadStory = true
+            FounderLoadAudit.mark("saved-story-ready")
             try await store.synchronizeStory()
             workspace = try await store.storyWorkspace()
         }
@@ -63,6 +67,18 @@ import SpeechSessionFeatures
                 error = "Sign in to refresh your saved overview."
                 return
             }
+            if transport.usesSummaryWorkflows {
+                let pending=snapshot.messages.last(where:{$0.text=="Service summary: overview" && $0.state=="queued"})
+                let encoder=JSONEncoder();encoder.outputFormatting=[.sortedKeys]
+                let hash=SHA256.hash(data:try encoder.encode(sources)).map{String(format:"%02x",$0)}.joined()
+                let input=try await store.prepareServiceSummary(ServiceSummaryRequest(id:pending?.id ?? UUID(),kind:"overview",target:"overview",sourceRevision:hash,publicationRevision:String(revision),template:"overview",evidence:sources))
+                let value=try JSONSerialization.jsonObject(with:encoder.encode(input)) as! [String:Any]
+                let output=try await transport.summaryWorkflow(value)
+                guard let text=output["text"] as? String,!text.isEmpty,let ids=output["citationIDs"] as? [String],!ids.isEmpty,
+                      Set(ids).isSubset(of:Set(input.evidence.map(\.id))),let expected=Int(input.publicationRevision),let operation=UUID(uuidString:input.id) else {throw StoryEditError.invalidMutation}
+                try await store.publishStoryNarrative(text,revision:expected,evidence:input.evidence.filter{ids.contains($0.id)},expectedSources:input.evidence,serviceOperationID:operation)
+                await reload();return
+            }
             let draft = try await transport.durableRequest(payload: StoryOverviewRefresh.draftPayload(sources))
             let sentences = try StoryOverviewRefresh.sentences(draft, sources:sources)
             let review = try await transport.durableRequest(payload: StoryOverviewRefresh.reviewPayload(sentences, sources:sources))
@@ -70,11 +86,19 @@ import SpeechSessionFeatures
             try await store.publishStoryNarrative(result.text, revision:revision, evidence:result.evidence, expectedSources:sources)
             await reload()
         } catch StoryEditError.staleRevision {
+            for message in (try? await store.storyWorkspace().messages) ?? [] where message.text=="Service summary: overview" && message.state=="queued" {
+                try? await store.failStorySharedSummary(message.id)
+            }
             await reload()
             self.error = "Your overview changed during the refresh. The newer version is available."
         } catch let failure as SummaryStageFailure {
             self.error = "Your overview is saved. The refresh couldn’t finish (" + failure.state.replacingOccurrences(of:"_",with:" ") + ")."
         } catch {
+            if (error as NSError).domain=="SummaryWorkflow",(error as NSError).userInfo["workflowReason"] as? String != "budget_exhausted" {
+                for message in (try? await store.storyWorkspace().messages) ?? [] where message.text=="Service summary: overview" && message.state=="queued" {
+                    try? await store.failStorySharedSummary(message.id)
+                }
+            }
             self.error = "Your overview is saved. " + error.localizedDescription
         }
     }
@@ -143,18 +167,18 @@ import SpeechSessionFeatures
             do {
                 let (body, response) = try await URLSession.shared.data(for:req)
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                if kind == "refresh", [429, 502, 503, 504].contains(status), transientFailures < 3 {
+                if (kind == "refresh" || summaryEvidence != nil), [429, 502, 503, 504].contains(status), transientFailures < 3 {
                     transientFailures += 1
                     try await Task.sleep(nanoseconds: UInt64(transientFailures) * 1_000_000_000)
                     continue
                 }
                 guard (200..<300).contains(status) else {
                     if kind == "refresh" {throw SummaryStageFailure(state:"service returned HTTP " + String(status))}
-                    throw URLError(.badServerResponse)
+                    throw StoryRequestHTTPFailure(status:status)
                 }
                 transientFailures = 0
                 data = body
-            } catch let error as URLError where kind == "refresh" && transientFailures < 3 &&
+            } catch let error as URLError where (kind == "refresh" || summaryEvidence != nil) && transientFailures < 3 &&
                 [.timedOut,.networkConnectionLost,.cannotConnectToHost].contains(error.code) {
                 transientFailures += 1
                 try await Task.sleep(nanoseconds: UInt64(transientFailures) * 1_000_000_000)
@@ -231,12 +255,24 @@ import SpeechSessionFeatures
         try await store.completeStoryQuestion(id,text:response ?? "I couldn’t find an answer in these records.",citations:value["citationIDs"] as? [String] ?? [],evidence:evidence)
     }
     private func sendCancellation(_ id:UUID,auth:KindeAuthManager) async throws {
+        if let message=try await store.storyWorkspace().messages.first(where:{$0.id==id}),message.text.hasPrefix("Service summary:") {
+            guard let transport=await auth.openAIChatTransport(byokFallback:"") else {throw URLError(.userAuthenticationRequired)}
+            try await transport.cancelSummaryWorkflow(id)
+            try await store.acknowledgeStoryCancellation(id)
+            return
+        }
         let endpoint=URL(string:(Bundle.main.object(forInfoDictionaryKey:"CloudOpenAIBaseURL") as? String ?? "")+"/v1/health-processing/story-operations?id="+id.uuidString.lowercased())!
         var request=URLRequest(url:endpoint);request.httpMethod="DELETE";request.timeoutInterval=30
         request.setValue("Bearer "+(try await auth.freshAccessToken()),forHTTPHeaderField:"Authorization")
         let (_,response)=try await URLSession.shared.data(for:request)
         guard let http=response as? HTTPURLResponse,(200..<300).contains(http.statusCode)||http.statusCode==404 else {throw URLError(.badServerResponse)}
         try await store.acknowledgeStoryCancellation(id)
+    }
+    func flushCancellationRequests(auth:KindeAuthManager) async {
+        for message in (try? await store.storyWorkspace().messages) ?? [] where message.cancellationPending == true {
+            // Keep offline deletion tombstones until the service acknowledges them.
+            try? await sendCancellation(message.id,auth:auth)
+        }
     }
     func stop(_ id:UUID,auth:KindeAuthManager) async {
         do {try await store.cancelStoryOperation(id);await reload();try await sendCancellation(id,auth:auth)}
@@ -252,6 +288,7 @@ struct StoryLabView: View {
     @Environment(\.scenePhase) private var scenePhase
     @ScaledMetric(relativeTo:.body) private var citationTextSize:CGFloat=StoryDesignTokens.bodyBaseSize
     @FocusState private var chatFocused:Bool
+    @State private var citedPassage: StoryEvidence?
     @State private var chatRecord: Session?
     @State private var visibleChatIDs:Set<UUID>=[]
     @StateObject private var sharing:StorySummaryGeneration
@@ -285,7 +322,7 @@ struct StoryLabView: View {
                 }
                 .onAppear {
                     if homeHasAppeared {
-                        Task { await model.reload(); await appModel.health.refresh() }
+                        Task { await model.reload(); await appModel.health.loadForNavigation() }
                     }
                     homeHasAppeared = true
                 }
@@ -308,29 +345,47 @@ struct StoryLabView: View {
             .environmentObject(appModel.health)
             .environment(\.storyRouter, folderRouter)
         }
-        .task(id:auth.isSignedIn){if auth.isSignedIn {await sharing.restore(auth:auth)}}
-        .sheet(isPresented:$showConversation){chatDrawer.presentationDetents([.large]).presentationDragIndicator(.visible)}
+        .task(id:auth.isSignedIn){if auth.isSignedIn {await model.flushCancellationRequests(auth:auth);await sharing.restore(auth:auth)}}
+        .sheet(isPresented:$showConversation){chatDrawer.storyLoadIn().presentationDetents([.large]).presentationDragIndicator(.visible)}
         .tint(StoryDesignTokens.action)
         .environmentObject(appModel.health)
         .task {
+            async let healthLoad: Void = appModel.health.loadForNavigation()
             await model.reload()
-            await appModel.health.refresh()
-            for record in (try? await appModel.store.loadAll()) ?? [] where record.capture?.pending == true {
+            if model.workspace.messages.contains(where:{$0.text=="Service summary: overview" && $0.state=="queued"}),auth.isSignedIn {
+                Task {await model.refreshNarrative(auth:auth)}
+            }
+            await healthLoad
+            for record in (try? await appModel.store.loadAll()) ?? [] where record.capture?.pending == true || record.recordSummaryWork != nil {
                 CaptureProcessing.shared.start(record, store: appModel.store, home: appModel.home, health: appModel.health, auth: auth)
             }
         }
-        .onChange(of:model.workspace.careEvents){_,_ in Task{await appModel.health.refresh();}}
-        .onChange(of:model.workspace.edits){_,_ in Task{await appModel.health.refresh()}}
+        .onChange(of:model.workspace.careEvents){_,_ in Task{await appModel.health.loadForNavigation()}}
+        .onChange(of:model.workspace.edits){_,_ in Task{await appModel.health.loadForNavigation()}}
         .onChange(of:model.workspace.sources.map(\.id)){old,new in
             guard !new.isEmpty,!old.isEmpty,old != new,auth.isSignedIn else {return}
             Task{let transport=await auth.openAIChatTransport(byokFallback:"");await appModel.health.updateHealthStory(transport:transport,onDevice:false,explicitlyRequested:true);await model.reload()}
         }
         .onChange(of:scenePhase){_,phase in
             appModel.recording.setAppInBackground(phase != .active)
-            if phase == .active {appModel.enqueuePendingSharedImportIfAvailable();Task{await model.reload()}}
+            if phase == .active {
+                appModel.enqueuePendingSharedImportIfAvailable()
+                Task {
+                    guard auth.isSignedIn else { return }
+                    await sharing.resumeWhenActive(auth:auth)
+                    await model.reload()
+                    await model.flushCancellationRequests(auth:auth)
+                    if model.workspace.messages.contains(where:{$0.text=="Service summary: overview" && $0.state=="queued"}) {
+                        Task {await model.refreshNarrative(auth:auth)}
+                    }
+                    for record in (try? await appModel.store.loadAll()) ?? [] where record.capture?.pending == true || record.recordSummaryWork != nil {
+                        CaptureProcessing.shared.start(record, store: appModel.store, home: appModel.home, health: appModel.health, auth: auth)
+                    }
+                }
+            }
         }
         .sheet(isPresented:$showSourceChoices){NavigationStack{List(sourceChoices){source in VStack(alignment:.leading,spacing:8){Text(source.title).font(StoryDesignTokens.section);Text(source.text).textSelection(.enabled);if let record=model.records.first(where:{$0.id==source.recordID}){NavigationLink("Open source record"){SessionDetailView(session:record,store:appModel.store,home:appModel.home,initialTab:.source)}}}}.storyListCanvas().navigationTitle("Supporting sources")}}
-        .sheet(item:$selectedSource){source in NavigationStack{ScrollView{VStack(alignment:.leading,spacing:16){Text(source.title).font(StoryDesignTokens.section);Text(source.text).textSelection(.enabled);if let record=model.records.first(where:{$0.id == source.recordID}){NavigationLink("Open record and original"){SessionDetailView(session:record,store:appModel.store,home:appModel.home,initialTab:.source)}}}.padding()}.navigationTitle("Source")}}
+        .sheet(item:$selectedSource){source in NavigationStack{ScrollView{VStack(alignment:.leading,spacing:16){Text(source.title).font(StoryDesignTokens.section);Text(source.text).textSelection(.enabled);if let record=model.records.first(where:{$0.id == source.recordID}){NavigationLink("Open record and original"){SessionDetailView(session:record,store:appModel.store,home:appModel.home,initialTab:.source)}}}.padding()}.storyLoadIn().navigationTitle("Source")}}
         .onChange(of:logAction?.id){_,id in if id != nil {progressEventID=UUID();progressText=""}}
         .sheet(item:$logAction){action in NavigationStack{Form{Text(action.text);TextEditor(text:$progressText).frame(minHeight:160);Button("Save progress"){let text=progressText;Task{await model.action{try await model.store.recordStoryCareEvent(actionID:action.id,kind:"progress",text:text,factIDs:action.factIDs,eventID:progressEventID)};progressText="";logAction=nil;await appModel.health.refresh()}}.disabled(progressText.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)}.storyListCanvas().navigationTitle("How is it going?")}}
         .alert("Saved writing",isPresented:Binding(get:{model.error != nil},set:{if !$0 {model.error=nil}})){Button("OK"){model.error=nil}} message:{Text(model.error ?? "")}
@@ -363,14 +418,52 @@ struct StoryLabView: View {
         includeQuestion(question.id)
         showChatHistory=false
     }
+    private struct CitedDetail: Identifiable {
+        let factID: String
+        let entry: SummaryEntry
+        var id: UUID { entry.id }
+    }
+
+    private func citedDetails(_ sources: [StoryEvidence]) -> [CitedDetail] {
+        guard let recordID = chatRecord?.id else { return [] }
+        var seen = Set<UUID>()
+        return appModel.health.facts.filter { !$0.preference.hidden }.flatMap { fact in
+            fact.occurrences.compactMap { entry in
+                guard entry.sourceSessionID == recordID, sources.contains(where: { $0.cites(entry) }), seen.insert(entry.id).inserted else { return nil }
+                return CitedDetail(factID: fact.id, entry: entry)
+            }
+        }
+    }
+
+    private func detailChip(_ detail: CitedDetail) -> some View {
+        Button {
+            chatFocused = false
+            chatRouter.open(.fact(detail.factID, detail.id, nil))
+        } label: {
+            StorySourceTag(title: detail.entry.recordDetailHeading,
+                           systemImage: SummaryCategoryIcon(title: detail.entry.category.displayTitle).icon)
+        }.accessibilityLabel("Open detail: " + detail.entry.title)
+    }
+
     private func sourceTags(_ sources:[StoryEvidence])->some View {
         ScrollView(.horizontal,showsIndicators:false) {
             HStack {
-                ForEach(sources) {source in
-                    Button { openChatRecord(source) } label: {
-                        recordTag(source.title).fixedSize(horizontal:true,vertical:false)
+                if chatRecord != nil {
+                    let details = citedDetails(sources)
+                    ForEach(details) { detail in detailChip(detail) }
+                    ForEach(Array(sources.enumerated()), id: \.element.id) { index, source in
+                        if !details.contains(where: { source.cites($0.entry) }) {
+                            Button { openChatRecord(source) } label: {
+                                StorySourceTag(title: "Passage " + String(index + 1), systemImage: "text.quote")
+                            }
+                        }
                     }
-                    .accessibilityLabel("Open record: "+source.title)
+                } else {
+                    ForEach(sources) {source in
+                        Button { openChatRecord(source) } label: {
+                            recordTag(source.title).fixedSize(horizontal:true,vertical:false)
+                        }.accessibilityLabel("Open record: "+source.title)
+                    }
                 }
             }
         }
@@ -384,7 +477,14 @@ struct StoryLabView: View {
     private func openChatRecord(_ source: StoryEvidence) {
         chatFocused = false
         guard let id = source.recordID else { missingChatRecord = true; return }
-        if id == chatRecord?.id { showConversation = false; return }
+        if id == chatRecord?.id {
+            if source.detailEntryID != nil, let detail = citedDetails([source]).first {
+                chatRouter.open(.fact(detail.factID, detail.id, nil))
+            } else {
+                citedPassage = source
+            }
+            return
+        }
         chatRouter.open(.record(id))
     }
     private var chatDrawer:some View {
@@ -492,6 +592,22 @@ struct StoryLabView: View {
                 StoryFolderDestination(route: route, store: appModel.store, home: appModel.home) { AnyView(currentPlan) }
                     .environment(\.storyRouter, chatRouter)
             }
+            .navigationDestination(item: $citedPassage) { source in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(verbatim: source.text).textSelection(.enabled)
+                        ForEach(citedDetails([source])) { detail in
+                            NavigationLink {
+                                HealthFactDetailView(factID: detail.factID, preferredEntryID: detail.id,
+                                    model: appModel.health, home: appModel.home, store: appModel.store)
+                            } label: {
+                                StorySourceTag(title: detail.entry.recordDetailHeading,
+                                               systemImage: SummaryCategoryIcon(title: detail.entry.category.displayTitle).icon)
+                            }
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding()
+                }.storyLoadIn().navigationTitle("Cited passage")
+            }
             .alert("No linked record", isPresented: $missingChatRecord) { Button("OK") {} }
             .sheet(isPresented:$showChatHistory) {
                 NavigationStack {
@@ -519,7 +635,7 @@ struct StoryLabView: View {
                     }
                     .listStyle(.plain).scrollContentBackground(.hidden)
                     .background(StoryDesignTokens.canvas)
-                    .navigationTitle("Chat history").navigationBarTitleDisplayMode(.inline)
+                    .storyLoadIn(ready: model.didLoadStory || model.initialStoryLoadFailed).navigationTitle("Chat history").navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement:.topBarLeading) {
                             Button {showChatHistory=false} label:{Image(systemName:"xmark")}
@@ -616,6 +732,7 @@ struct StoryLabView: View {
         }
         .foregroundStyle(StoryDesignTokens.ink)
         .background(StoryDesignTokens.canvas)
+        .storyLoadIn()
     }
 
     private func careSectionHeading(_ title: String) -> some View {
@@ -696,8 +813,81 @@ struct StoryLabView: View {
     }
 
 }
+private struct OverviewButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.opacity(configuration.isPressed ? 0.85 : 1)
+    }
+}
+
+private struct StoryOverviewAccordion: View {
+    let text: String
+    @ScaledMetric(relativeTo: .body) private var fontSize = StoryDesignTokens.bodyBaseSize
+    @State private var overflows = false
+    @State private var expanded = false
+
+    private func toggleOverview() {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        if #available(iOS 18.0, *) {
+            transaction.scrollContentOffsetAdjustmentBehavior = .disabled
+        }
+        withTransaction(transaction) { expanded.toggle() }
+    }
+
+    private var paragraph: some View {
+        Text(verbatim: text)
+            .font(StoryDesignTokens.body)
+            .foregroundStyle(StoryDesignTokens.ink)
+            .lineSpacing(StoryDesignTokens.readingLineSpacing(for: fontSize))
+            .multilineTextAlignment(.leading)
+    }
+
+    var body: some View {
+        Group {
+            if overflows {
+                Button {
+                    toggleOverview()
+                } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        paragraph
+                            .lineLimit(expanded ? nil : 4)
+                            .truncationMode(.tail)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .mask {
+                                if expanded { Color.black }
+                                else {
+                                    LinearGradient(stops: [.init(color: .black, location: 0.72),
+                                                           .init(color: .black.opacity(0.45), location: 1)],
+                                                   startPoint: .top, endPoint: .bottom)
+                                }
+                            }
+                        Text(expanded ? "Show less" : "More")
+                            .font(StoryDesignTokens.font(.subheadline, weight: .medium))
+                            .foregroundStyle(StoryDesignTokens.action)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(OverviewButtonStyle())
+                .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+            } else {
+                paragraph.lineLimit(4).textSelection(.enabled)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            paragraph.lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .onPreferenceChange(Text.LayoutKey.self) { layouts in
+                    overflows = (layouts.first?.layout.count ?? 0) > 4
+                }
+                .hidden().accessibilityHidden(true).allowsHitTesting(false)
+        }
+        .onChange(of: text) { _, _ in expanded = false }
+    }
+}
+
 struct StoryRecordsList:View {
-    @ScaledMetric(relativeTo: .body) private var overviewTextSize = StoryDesignTokens.bodyBaseSize
     @ObservedObject var home:HomeViewModel
     var narrative:String?
     var showFirstRecordGuide = false
@@ -720,9 +910,13 @@ struct StoryRecordsList:View {
         List {
             Section {
                 if showFirstRecordGuide { StoryEmptyOverview() }
-                else if let narrative { Text(narrative.isEmpty ? "Your overview will appear here as your records are organized.":narrative).foregroundStyle(StoryDesignTokens.ink).font(StoryDesignTokens.body).lineSpacing(StoryDesignTokens.readingLineSpacing(for: overviewTextSize)).textSelection(.enabled).padding(.vertical,8).listRowSeparator(.hidden).listRowBackground(StoryDesignTokens.canvas)
+                else if let narrative {
+                    StoryOverviewAccordion(text: narrative.isEmpty ? "Your overview will appear here as your records are organized." : narrative)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .listRowSeparator(.hidden).listRowBackground(StoryDesignTokens.canvas)
                 } else if let retryStoryLoad { Button("Retry loading overview",action:retryStoryLoad) }
-                else {StoryLoadingPlaceholder(label:"Loading overview").listRowSeparator(.hidden)}
+                else {StoryLoadingPlaceholder(label:"Loading overview", rows: 2, layout: .narrative).listRowSeparator(.hidden)}
                 NavigationLink(value: StoryRoute.carePlan) { carePlanLabel }
                     .accessibilityHint("View your current plan and recorded recommendations")
                 .listRowSeparator(.hidden).listRowBackground(StoryDesignTokens.canvas)
@@ -730,7 +924,7 @@ struct StoryRecordsList:View {
             if let summaryStatus {
                 Button(action:shareStory){
                     HStack {
-                        if summaryStatus == StorySummaryGeneration.preparingLabel { StoryThinkingStatus(summaryStatus) }
+                        if summaryStatus.hasPrefix("Preparing ") { StoryThinkingStatus(summaryStatus) }
                         else { Label(summaryStatus,systemImage:"doc.text").font(StoryDesignTokens.label) }
                         Spacer()
                         Image(systemName:"chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(StoryDesignTokens.secondaryInk)
@@ -748,6 +942,10 @@ struct StoryRecordsList:View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(StoryDesignTokens.canvas)
+        .storyLoadIn(ready: (narrative != nil || retryStoryLoad != nil) && (home.revision > 0 || home.initialLoadFailed))
+        .onChange(of: narrative != nil && home.revision > 0, initial: true) { _, ready in
+            if ready { FounderLoadAudit.mark("home-content-ready") }
+        }
 
     }
 }
@@ -759,7 +957,7 @@ struct StoryRecordEditor:View {
     @State private var loaded=false
     @State private var pendingSave:Task<Void,Never>?
     @State private var text="";@State private var revisions:[StorySourceRevision]=[];@State private var error:String?;@State private var saved=false
-    var body:some View {ScrollView{VStack(alignment:.leading,spacing:16){TextEditor(text:$text).frame(minHeight:350).accessibilityLabel("Record text")
+    var body:some View {ScrollView{VStack(alignment:.leading,spacing:16){if !loaded { StoryLoadingPlaceholder(label: "Loading record text", rows: 2, layout: .narrative) } else { TextEditor(text:$text).frame(minHeight:350).accessibilityLabel("Record text")
             .onChange(of:text){_,value in
                 guard loaded else {return};saved=false;pendingSave?.cancel()
                 pendingSave=Task{do{try await store.saveStorySourceDraft(record.id,text:value);try await Task.sleep(nanoseconds:2_000_000_000);try Task.checkCancellation();await commit(value)}catch is CancellationError {}catch{self.error=error.localizedDescription}}
@@ -770,7 +968,7 @@ struct StoryRecordEditor:View {
         NavigationLink("Open original and attachments"){SessionDetailView(session:record,store:store,home:home,initialTab:.source)}
         DisclosureGroup("Text history"){ForEach(revisions.reversed()){revision in VStack(alignment:.leading){Text(revision.createdAt.formatted()).font(StoryDesignTokens.font(.caption));Text(revision.patientEdited ? "Patient-corrected text":"Original text").font(StoryDesignTokens.font(.caption, weight: .bold));Text(revision.text).textSelection(.enabled);Button("Restore this text"){text=revision.text}}}}
         if let error {Text(error).foregroundStyle(StoryDesignTokens.action)}
-    }.padding()}.navigationTitle(record.displayTitle).task{let workspace=try? await store.storyWorkspace();text=workspace?.sourceDrafts?[record.id.uuidString] ?? record.transcript;revisions=workspace?.sources.filter{$0.recordID==record.id} ?? [];loaded=true}}
+    }}.padding()}.storyLoadIn(ready: loaded).navigationTitle(record.displayTitle).task{let workspace=try? await store.storyWorkspace();text=workspace?.sourceDrafts?[record.id.uuidString] ?? record.transcript;revisions=workspace?.sources.filter{$0.recordID==record.id} ?? [];loaded=true}}
     private func commit(_ value:String) async {
         do {
             try await store.reviseStorySource(record.id,text:value);saved=true
@@ -896,21 +1094,41 @@ private struct StoryTemplateShareView:View {
                         StoryThinkingStatus(job.generationStatus)
                         Button("Stop"){Task{await job.stop(auth:auth)}}.disabled(job.operationID == nil)
                     }
-                    if let error=job.error {Text(error).foregroundStyle(StoryDesignTokens.secondaryInk).accessibilityAddTraits(.isStaticText)}
+                    if let error=job.error {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(error).foregroundStyle(StoryDesignTokens.secondaryInk).accessibilityAddTraits(.isStaticText)
+                            if job.operationID != nil && !job.generating {
+                                Button("Retry unfinished summary", systemImage: "arrow.clockwise") {
+                                    job.start(auth: auth, retryUnfinished: true)
+                                }.disabled(!auth.isSignedIn || !job.restored)
+                            }
+                        }
+                    }
                     if let summary=job.summary {
-                        ForEach(Array(StorySummaryDocument.blocks(summary.text).enumerated()),id:\.offset) {_,block in
+                        if job.needsFormatUpdate {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Previously saved summary").font(StoryDesignTokens.section)
+                                if !job.generating {
+                                    Button(job.operationID == nil ? "Update to short bullets" : "Retry unfinished summary") { job.start(auth: auth, retryUnfinished: true) }
+                                        .disabled(!auth.isSignedIn || !job.restored)
+                                }
+                            }
+                        }
+                        let abnormalLabs = (summary.labReadings ?? []).filter { $0.abnormalLabel != nil }
+                        let presentation = StorySummaryDocument.practitionerPresentation(summary.text, hasAbnormalLabs: !abnormalLabs.isEmpty, bulletDates: summary.bulletDates ?? [])
+                        let blocks = presentation.blocks
+                        ForEach(Array(blocks.enumerated()),id:\.offset) {index,block in
                             switch block {
                             case let .heading(title,level):
                                 Text(title).font(level==2 ? StoryDesignTokens.sectionHeading:StoryDesignTokens.section).padding(.top,level==2 ? 12:4).accessibilityAddTraits(.isHeader)
-                                if level == 2, title == "Labs & Investigations", let labs = summary.labReadings {
-                                    ForEach(StoryLabSeries.grouped(labs)) { series in
+                                if level == 2, title == "Labs & Investigations" {
+                                    ForEach(StoryLabSeries.grouped(abnormalLabs)) { series in
                                         NavigationLink {
                                             List(series.readings) { reading in
                                                 VStack(alignment: .leading, spacing: 6) {
                                                     Text(reading.dateLabel).font(StoryDesignTokens.caption)
-                                                    Text(reading.valueLabel).font(StoryDesignTokens.section)
+                                                    labValue(reading, history: summary.labReadings ?? []).font(StoryDesignTokens.section)
                                                     if !reading.interval.isEmpty { Text("Reference range " + reading.interval) }
-                                                    if !reading.interpretation.isEmpty { Text(reading.interpretation) }
                                                     if let source = records.first(where: { $0.id == reading.recordID }) {
                                                         NavigationLink("Open original record") {
                                                             SessionDetailView(session: source, store: store, home: home, initialTab: .source)
@@ -924,16 +1142,12 @@ private struct StoryTemplateShareView:View {
                                             VStack(alignment: .leading, spacing: 6) {
                                                 Text(series.title).font(StoryDesignTokens.section)
                                                 HStack {
-                                                    Text(series.latest.valueLabel).font(StoryDesignTokens.label)
+                                                    labValue(series.latest, history: summary.labReadings ?? []).font(StoryDesignTokens.label)
                                                     Spacer()
-                                                    if !series.points.isEmpty {
-                                                        StoryLabSparkline(series).frame(width: 100, height: 34)
-                                                    }
                                                     Image(systemName: "chevron.right").font(.caption)
                                                 }
                                                 Text(series.latest.dateLabel).font(StoryDesignTokens.caption)
                                                 if !series.latest.interval.isEmpty {Text("Reference range " + series.latest.interval).font(StoryDesignTokens.caption)}
-                                                if !series.latest.interpretation.isEmpty {Text(series.latest.interpretation).font(StoryDesignTokens.caption)}
                                             }.frame(maxWidth: .infinity, alignment: .leading)
                                         }.buttonStyle(.plain)
                                         Divider()
@@ -942,7 +1156,15 @@ private struct StoryTemplateShareView:View {
                             case let .bullet(text):
                                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                                     Text("•").accessibilityHidden(true)
-                                    Text(text).textSelection(.enabled)
+                                    VStack(alignment:.leading,spacing:4) {
+                                        Text(StorySummaryDocument.displayNote(text,after:index > 0 ? blocks[index-1] : nil)).textSelection(.enabled)
+                                        let section=blocks.prefix(index).reversed().compactMap { block -> String? in
+                                            if case let .heading(title,level) = block, level == 2 {return title}
+                                            return nil
+                                        }.first
+                                        let dates=summary.dates(for:text,section:section,displayDates:presentation.dates)
+                                        if !dates.isEmpty { Label(dates.joined(separator:" · "),systemImage:"calendar").font(StoryDesignTokens.caption).foregroundStyle(.secondary) }
+                                    }
                                 }.font(StoryDesignTokens.body)
                             case let .paragraph(text):
                                 Text(text).font(StoryDesignTokens.body).textSelection(.enabled)
@@ -968,9 +1190,9 @@ private struct StoryTemplateShareView:View {
                             }
                         }
                     } else if !job.restored && auth.isSignedIn {
-                        StoryLoadingPlaceholder(label:"Loading saved summary",rows:3)
+                        StoryLoadingPlaceholder(label:"Loading saved summary", rows: 3, layout: .summary)
                     } else if !job.generating {
-                        Button { job.start(auth: auth) } label: {
+                        Button { job.start(auth: auth, retryUnfinished: true) } label: {
                             Text("Generate summary").foregroundStyle(StoryDesignTokens.onAction)
                         }
                         .storyControlStyle(prominent: true)
@@ -981,6 +1203,7 @@ private struct StoryTemplateShareView:View {
             .font(StoryDesignTokens.body)
             .foregroundStyle(StoryDesignTokens.ink)
             .background(StoryDesignTokens.canvas)
+            .storyLoadIn(ready: job.restored || job.summary != nil || !auth.isSignedIn)
             .navigationTitle("Share summary").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement:.topBarLeading) {
@@ -990,7 +1213,7 @@ private struct StoryTemplateShareView:View {
                     if let summary=job.summary {
                         Menu {
                             Button("Preview PDF",systemImage:"doc.richtext"){preparePDF(summary)}
-                            Button("Regenerate summary",systemImage:"arrow.clockwise"){job.start(auth:auth)}.disabled(!auth.isSignedIn || !job.restored)} label: {Image(systemName:"ellipsis")}
+                            Button(job.operationID == nil ? "Regenerate summary" : "Retry unfinished summary",systemImage:"arrow.clockwise"){job.start(auth:auth, retryUnfinished: true)}.disabled(!auth.isSignedIn || !job.restored)} label: {Image(systemName:"ellipsis")}
                             .accessibilityLabel("Summary options").disabled(job.generating)
                     }
                 }
@@ -1005,10 +1228,22 @@ private struct StoryTemplateShareView:View {
             .sheet(item:$pdfPreview) {item in
                 if item.share {HealthActivitySheet(urls:[item.url])} else {StorySummaryPDFPreview(item:item)}
             }
-            .task {await job.reloadSavedIfIdle()}
+            .task {await job.resumeWhenActive(auth: auth)}
             .onDisappear {job.savePatientName()}
         }
     }
+    private func labValue(_ reading: StoryLabReading, history: [StoryLabReading]) -> some View {
+        let improving = reading.isImproving(in: history)
+        return VStack(alignment: .leading, spacing: 4) {
+            Text([reading.valueLabel, reading.arrow].compactMap { $0 }.joined(separator: " "))
+                .foregroundStyle(improving ? Color.green : Color.red)
+            if let label = reading.abnormalLabel {
+                Text(label.replacingOccurrences(of: "↑ ", with: "").replacingOccurrences(of: "↓ ", with: "") + (improving ? " · Improving" : ""))
+                    .font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
+            }
+        }
+    }
+
     private func preparePDF(_ summary:StorySharedSummary,share:Bool=false) {
         do {
             let data=try StorySummaryPDF.renderSummary(summary, title: template.title, patientName: job.patientName.trimmingCharacters(in: .whitespacesAndNewlines), typography: StoryDesignTokens.summaryPDFTypography)
@@ -1023,6 +1258,10 @@ private struct StoryTemplateShareView:View {
     }
 }
 
+private struct StoryRequestHTTPFailure:Error {
+    let status:Int
+}
+
 private struct SummaryStageFailure:Error {
     let state:String
     var canRepair:Bool { ["invalid_result","failed","incomplete","expired","not_found"].contains(state) }
@@ -1032,7 +1271,12 @@ private struct SummaryStageFailure:Error {
     let store:SessionStore
     let runner:StoryLabModel
     let template=StorySummaryTemplate.practitioner
-    @Published var summary:StorySharedSummary?
+    @Published var summary:StorySharedSummary? {
+        didSet {
+            needsFormatUpdate = summary.map { template.validatedHandoff($0.text) == nil } ?? false
+        }
+    }
+    private(set) var needsFormatUpdate = false
     @Published var error:String?
     @Published var patientName=""
     var nameEdited=false
@@ -1043,6 +1287,9 @@ private struct SummaryStageFailure:Error {
     @Published var operationID:UUID?
     var stageID:UUID?
     private var restoring=false
+    private var generationTask:Task<Void,Never>?
+    private var pausedForBackground=false
+    private var reconnecting=false
     private static let viewedKey="storyLab.lastViewedPractitionerSummary"
     @Published private var viewedVersion=UserDefaults.standard.string(forKey:viewedKey)
     private func version(_ date:Date)->String { ISO8601DateFormatter().string(from:date) }
@@ -1052,7 +1299,7 @@ private struct SummaryStageFailure:Error {
         viewedVersion=value;UserDefaults.standard.set(value,forKey:Self.viewedKey)
     }
     var homeStatus:String? {
-        if generating {return Self.preparingLabel}
+        if generating {return generationStatus}
         if error != nil {return "Summary needs attention"}
         guard let summary,version(summary.generatedAt) != viewedVersion else{return nil}
         return "Summary ready to share"
@@ -1063,7 +1310,7 @@ private struct SummaryStageFailure:Error {
         restoring=true;defer{restoring=false}
         summary=try? await store.recoveredStorySharedSummary()
         await loadName(for:summary)
-        operationID=try? await store.storyWorkspace().messages.last(where:{$0.role=="system" && $0.text=="Share template: "+template.rawValue && $0.state=="queued"})?.id
+        operationID = await unfinishedOperation(auth: auth)
         restored=true
         if operationID != nil {start(auth:auth)}
     }
@@ -1080,12 +1327,51 @@ private struct SummaryStageFailure:Error {
             guard !generating else{return}
             if latest?.generatedAt != summary?.generatedAt {nameEdited=false}
             summary=latest;await loadName(for:latest)
+            let workspace=try await store.storyWorkspace()
+            let latestOperation=workspace.messages.last { $0.role == "system" && $0.text == "Share template: " + template.rawValue }
+            if latestOperation?.state == "completed", latest != nil { error=nil }
         } catch {self.error="Your saved summary couldn’t be loaded."}
     }
-    func start(auth:KindeAuthManager){
+    func resumeWhenActive(auth:KindeAuthManager) async {
+        if !restored { await restore(auth:auth); return }
+        guard !reconnecting else { return }
+        reconnecting=true
+        defer { reconnecting=false }
+        // A network wait suspended by phone lock can outlive the foreground event.
+        // Replace only that local wait; the frozen operation and service job survive.
+        if generating, let pending=generationTask {
+            pausedForBackground=true
+            pending.cancel()
+            await pending.value
+        }
+        // Resume only persisted unfinished work; completed and explicitly stopped jobs stay stopped.
+        operationID = await unfinishedOperation(auth: auth)
+        if operationID != nil {start(auth:auth)}
+        else {await reloadSavedIfIdle()}
+    }
+    private func unfinishedOperation(auth: KindeAuthManager) async -> UUID? {
+        guard let workspace = try? await store.storyWorkspace(),
+              let latest = workspace.messages.last(where: { $0.role == "system" && $0.text == "Share template: " + template.rawValue }) else { return nil }
+        if latest.state == "queued" { return latest.id }
+        // Older builds incorrectly marked resumable service failures as failed.
+        // Recover only the diagnosed latest operation, after checking the service.
+        let diagnostic = UserDefaults.standard.dictionary(forKey: "storyLab.lastSummaryFailure")
+        guard latest.state == "failed", latest.requestJSON != nil,
+              diagnostic?["operationID"] as? String == latest.id.uuidString,
+              ((diagnostic?["code"] as? String)?.hasPrefix("SummaryWorkflow:") == true ||
+               (diagnostic?["code"] as? String)?.contains("StoryEditError") == true),
+              let transport = await auth.openAIChatTransport(byokFallback: ""), transport.usesSummaryWorkflows else { return nil }
+        let serviceID = IncrementalRecordUpdate.stableID("service-summary:" + latest.id.uuidString)
+        guard diagnostic?["stageID"] as? String == serviceID.uuidString,
+              let state = try? await transport.summaryWorkflowState(id: serviceID.uuidString),
+              ["queued", "running", "retry_scheduled", "needs_attention", "completed"].contains(state),
+              (try? await store.resumeFailedStorySharedSummary(latest.id, templateID: template.rawValue)) == true else { return nil }
+        return latest.id
+    }
+    func start(auth:KindeAuthManager, retryUnfinished: Bool = false){
         guard restored,!generating else{return}
-        generating=true;error=nil
-        Task {await generate(auth:auth)}
+        generating=true;generationStatus=Self.preparingLabel;error=nil;pausedForBackground=false
+        generationTask=Task {await generate(auth:auth, retryUnfinished: retryUnfinished)}
     }
     func stop(auth:KindeAuthManager) async {
         guard let id=operationID else{return}
@@ -1093,10 +1379,24 @@ private struct SummaryStageFailure:Error {
         await runner.stop(id,auth:auth)
         if let child {await runner.stop(child,auth:auth)}
     }
-    private func generate(auth:KindeAuthManager) async {
-        defer{generating=false;stageID=nil}
+    private func generate(auth:KindeAuthManager, retryUnfinished: Bool) async {
+        let backgroundLease=SummaryBackgroundTaskLease(name:"Prepare practitioner summary") { [weak self] in
+            // Cancel only the local wait. Saved stage IDs and server jobs remain resumable.
+            self?.pausedForBackground=true
+            self?.generationTask?.cancel()
+        }
+        defer {
+            backgroundLease.end()
+            generating=false;stageID=nil;generationTask=nil
+            // Expiration can race with foregrounding; do not require a second app switch.
+            if pausedForBackground, !reconnecting, UIApplication.shared.applicationState == .active {
+                Task {await resumeWhenActive(auth:auth)}
+            }
+        }
         do {
-            let snapshot=try await store.storySummarySnapshot()
+            var snapshot=try await store.storySummarySnapshot()
+            let serviceTransport=await auth.openAIChatTransport(byokFallback:"")
+            if serviceTransport?.usesSummaryWorkflows == true {snapshot.serviceWorkflowVersion="summary-workflow-v1";snapshot.publicationSummary=try await store.storyWorkspace().sharedSummary}
             guard !snapshot.evidence.isEmpty else {error="Add and process a record before generating a summary.";return}
             let id:UUID
             if let existing=operationID {id=existing} else {
@@ -1109,7 +1409,37 @@ private struct SummaryStageFailure:Error {
             var current: [StoryEvidence]
             if let frozen { current = frozen.evidence }
             else { current = try JSONDecoder().decode([StoryEvidence].self, from: Data(saved.utf8)) }
-            let labInstructions = frozen?.labs.isEmpty == false ? "\nIn Labs & Investigations, the app inserts saved structured results and dates directly below the heading. Use this section for other documented results, imaging, investigations and follow-up. Omit repetition of those structured results and omit the missing-information placeholder when there are no additional investigations." : ""
+            if let frozen, frozen.serviceWorkflowVersion == "summary-workflow-v1",let serviceTransport {
+                let serviceID=IncrementalRecordUpdate.stableID("service-summary:"+id.uuidString)
+                stageID=serviceID
+                let encoder=JSONEncoder();encoder.outputFormatting=[.sortedKeys]
+                let sourceKey=SHA256.hash(data:try encoder.encode(frozen)).map{String(format:"%02x",$0)}.joined()
+                let request=try await store.prepareServiceSummary(ServiceSummaryRequest(id:serviceID,kind:"practitioner",target:"practitioner",sourceRevision:sourceKey,publicationRevision:id.uuidString,template:"practitioner",evidence:frozen.evidence,structuredLabs:!frozen.labs.isEmpty))
+                let value=try JSONSerialization.jsonObject(with:encoder.encode(request)) as! [String:Any]
+                generationStatus=Self.preparingLabel
+                let output=try await serviceTransport.summaryWorkflow(value, retryUnfinished: retryUnfinished) { [weak self] completed,total in
+                    let label="Preparing summary… \(completed) of \(total) steps"
+                    if self?.generationStatus != label {self?.generationStatus=label}
+                }
+                guard let text=output["text"] as? String,let valid=template.validatedHandoff(text) else {
+                    throw NSError(domain:"SummaryPublication",code:1,userInfo:[NSLocalizedDescriptionKey:"The completed summary didn’t pass the formatting check. It is saved on this phone; you don’t need to generate it again."])
+                }
+                guard let citations=output["citationIDs"] as? [String],!citations.isEmpty,
+                      Set(citations).isSubset(of:Set(request.evidence.map(\.id))) else {
+                    throw NSError(domain:"SummaryPublication",code:2,userInfo:[NSLocalizedDescriptionKey:"The completed summary’s source references couldn’t be verified. Your previous summary is unchanged."])
+                }
+                var document=StorySharedSummary(templateID:template.rawValue,text:valid,evidence:request.evidence.filter{citations.contains($0.id)},patientName:patientName)
+                document.patientNameEdited=nameEdited || summary?.patientNameEdited == true
+                if let raw=output["bulletDates"],JSONSerialization.isValidJSONObject(raw) {
+                    document.bulletDates=try JSONDecoder().decode([StorySummaryBulletDate].self,from:JSONSerialization.data(withJSONObject:raw))
+                }
+                document.labReadings=frozen.labs
+                try await store.completeStorySharedSummary(id,summary:document,expectedSnapshot:frozen)
+                try await store.finishServiceSummary(serviceID)
+                summary=document;operationID=nil;nameEdited=false;error=nil
+                return
+            }
+            let labInstructions = frozen?.labs.isEmpty == false ? "\nIn Labs & Investigations, the app inserts saved structured results and dates directly below the heading. Use this section only for other explicitly abnormal findings. Omit repetition of those structured results and omit the missing-information placeholder when there are no additional investigations." : ""
             var provenance=Dictionary(uniqueKeysWithValues:current.map{($0.id,[$0])})
             var round=0;var text="";var accepted:[StoryEvidence]=[]
             while true {
@@ -1117,24 +1447,24 @@ private struct SummaryStageFailure:Error {
                 var next:[StoryEvidence]=[];var nextProvenance:[String:[StoryEvidence]]=[:]
                 for (index,batch) in batches.enumerated() {
                     generationStatus=batches.count>1 ? "Preparing part \(index+1) of \(batches.count)…":"Preparing and checking your summary…"
-                    var stage=try await store.prepareSummaryStage(parentID:id,stage:"\(round):\(index)")
+                    var stage=try await store.prepareSummaryStage(parentID:id,stage:"clinical-fragments-v4:\(round):\(index)")
                     stageID=stage.id
                     var stageText=stage.text;var originals=stage.evidence ?? []
-                    if stage.state != "completed" || template.validatedText(stageText) == nil {
+                    if stage.state != "completed" || template.validatedHandoff(stageText) == nil {
                         let context=round>0 ? "\nInputs are independently checked partial summaries of one frozen history. Consolidate them; deduplicate repetition, preserve conflicts and dates. 'Not documented' in a partial summary does not mean absent from other parts. Do not claim exhaustive coverage.":""
                         var result:[String:Any]=[:]
                         do { result=try await runner.request(id:stage.id,kind:"chat",revision:0,before:"",after:template.prompt+labInstructions+context,targets:[],auth:auth,summaryEvidence:batch)
                         } catch let failure as SummaryStageFailure where failure.canRepair {
                             // A terminal receipt will never produce another result under its original ID.
                         }
-                        let needsShortening = batches.count == 1 && ((result["text"] as? String).flatMap(template.validatedText)?.count ?? 0) > 3600
-                        if needsShortening || result["kind"] as? String != "answer" || (result["text"] as? String).flatMap(template.validatedText) == nil || (result["citationIDs"] as? [String])?.isEmpty != false {
-                            stage = try await store.prepareSummaryStage(parentID:id,stage:"\(round):\(index):compact")
+                        let needsShortening = batches.count == 1 && ((result["text"] as? String).flatMap(template.validatedHandoff)?.count ?? 0) > 3600
+                        if needsShortening || result["kind"] as? String != "answer" || (result["text"] as? String).flatMap(template.validatedHandoff) == nil || (result["citationIDs"] as? [String])?.isEmpty != false {
+                            stage = try await store.prepareSummaryStage(parentID:id,stage:"clinical-fragments-v4:\(round):\(index):compact")
                             stageID = stage.id
-                            let concise = "\nProduce a shorter complete handoff of about 2500 characters including headings. Use short bullets, each on its own line starting with '- '. Omit pipe tables. Complete the last section."
+                            let concise = "\nProduce a shorter complete handoff, at most 2500 characters including headings. Rewrite each fact as '- Topic — qualifier', with a short noun phrase followed by one clinical fragment. Split combined topics. Remove sentence subjects, linking verbs and final periods. Leave unsupported sections empty."
                             result = try await runner.request(id:stage.id,kind:"chat",revision:0,before:"",after:template.prompt+labInstructions+context+concise,targets:[],auth:auth,summaryEvidence:batch)
                         }
-                        guard result["kind"] as? String == "answer",let raw=result["text"] as? String,let valid=template.validatedText(raw),let citations=result["citationIDs"] as? [String],!citations.isEmpty,Set(citations).isSubset(of:Set(batch.map(\.id))) else {throw StoryEditError.invalidMutation}
+                        guard result["kind"] as? String == "answer",let raw=result["text"] as? String,let valid=template.validatedHandoff(raw),let citations=result["citationIDs"] as? [String],!citations.isEmpty,Set(citations).isSubset(of:Set(batch.map(\.id))) else {throw StoryEditError.invalidMutation}
                         stageText=valid
                         originals=citations.flatMap{provenance[$0] ?? []}
                         originals=Dictionary(originals.map{($0.id,$0)},uniquingKeysWith:{a,_ in a}).values.sorted{$0.id<$1.id}
@@ -1155,17 +1485,64 @@ private struct SummaryStageFailure:Error {
             document.labReadings = frozen?.labs
             patientName=identifiedName ?? ""
             try await store.completeStorySharedSummary(id,summary:document)
-            summary=document;operationID=nil;nameEdited=false
+            summary=document;operationID=nil;nameEdited=false;error=nil
         } catch {
+            if pausedForBackground && Task.isCancelled {
+                generationStatus=Self.preparingLabel
+                return
+            }
+            // Store codes only: never persist source text, response bodies or credentials in diagnostics.
+            let code: String
+            if let failure=error as? StoryRequestHTTPFailure {code="http:\(failure.status)"}
+            else if let failure=error as? SummaryStageFailure {code="stage:"+failure.state}
+            else {let failure=error as NSError;code=failure.domain+":"+String(failure.code)}
+            UserDefaults.standard.set(["date":ISO8601DateFormatter().string(from:Date()),
+                                       "operationID":operationID?.uuidString ?? "", "stageID":stageID?.uuidString ?? "",
+                                       "code":code],forKey:"storyLab.lastSummaryFailure")
             if let id=operationID,let message=try? await store.storyWorkspace().messages.first(where:{$0.id==id}),message.state=="cancelled" {
                 operationID=nil;self.error="Generation stopped. Your previous summary is still available."
             } else if let failure=error as? SummaryStageFailure, failure.state == "budget_exhausted" {
                 if let id=operationID {try? await store.failStorySharedSummary(id)};operationID=nil
                 self.error="Summary processing has reached its spending limit."
+            } else if (error as NSError).domain == "SummaryWorkflow" {
+                if !SummaryWorkflowFailureMessage.keepsUnfinishedWork(reason: (error as NSError).userInfo["workflowReason"] as? String ?? "") {
+                    if let id=operationID {try? await store.failStorySharedSummary(id)}
+                    operationID=nil
+                }
+                self.error=error.localizedDescription
+            } else if (error as NSError).domain == "SummaryPublication" {
+                // Keep the frozen request and local receipt for repair; never restart inference.
+                self.error=error.localizedDescription
+            } else if let edit=error as? StoryEditError, case .staleRevision = edit {
+                // A competing successful publication can finish while this wait is cancelled.
+                let workspace=try? await store.storyWorkspace()
+                if let id=operationID,workspace?.messages.first(where:{$0.id==id})?.state == "completed" {
+                    summary=workspace?.sharedSummary;operationID=nil;self.error=nil
+                } else {
+                    if let id=operationID {try? await store.failStorySharedSummary(id)}
+                    operationID=nil
+                    self.error="Your records or summary changed while this was being prepared. Your changes are safe. Generate a new summary to include them."
+                }
             } else if error is StoryEditError || error is SummaryStageFailure {
-                if let id=operationID {try? await store.failStorySharedSummary(id)}
-                operationID=nil;self.error="The summary couldn’t be verified. Try generating it again."
-            } else {self.error="The summary couldn’t be completed. Try again to resume the saved attempt."}
+                self.error="The completed summary couldn’t be saved. Your previous summary is unchanged. Retry will use the saved work."
+            } else {
+                let reason:String
+                if let failure=error as? StoryRequestHTTPFailure {
+                    reason = failure.status == 401 ? "Your sign-in has expired. Sign in again to continue." :
+                        "The summary service is unavailable (\(failure.status)). Try again to resume."
+                } else if let failure=error as? URLError {
+                    switch failure.code {
+                    case .timedOut: reason="The summary took too long to respond. Try again to resume."
+                    case .notConnectedToInternet,.networkConnectionLost,.cannotConnectToHost:
+                        reason="The connection to the summary service was interrupted. Try again when connected."
+                    case .cancelled: reason="Summary processing was interrupted. Try again to resume."
+                    default: reason="The summary service couldn’t be reached. Try again to resume."
+                    }
+                } else if error is DecodingError || (error as NSError).domain == NSCocoaErrorDomain && (error as NSError).code == 3840 {
+                    reason="The summary service returned an unreadable response. Try again to resume."
+                } else {reason="The summary couldn’t be completed. Try again to resume the saved attempt."}
+                self.error=reason+" Your previous summary is still available."
+            }
         }
     }
     func savePatientName() {
@@ -1189,7 +1566,7 @@ private struct StorySummaryPDFPreview:View {
     var body:some View {
         NavigationStack {
             StorySummaryPDFCanvas(document:item.document)
-                .navigationTitle("PDF preview").navigationBarTitleDisplayMode(.inline)
+                .storyLoadIn().navigationTitle("PDF preview").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement:.topBarLeading){Button("Close"){dismiss()}}
                     ToolbarItem(placement:.topBarTrailing){Button("Share PDF",systemImage:"square.and.arrow.up"){sharing=true}}

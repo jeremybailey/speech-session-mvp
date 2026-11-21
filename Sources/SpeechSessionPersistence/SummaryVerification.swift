@@ -57,6 +57,7 @@ public struct SummaryCheck: Codable, Hashable, Sendable {
     }
 }
 public enum SummaryVerification {
+    public static let sourceLinkedNotice = "Added from your record. Automated checking is incomplete; you can edit or delete this detail."
     // New checks cannot resume chunks admitted through the old source-link fallback.
     public static let version = 21
     public static let promptVersion = "clinical-pipeline-v5-explicit-statement-status"
@@ -127,7 +128,7 @@ public enum SummaryVerification {
         let anchored = (!words.isEmpty && words.allSatisfy { originalWords.contains($0) }) || quotedReport
         let excluded = SummaryEntityStructure.exclusion(entry) != nil || blockers.contains(exclusion ?? "") || administrative.contains(where: { title.contains($0) }) || !anchored
         if result.evidence == nil { result.evidence = ClinicalEvidence() }
-        let reason = SummaryEntityStructure.exclusion(entry) ?? (excluded ? "This detail could not be linked to relevant information in the original." : "Added from your record. Automated checking is incomplete; you can edit or delete this detail.")
+        let reason = SummaryEntityStructure.exclusion(entry) ?? (excluded ? "This detail could not be linked to relevant information in the original." : sourceLinkedNotice)
         result.needsReview = true
         result.reviewReason = reason
         result.evidence?.reviewReason = reason

@@ -19,13 +19,13 @@ test('normal B retains source boundaries, rejects changed hashes and malformed i
  assert.throws(() => makePayload([],template), /invalid_records/);
  assert.throws(() => makeOverviewPayload(records,{concerns:[],passages:{}},template), /invalid_proposal/);
 });
-test('B first pass has a reserved 64k allowance; legacy stages keep their limits', () => {
+test('B first pass and checked summaries have reserved output allowances', () => {
  for (const stage of ['whole-history-generation','whole-history-overview']) {
   assert.deepEqual(summaryModelPolicy(stage), {model:'gpt-6-luna',effort:'medium'});
  }
  assert.equal(outputTokenLimit('gpt-6-luna','whole-history-generation'),64000);
  assert.equal(reservedOutputTokenLimit('gpt-6-luna','whole-history-generation',reservation('gpt-6-luna',64000)),64000);
- assert.equal(outputTokenLimit('gpt-6-luna','whole-history-overview'),6000);
+ assert.equal(outputTokenLimit('gpt-6-luna','whole-history-overview'),16000);
  assert.equal(outputTokenLimit('gpt-6-luna','checking'),6000);
 });
 test('identical run remains idempotent and different owners remain isolated', () => {

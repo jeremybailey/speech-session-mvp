@@ -5,6 +5,8 @@ import { reservation } from './pricing';
 export function outputTokenLimit(model: string, stage: string): number {
   if (model === 'gpt-6-luna' && stage === 'whole-history-unit-extraction') return 12_000;
   if (model === 'gpt-6-luna' && stage === 'whole-history-unit-verification') return 8_000;
+  // Checked summary merges carry structured metadata and source references.
+  if (model === 'gpt-6-luna' && stage === 'whole-history-overview') return 16_000;
   if (model === 'gpt-6-luna' && stage === 'whole-history-generation') return 64_000;
   return model === 'gpt-6-luna' && stage === 'extraction' ? 10_000 : 6_000;
 }

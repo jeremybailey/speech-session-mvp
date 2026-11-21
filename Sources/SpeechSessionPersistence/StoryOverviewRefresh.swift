@@ -60,3 +60,59 @@ public enum StoryOverviewRefresh {
         return (paragraphs.joined(separator:"\n\n"),sources.filter{ids.contains($0.id)})
     }
 }
+
+/// Frozen request retained locally before upload. Metadata remains available for
+/// publication guards and record deletion; the service receives only needed text.
+public struct ServiceSummaryRequest: Codable, Sendable {
+    public var id:String
+    public var contract="summary-workflow-v1"
+    public var pipeline:String? = "compact-v2"
+    public var kind:String
+    public var target:String
+    public var sourceRevision:String
+    public var publicationRevision:String
+    public var template:String
+    public var evidence:[StoryEvidence]
+    public var structuredLabs:Bool
+    public init(id:UUID,kind:String,target:String,sourceRevision:String,publicationRevision:String,template:String,evidence:[StoryEvidence],structuredLabs:Bool=false) {
+        self.id=id.uuidString.lowercased();self.kind=kind;self.target=target;self.sourceRevision=sourceRevision
+        self.publicationRevision=publicationRevision;self.template=template;self.structuredLabs=structuredLabs
+        self.evidence=evidence.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.flatMap { source -> [StoryEvidence] in
+            guard source.text.utf8.count>20_000 else{return [source]}
+            var chunks:[StoryEvidence]=[];var start=source.text.startIndex
+            while start<source.text.endIndex {
+                let end=source.text.index(start,offsetBy:4000,limitedBy:source.text.endIndex) ?? source.text.endIndex
+                var chunk=source;chunk.id=source.id+"#part"+String(chunks.count+1);chunk.text=String(source.text[start..<end]);chunks.append(chunk)
+                if end==source.text.endIndex {break}
+                start=source.text.index(end,offsetBy:-200)
+            }
+            return chunks
+        }
+    }
+}
+
+
+public enum SummaryWorkflowFailureMessage {
+    public static func keepsUnfinishedWork(reason: String) -> Bool {
+        !["expired", "cancelled", "superseded"].contains(reason)
+    }
+
+    public static func message(reason: String) -> String {
+        switch reason {
+        case "provider_failed":
+            return "The summary service couldn’t finish this time. Your progress is saved. Tap Retry to continue the unfinished work. Your saved summary is unchanged."
+        case "provider_outcome_unknown":
+            return "We couldn’t confirm the service’s last result. Your progress and saved summary are safe. Retry will check the saved work before continuing."
+        case "workflow_limit":
+            return "We couldn’t finish after several attempts. Your progress and saved summary are safe. Please contact support to continue. Holding onto the saved work avoids starting over."
+        case "budget_exhausted":
+            return "Summary processing reached its limit. Your progress and saved summary are safe. Check AI usage in Settings before trying again."
+        case "expired":
+            return "The unfinished work has expired. Your saved summary is safe. Choose Regenerate summary to start a new version."
+        case "cancelled", "superseded":
+            return "This summary attempt was cancelled or replaced. Your saved summary is unchanged."
+        default:
+            return "The summary couldn’t be completed. Your progress and saved summary are safe. Please try again later."
+        }
+    }
+}

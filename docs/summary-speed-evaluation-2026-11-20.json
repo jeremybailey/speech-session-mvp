@@ -1,0 +1,946 @@
+{
+  "scope": "Fictional data only; component throughput is not whole-summary latency.",
+  "providerConcurrency": [
+    {
+      "repetition": 0,
+      "concurrency": 3,
+      "seconds": 18.972,
+      "costUSD": 0.0028938,
+      "cases": [
+        {
+          "fixture": "tentative-newborn",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.000487,
+          "inputTokens": 965,
+          "outputTokens": 781,
+          "start": "2026-11-20T22:48:29.588Z",
+          "end": "2026-11-20T22:48:38.793Z"
+        },
+        {
+          "fixture": "abnormal-labs",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004185,
+          "inputTokens": 970,
+          "outputTokens": 643,
+          "start": "2026-11-20T22:48:29.647Z",
+          "end": "2026-11-20T22:48:37.414Z"
+        },
+        {
+          "fixture": "medication-change",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004574,
+          "inputTokens": 959,
+          "outputTokens": 723,
+          "start": "2026-11-20T22:48:29.595Z",
+          "end": "2026-11-20T22:48:38.783Z"
+        },
+        {
+          "fixture": "conditional-plan",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0003942,
+          "inputTokens": 947,
+          "outputTokens": 599,
+          "start": "2026-11-20T22:48:38.832Z",
+          "end": "2026-11-20T22:48:46.065Z"
+        },
+        {
+          "fixture": "dated-context",
+          "state": "completed",
+          "format": true,
+          "missing": [
+            "/fatigue/i",
+            "/hypothyroid/i",
+            "/TSH/i"
+          ],
+          "costUSD": 0.0006062,
+          "inputTokens": 967,
+          "outputTokens": 1019,
+          "start": "2026-11-20T22:48:37.464Z",
+          "end": "2026-11-20T22:48:48.560Z"
+        },
+        {
+          "fixture": "transplant-allergy",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0005305,
+          "inputTokens": 950,
+          "outputTokens": 871,
+          "start": "2026-11-20T22:48:38.839Z",
+          "end": "2026-11-20T22:48:48.343Z"
+        }
+      ]
+    },
+    {
+      "repetition": 0,
+      "concurrency": 6,
+      "seconds": 9.59,
+      "costUSD": 0.0026912999999999998,
+      "cases": [
+        {
+          "fixture": "abnormal-labs",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004275,
+          "inputTokens": 970,
+          "outputTokens": 661,
+          "start": "2026-11-20T22:48:48.675Z",
+          "end": "2026-11-20T22:48:57.175Z"
+        },
+        {
+          "fixture": "tentative-newborn",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0003567,
+          "inputTokens": 967,
+          "outputTokens": 520,
+          "start": "2026-11-20T22:48:48.668Z",
+          "end": "2026-11-20T22:48:54.892Z"
+        },
+        {
+          "fixture": "medication-change",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004774,
+          "inputTokens": 959,
+          "outputTokens": 763,
+          "start": "2026-11-20T22:48:48.662Z",
+          "end": "2026-11-20T22:48:57.281Z"
+        },
+        {
+          "fixture": "conditional-plan",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004317,
+          "inputTokens": 947,
+          "outputTokens": 674,
+          "start": "2026-11-20T22:48:48.679Z",
+          "end": "2026-11-20T22:48:57.063Z"
+        },
+        {
+          "fixture": "dated-context",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004461,
+          "inputTokens": 966,
+          "outputTokens": 699,
+          "start": "2026-11-20T22:48:48.673Z",
+          "end": "2026-11-20T22:48:55.973Z"
+        },
+        {
+          "fixture": "transplant-allergy",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0005519,
+          "inputTokens": 954,
+          "outputTokens": 913,
+          "start": "2026-11-20T22:48:48.682Z",
+          "end": "2026-11-20T22:48:58.252Z"
+        }
+      ]
+    },
+    {
+      "repetition": 1,
+      "concurrency": 6,
+      "seconds": 10.676,
+      "costUSD": 0.0028945999999999998,
+      "cases": [
+        {
+          "fixture": "abnormal-labs",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004207,
+          "inputTokens": 972,
+          "outputTokens": 647,
+          "start": "2026-11-20T22:48:58.347Z",
+          "end": "2026-11-20T22:49:05.611Z"
+        },
+        {
+          "fixture": "medication-change",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.000614,
+          "inputTokens": 955,
+          "outputTokens": 1037,
+          "start": "2026-11-20T22:48:58.356Z",
+          "end": "2026-11-20T22:49:09.023Z"
+        },
+        {
+          "fixture": "tentative-newborn",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004183,
+          "inputTokens": 968,
+          "outputTokens": 643,
+          "start": "2026-11-20T22:48:58.362Z",
+          "end": "2026-11-20T22:49:05.901Z"
+        },
+        {
+          "fixture": "dated-context",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0005044,
+          "inputTokens": 969,
+          "outputTokens": 815,
+          "start": "2026-11-20T22:48:58.365Z",
+          "end": "2026-11-20T22:49:07.921Z"
+        },
+        {
+          "fixture": "transplant-allergy",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004759,
+          "inputTokens": 954,
+          "outputTokens": 761,
+          "start": "2026-11-20T22:48:58.381Z",
+          "end": "2026-11-20T22:49:06.770Z"
+        },
+        {
+          "fixture": "conditional-plan",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004613,
+          "inputTokens": 948,
+          "outputTokens": 733,
+          "start": "2026-11-20T22:48:58.374Z",
+          "end": "2026-11-20T22:49:05.651Z"
+        }
+      ]
+    },
+    {
+      "repetition": 1,
+      "concurrency": 3,
+      "seconds": 20.265,
+      "costUSD": 0.0028489000000000006,
+      "cases": [
+        {
+          "fixture": "medication-change",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0007292,
+          "inputTokens": 957,
+          "outputTokens": 1267,
+          "start": "2026-11-20T22:49:09.076Z",
+          "end": "2026-11-20T22:49:21.961Z"
+        },
+        {
+          "fixture": "tentative-newborn",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0003357,
+          "inputTokens": 967,
+          "outputTokens": 478,
+          "start": "2026-11-20T22:49:09.061Z",
+          "end": "2026-11-20T22:49:16.329Z"
+        },
+        {
+          "fixture": "abnormal-labs",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004655,
+          "inputTokens": 975,
+          "outputTokens": 736,
+          "start": "2026-11-20T22:49:09.093Z",
+          "end": "2026-11-20T22:49:17.484Z"
+        },
+        {
+          "fixture": "dated-context",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004595,
+          "inputTokens": 970,
+          "outputTokens": 725,
+          "start": "2026-11-20T22:49:16.382Z",
+          "end": "2026-11-20T22:49:24.756Z"
+        },
+        {
+          "fixture": "conditional-plan",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004639,
+          "inputTokens": 949,
+          "outputTokens": 738,
+          "start": "2026-11-20T22:49:17.535Z",
+          "end": "2026-11-20T22:49:26.045Z"
+        },
+        {
+          "fixture": "transplant-allergy",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0003951,
+          "inputTokens": 951,
+          "outputTokens": 600,
+          "start": "2026-11-20T22:49:22.013Z",
+          "end": "2026-11-20T22:49:29.326Z"
+        }
+      ]
+    },
+    {
+      "repetition": 2,
+      "concurrency": 3,
+      "seconds": 16.818,
+      "costUSD": 0.0027436000000000006,
+      "cases": [
+        {
+          "fixture": "abnormal-labs",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004372,
+          "inputTokens": 972,
+          "outputTokens": 680,
+          "start": "2026-11-20T22:49:29.398Z",
+          "end": "2026-11-20T22:49:37.920Z"
+        },
+        {
+          "fixture": "medication-change",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0006574,
+          "inputTokens": 959,
+          "outputTokens": 1123,
+          "start": "2026-11-20T22:49:29.372Z",
+          "end": "2026-11-20T22:49:40.019Z"
+        },
+        {
+          "fixture": "tentative-newborn",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0003964,
+          "inputTokens": 964,
+          "outputTokens": 600,
+          "start": "2026-11-20T22:49:29.384Z",
+          "end": "2026-11-20T22:49:36.595Z"
+        },
+        {
+          "fixture": "dated-context",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004169,
+          "inputTokens": 974,
+          "outputTokens": 639,
+          "start": "2026-11-20T22:49:36.648Z",
+          "end": "2026-11-20T22:49:44.095Z"
+        },
+        {
+          "fixture": "conditional-plan",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004579,
+          "inputTokens": 944,
+          "outputTokens": 727,
+          "start": "2026-11-20T22:49:37.967Z",
+          "end": "2026-11-20T22:49:45.218Z"
+        },
+        {
+          "fixture": "transplant-allergy",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0003778,
+          "inputTokens": 953,
+          "outputTokens": 565,
+          "start": "2026-11-20T22:49:40.066Z",
+          "end": "2026-11-20T22:49:46.190Z"
+        }
+      ]
+    },
+    {
+      "repetition": 2,
+      "concurrency": 6,
+      "seconds": 11.764,
+      "costUSD": 0.0029716000000000005,
+      "cases": [
+        {
+          "fixture": "abnormal-labs",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004356,
+          "inputTokens": 971,
+          "outputTokens": 677,
+          "start": "2026-11-20T22:49:46.320Z",
+          "end": "2026-11-20T22:49:53.565Z"
+        },
+        {
+          "fixture": "medication-change",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.000675,
+          "inputTokens": 960,
+          "outputTokens": 1158,
+          "start": "2026-11-20T22:49:46.304Z",
+          "end": "2026-11-20T22:49:58.068Z"
+        },
+        {
+          "fixture": "tentative-newborn",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004248,
+          "inputTokens": 963,
+          "outputTokens": 657,
+          "start": "2026-11-20T22:49:46.311Z",
+          "end": "2026-11-20T22:49:53.548Z"
+        },
+        {
+          "fixture": "conditional-plan",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004398,
+          "inputTokens": 948,
+          "outputTokens": 690,
+          "start": "2026-11-20T22:49:46.323Z",
+          "end": "2026-11-20T22:49:53.908Z"
+        },
+        {
+          "fixture": "dated-context",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0005473,
+          "inputTokens": 968,
+          "outputTokens": 901,
+          "start": "2026-11-20T22:49:46.316Z",
+          "end": "2026-11-20T22:49:56.088Z"
+        },
+        {
+          "fixture": "transplant-allergy",
+          "state": "completed",
+          "format": true,
+          "missing": [],
+          "costUSD": 0.0004491,
+          "inputTokens": 956,
+          "outputTokens": 707,
+          "start": "2026-11-20T22:49:46.331Z",
+          "end": "2026-11-20T22:49:53.576Z"
+        }
+      ]
+    }
+  ],
+  "configuration": {
+    "model": "gpt-6-luna",
+    "reasoning": "medium",
+    "tier": "default",
+    "patientDataUsed": false,
+    "policyEnabled": false
+  },
+  "fullWorkflow": [
+    {
+      "repetition": 0,
+      "concurrency": 3,
+      "state": "completed",
+      "calls": 34,
+      "error_code": null,
+      "seconds": "326.523376",
+      "cost_nusd": "116696700",
+      "noncompleted": 0,
+      "missing": [
+        "/vitamin k/i",
+        "/tentative|think|consider|okay/i",
+        "/sweep/i",
+        "/reconsider|next week/i"
+      ]
+    },
+    {
+      "repetition": 0,
+      "concurrency": 6,
+      "state": "completed",
+      "calls": 34,
+      "error_code": null,
+      "seconds": "319.230007",
+      "cost_nusd": "110743700",
+      "noncompleted": 0,
+      "missing": [
+        "/vitamin k/i",
+        "/tentative|think|consider|okay/i",
+        "/sweep/i",
+        "/reconsider|next week/i"
+      ]
+    },
+    {
+      "repetition": 1,
+      "concurrency": 6,
+      "state": "completed",
+      "calls": 34,
+      "error_code": null,
+      "seconds": "317.700081",
+      "cost_nusd": "113334900",
+      "noncompleted": 0,
+      "missing": [
+        "/vitamin k/i",
+        "/tentative|think|consider|okay/i",
+        "/sweep/i",
+        "/reconsider|next week/i"
+      ]
+    },
+    {
+      "repetition": 1,
+      "concurrency": 3,
+      "state": "completed",
+      "calls": 34,
+      "error_code": null,
+      "seconds": "291.762299",
+      "cost_nusd": "113167200",
+      "noncompleted": 0,
+      "missing": [
+        "/vitamin k/i",
+        "/tentative|think|consider|okay/i",
+        "/sweep/i",
+        "/reconsider|next week/i"
+      ]
+    }
+  ],
+  "intermediateMerge": [
+    {
+      "repetition": 0,
+      "effort": "medium",
+      "results": [
+        {
+          "key": "merge:0:0",
+          "state": "completed",
+          "valid": true,
+          "missing": [],
+          "seconds": 33.424,
+          "costUSD": 0.0034809,
+          "reasoningTokens": 2178
+        },
+        {
+          "key": "merge:1:0",
+          "state": "completed",
+          "valid": true,
+          "missing": [],
+          "seconds": 26.513,
+          "costUSD": 0.0022667,
+          "reasoningTokens": 1034
+        }
+      ]
+    },
+    {
+      "repetition": 0,
+      "effort": "low",
+      "results": [
+        {
+          "key": "merge:0:0",
+          "state": "completed",
+          "valid": true,
+          "missing": [],
+          "seconds": 16.233,
+          "costUSD": 0.0024649,
+          "reasoningTokens": 135
+        },
+        {
+          "key": "merge:1:0",
+          "state": "completed",
+          "valid": true,
+          "missing": [],
+          "seconds": 15.179,
+          "costUSD": 0.0015867,
+          "reasoningTokens": 129
+        }
+      ]
+    },
+    {
+      "repetition": 1,
+      "effort": "low",
+      "results": [
+        {
+          "key": "merge:0:0",
+          "state": "completed",
+          "valid": true,
+          "missing": [],
+          "seconds": 17.549,
+          "costUSD": 0.0024964,
+          "reasoningTokens": 142
+        },
+        {
+          "key": "merge:1:0",
+          "state": "completed",
+          "valid": true,
+          "missing": [],
+          "seconds": 19.814,
+          "costUSD": 0.0019017,
+          "reasoningTokens": 178
+        }
+      ]
+    },
+    {
+      "repetition": 1,
+      "effort": "medium",
+      "results": [
+        {
+          "key": "merge:0:0",
+          "state": "completed",
+          "valid": true,
+          "missing": [],
+          "seconds": 38.436,
+          "costUSD": 0.0037649,
+          "reasoningTokens": 2770
+        },
+        {
+          "key": "merge:1:0",
+          "state": "completed",
+          "valid": true,
+          "missing": [],
+          "seconds": 32.596,
+          "costUSD": 0.0027412,
+          "reasoningTokens": 1825
+        }
+      ]
+    },
+    {
+      "repetition": 2,
+      "effort": "medium",
+      "results": [
+        {
+          "key": "merge:0:0",
+          "state": "completed",
+          "valid": true,
+          "missing": [],
+          "seconds": 29.216,
+          "costUSD": 0.0030174,
+          "reasoningTokens": 1356
+        },
+        {
+          "key": "merge:1:0",
+          "state": "completed",
+          "valid": true,
+          "missing": [],
+          "seconds": 26.721,
+          "costUSD": 0.0023022,
+          "reasoningTokens": 971
+        }
+      ]
+    },
+    {
+      "repetition": 2,
+      "effort": "low",
+      "results": [
+        {
+          "key": "merge:0:0",
+          "state": "completed",
+          "valid": true,
+          "missing": [],
+          "seconds": 17.593,
+          "costUSD": 0.0024664,
+          "reasoningTokens": 227
+        },
+        {
+          "key": "merge:1:0",
+          "state": "completed",
+          "valid": true,
+          "missing": [],
+          "seconds": 15.261,
+          "costUSD": 0.0015682,
+          "reasoningTokens": 146
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Fictional corpus; not a clinical validation study.",
+    "Component batch speed is not whole-summary latency.",
+    "Initial workflow runs overlapped other experiments and are not isolated latency samples.",
+    "The initial combined-policy run was invalidated: older workers used medium reasoning for its intermediate merges.",
+    "Historical antenatal topics in a later postpartum history are recorded as content differences, not silently treated as passing golden checks.",
+    "An earlier removed benchmark deployment continued its build: v2 timing runs overlapped. The worker route changed during the baseline. Treat these as observed timings, not a controlled end-to-end speed estimate."
+  ],
+  "policyGuard": {
+    "databaseAdmissionFence": true,
+    "databaseDispatchFence": true,
+    "activeDeploymentQueueGuard": true,
+    "localTests": {
+      "total": 266,
+      "passed": 258,
+      "failed": 0,
+      "unrelatedSkipped": 8
+    },
+    "isolatedProviderValidation": "Frozen child policies verified in all three completed v2 workflows; timing isolation incomplete."
+  },
+  "initialWorkflow": [
+    {
+      "repetition": 0,
+      "concurrency": 3,
+      "state": "completed",
+      "calls": 34,
+      "error_code": null,
+      "seconds": "326.523376",
+      "cost_nusd": "116696700",
+      "noncompleted": 0,
+      "missing": [
+        "/vitamin k/i",
+        "/tentative|think|consider|okay/i",
+        "/sweep/i",
+        "/reconsider|next week/i"
+      ]
+    },
+    {
+      "repetition": 0,
+      "concurrency": 6,
+      "state": "completed",
+      "calls": 34,
+      "error_code": null,
+      "seconds": "319.230007",
+      "cost_nusd": "110743700",
+      "noncompleted": 0,
+      "missing": [
+        "/vitamin k/i",
+        "/tentative|think|consider|okay/i",
+        "/sweep/i",
+        "/reconsider|next week/i"
+      ]
+    },
+    {
+      "repetition": 1,
+      "concurrency": 6,
+      "state": "completed",
+      "calls": 34,
+      "error_code": null,
+      "seconds": "317.700081",
+      "cost_nusd": "113334900",
+      "noncompleted": 0,
+      "missing": [
+        "/vitamin k/i",
+        "/tentative|think|consider|okay/i",
+        "/sweep/i",
+        "/reconsider|next week/i"
+      ]
+    },
+    {
+      "repetition": 1,
+      "concurrency": 3,
+      "state": "completed",
+      "calls": 34,
+      "error_code": null,
+      "seconds": "291.762299",
+      "cost_nusd": "113167200",
+      "noncompleted": 0,
+      "missing": [
+        "/vitamin k/i",
+        "/tentative|think|consider|okay/i",
+        "/sweep/i",
+        "/reconsider|next week/i"
+      ]
+    },
+    {
+      "repetition": 2,
+      "concurrency": 3,
+      "state": "completed",
+      "calls": 34,
+      "error_code": null,
+      "seconds": "525.866889",
+      "cost_nusd": "113856600",
+      "noncompleted": 0,
+      "missing": [
+        "/vitamin k/i",
+        "/tentative|think|consider|okay/i",
+        "/sweep/i",
+        "/reconsider|next week/i"
+      ]
+    },
+    {
+      "repetition": 2,
+      "concurrency": 6,
+      "state": "completed",
+      "calls": 34,
+      "error_code": null,
+      "seconds": "243.699930",
+      "cost_nusd": "113286800",
+      "noncompleted": 0,
+      "missing": [
+        "/vitamin k/i",
+        "/tentative|think|consider|okay/i",
+        "/sweep/i",
+        "/reconsider|next week/i",
+        "/LDL/i",
+        "/4\\.8/"
+      ]
+    }
+  ],
+  "guardedWorkflow": [
+    {
+      "repetition": 0,
+      "concurrency": 3,
+      "state": "completed",
+      "calls": 34,
+      "error_code": null,
+      "seconds": "306.851111",
+      "cost_nusd": "112665700",
+      "noncompleted": 0,
+      "missing": [
+        "/vitamin k/i",
+        "/tentative|think|consider|okay/i",
+        "/sweep/i",
+        "/reconsider|next week/i"
+      ]
+    },
+    {
+      "repetition": 0,
+      "concurrency": 6,
+      "state": "completed",
+      "calls": 34,
+      "error_code": null,
+      "seconds": "242.913276",
+      "cost_nusd": "110838700",
+      "noncompleted": 0,
+      "missing": [
+        "/vitamin k/i",
+        "/tentative|think|consider|okay/i",
+        "/sweep/i",
+        "/reconsider|next week/i"
+      ]
+    },
+    {
+      "repetition": 1,
+      "concurrency": 6,
+      "state": "completed",
+      "calls": 34,
+      "error_code": null,
+      "seconds": "245.011117",
+      "cost_nusd": "113472600",
+      "noncompleted": 0,
+      "missing": [
+        "/vitamin k/i",
+        "/tentative|think|consider|okay/i",
+        "/sweep/i",
+        "/reconsider|next week/i"
+      ]
+    }
+  ],
+  "rolloutDecision": {
+    "parallelConcurrency": 6,
+    "intermediateReasoning": "medium",
+    "lowMergeEnabled": false,
+    "reason": "Second low-merge workflow omitted the booked November 17 visit that baseline and first low-merge output retained. No clinical equivalence or 2x end-to-end claim.",
+    "founderDeployment": "dpl_8LUJHgFYTvauWHx7rxqNaqPop61H",
+    "workerRoutingVerified": true,
+    "rollbackDeployment": "dpl_FYR1bmNPZVs8encoRjDey9jnYtcB"
+  },
+  "finalOutputReview": [
+    {
+      "case": "founder-speed-combined-fenced-20261120-v2:0:6",
+      "bulletCount": 25,
+      "texts": [
+        "Postpartum status \u2014 Delivered 2026-10-01, six weeks postpartum 2026-11-12",
+        "Breastfeeding \u2014 Ongoing 2026-11-12",
+        "Kidney transplant \u2014 Tacrolimus and mycophenolate ongoing",
+        "Penicillin allergy \u2014 Anaphylaxis",
+        "Hypothyroidism \u2014 Levothyroxine ongoing",
+        "Asthma \u2014 Exercise wheezing twice weekly 2026-10-05",
+        "Fatigue \u2014 Persistent 2026-11-12",
+        "Left knee pain \u2014 After running 2026-11-04",
+        "Dry cough \u2014 Persistent two weeks by 2026-11-06, no fever",
+        "Salbutamol \u2014 Used as needed",
+        "Budesonide \u2014 Prescribed 2026-10-05, not started",
+        "Budesonide \u2014 side effects queried",
+        "Montelukast \u2014 Previously stopped after nightmares",
+        "Asthma follow-up \u2014 Agreed in four weeks from 2026-10-05",
+        "Corticosteroid injection \u2014 Declined 2026-11-04",
+        "MRI \u2014 Deferred unless symptoms persist after six weeks of physiotherapy",
+        "Physiotherapy \u2014 Accepted, booked 2026-11-08 w/ Pat",
+        "Antibiotic \u2014 Not prescribed pending assessment",
+        "Oral iron \u2014 Discussed, no decision made",
+        "Statin \u2014 Not prescribed as of 2026-09-12",
+        "Next visit \u2014 Booked with Jo 2026-11-17 at 10 am",
+        "LDL \u2014 4.8 mmol/L above range 2026-09-12, improved from 5.6 mmol/L 2026-06-10",
+        "Ferritin \u2014 9 ug/L below range 2026-09-12",
+        "TSH check \u2014 Booked 2026-11-19",
+        "Chest X-ray \u2014 Booked 2026-11-07"
+      ]
+    },
+    {
+      "case": "founder-speed-combined-fenced-20261120-v2:0:3",
+      "bulletCount": 23,
+      "texts": [
+        "Pregnancy/postpartum \u2014 delivered 2026-10-01, six weeks postpartum 2026-11-12",
+        "Breastfeeding \u2014 documented at six-week postpartum visit 2026-11-12",
+        "Kidney transplant \u2014 tacrolimus and mycophenolate ongoing 2026-11-06",
+        "Penicillin allergy \u2014 anaphylaxis",
+        "Hypothyroidism \u2014 levothyroxine ongoing 2026-11-12",
+        "Asthma \u2014 exercise-related wheezing twice weekly 2026-10-05",
+        "Fatigue \u2014 persistent at six-week postpartum visit 2026-11-12",
+        "Dry cough \u2014 persistent two weeks 2026-11-06, no fever",
+        "Left knee pain \u2014 after running, documented 2026-11-04",
+        "Salbutamol \u2014 as-needed use",
+        "Budesonide \u2014 prescribed 2026-10-05, not started, side-effect question",
+        "Montelukast \u2014 previously stopped because of nightmares",
+        "Oral iron \u2014 discussed, no decision",
+        "Corticosteroid injection \u2014 declined 2026-11-04",
+        "MRI \u2014 deferred unless symptoms persist after six weeks of physiotherapy",
+        "Physiotherapy \u2014 accepted, booked 2026-11-08 with Pat",
+        "Antibiotic \u2014 none prescribed pending assessment",
+        "Asthma follow-up \u2014 agreed four weeks after 2026-10-05",
+        "Visit with Jo \u2014 booked 2026-11-17 at 10 am",
+        "LDL \u2014 4.8 mmol/L above range 2026-09-12, improved from 5.6 mmol/L 2026-06-10",
+        "Ferritin \u2014 9 ug/L below range 2026-09-12",
+        "TSH check \u2014 booked 2026-11-19",
+        "Chest X-ray \u2014 booked 2026-11-07"
+      ]
+    },
+    {
+      "case": "founder-speed-combined-fenced-20261120-v2:1:6",
+      "bulletCount": 21,
+      "texts": [
+        "Kidney transplant \u2014 Tacrolimus and mycophenolate documented 2026-11-06",
+        "Penicillin allergy \u2014 Anaphylaxis",
+        "Postpartum status \u2014 Delivered 2026-10-01, breastfeeding six weeks postpartum 2026-11-12",
+        "Hypothyroidism \u2014 Levothyroxine continued 2026-11-12",
+        "Asthma \u2014 Exercise wheezing twice weekly 2026-10-05",
+        "Dry cough \u2014 Persistent two weeks 2026-11-06, no fever reported",
+        "Left knee pain \u2014 After running 2026-11-04",
+        "Fatigue \u2014 Persistent at six weeks postpartum 2026-11-12",
+        "Salbutamol \u2014 Used as needed",
+        "Budesonide \u2014 Prescribed 2026-10-05, not started, side effects queried",
+        "Montelukast \u2014 Previously stopped after nightmares",
+        "Antibiotics \u2014 None prescribed pending assessment 2026-11-06",
+        "Corticosteroid injection \u2014 Declined 2026-11-04",
+        "MRI \u2014 Deferred unless symptoms persist after six weeks of physiotherapy",
+        "Oral iron \u2014 Discussed 2026-09-12, no decision made",
+        "Asthma follow-up \u2014 Agreed four weeks from 2026-10-05",
+        "Physiotherapy \u2014 Accepted, booked 2026-11-08 w/ Pat",
+        "TSH check \u2014 Booked 2026-11-19",
+        "Chest X-ray \u2014 Booked 2026-11-07",
+        "LDL \u2014 4.8 mmol/L above range 2026-09-12, improved from 5.6 mmol/L 2026-06-10",
+        "Ferritin \u2014 9 ug/L below range 2026-09-12"
+      ]
+    }
+  ],
+  "temporaryDataCleanup": {
+    "completedWorkflowPayloadsPurged": 10,
+    "standalonePayloadsPurged": 48,
+    "workflowPayloadsRemaining": 0,
+    "providerPayloadsRemaining": 0
+  }
+}

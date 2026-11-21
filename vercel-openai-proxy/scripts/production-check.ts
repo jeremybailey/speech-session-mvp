@@ -29,6 +29,19 @@ async function main() {
         assert.equal((await db.query('SELECT 1 FROM information_schema.columns WHERE table_schema=$1 AND table_name=$2 AND column_name=$3',['public',table,column])).rows.length,1,'Incremental migration missing');
       }
     }
+    if(process.env.AI_SUMMARY_WORKFLOWS_ENABLED==='true') {
+      checkpoint='summary-workflows';
+      assert.equal((await db.query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='ai_summary_workflows' AND column_name='execution_policy'")).rows.length,1,'Summary execution policy migration missing');
+      if(process.env.AI_SUMMARY_PARALLEL_V2==='true')assert.equal(process.env.STORY_LAB_ENABLED,'true','Parallel summary rollout is founder-only');
+      assert.equal((await db.query("SELECT 1 FROM pg_trigger WHERE tgname='summary_execution_policy_fence' AND tgrelid='ai_summary_workflows'::regclass AND NOT tgisinternal")).rows.length,1,'Summary policy fence missing');
+      assert.equal((await db.query("SELECT 1 FROM pg_trigger WHERE tgname='summary_dispatch_policy_fence' AND tgrelid='ai_summary_outbox'::regclass AND NOT tgisinternal")).rows.length,1,'Summary dispatch fence missing');
+      if(process.env.AI_SUMMARY_MERGE_LOW==='true')assert.equal(process.env.AI_SUMMARY_PARALLEL_V2,'true','Merge experiment requires its pinned parallel policy');
+      assert.equal(process.env.AI_WHOLE_HISTORY_PROVIDER_BACKGROUND,'true');
+      for(const table of ['ai_summary_workflows','ai_summary_payloads','ai_summary_steps','ai_summary_children','ai_summary_outbox','ai_summary_uploads','ai_summary_upload_parts','ai_summary_cancellations']) {
+        assert.ok((await db.query('SELECT to_regclass($1) AS name',['public.'+table])).rows[0].name,'Summary migration missing');
+      }
+      assert.ok((process.env.AI_SUMMARY_WORKFLOW_KINDS??'practitioner').split(',').every(k=>['record','practitioner','overview'].includes(k)));
+    }
     checkpoint = 'shared-budget';
     const budget=(await db.query('SELECT limit_nusd,used_nusd,reserved_nusd FROM ai_budgets WHERE id=$1',[process.env.AI_BUDGET_ID])).rows[0];
     assert.ok(budget&&BigInt(budget.limit_nusd)<=(process.env.STORY_LAB_ENABLED==='true'?10000000000n:20000000000n),'Shared ceiling exceeds approved allowance');

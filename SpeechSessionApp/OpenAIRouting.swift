@@ -1,5 +1,7 @@
 import Foundation
 import CryptoKit
+import UIKit
+import SpeechSessionPersistence
 
 /// Explicit Stop is separate from cancellation of foreground polling.
 actor DurableProcessingStop {
@@ -94,8 +96,9 @@ struct DurableResultReceipt: Codable {
 
     static func load(key: String, directory: URL? = nil) throws -> Self? {
         let root = try directory ?? Self.directory()
+        let now = Date().timeIntervalSinceReferenceDate
         for file in (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] {
-            if let data = try? Data(contentsOf: file), let receipt = try? JSONDecoder().decode(Self.self, from: data), receipt.expiresAt <= Date() {
+            if let data = try? Data(contentsOf: file), let receipt = try? JSONDecoder().decode(Self.self, from: data), receipt.expiresAt.timeIntervalSinceReferenceDate <= now {
                 try FileManager.default.removeItem(at: file)
             }
         }
@@ -439,12 +442,124 @@ struct OpenAIChatTransport: Sendable {
         case 402: message = "The processing budget has been reached. Check AI usage in Settings; retrying will not increase the allowance."
         case 429: message = "The processing service is busy or temporarily rate limited (HTTP 429). Wait a few minutes before retrying. Your saved records are unchanged; a submitted job may still finish in the background."
         case 404, 405: message = "This app and the processing service need matching updates. Your saved records are unchanged; retrying will not fix this."
-        case 400, 413: message = "The processing service could not accept this request. Your saved records are unchanged. Please contact support before retrying."
+        case 400, 413, 422: message = "The processing service could not accept this request. Your saved records are unchanged. Please contact support before retrying."
         default: message = code == "pilot_disabled"
             ? "Budgeted processing is not enabled on the server yet. Your saved records are unchanged."
             : "The processing service is temporarily unavailable (HTTP \(status)). Your saved records are unchanged; a submitted job may still finish in the background."
         }
         // Never surface raw provider errors, source excerpts, or credentials.
         throw NSError(domain: "AIProcessing", code: status, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+}
+
+/// A service-owned job is independent of local polling. The local receipt is
+/// written atomically before acknowledgment allows deletion of cloud content.
+extension OpenAIChatTransport {
+    var usesSummaryWorkflows: Bool {
+        Bundle.main.object(forInfoDictionaryKey: "ServiceSummaryWorkflowsEnabled") as? Bool == true && durableJobsURL != nil
+    }
+
+    func summaryWorkflowState(id: String) async throws -> String {
+        guard usesSummaryWorkflows, let jobs = durableJobsURL else { throw URLError(.unsupportedURL) }
+        var components = URLComponents(url: jobs.deletingLastPathComponent().appendingPathComponent("summary-workflows"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "id", value: id)]
+        var request = URLRequest(url: components.url!); request.timeoutInterval = 30
+        request.setValue(try await makeAuthorizationHeader(), forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try Self.validateDurableResponse(data: data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any], let state = result["state"] as? String else { throw URLError(.cannotParseResponse) }
+        return state
+    }
+
+    func summaryWorkflow(_ value: [String: Any], retryUnfinished: Bool = false, onProgress: (@MainActor @Sendable (Int, Int) -> Void)? = nil) async throws -> [String: Any] {
+        guard usesSummaryWorkflows, let jobs = durableJobsURL,
+              let id = value["id"] as? String else { throw URLError(.unsupportedURL) }
+        let base = jobs.deletingLastPathComponent().appendingPathComponent("summary-workflows")
+        var components = URLComponents(url: base, resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "id", value: id)]
+        let statusURL = components.url!
+        let body = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+        guard body.count <= 2_000_000 else { throw NSError(domain:"SummaryWorkflow",code:413,userInfo:[NSLocalizedDescriptionKey:"This summary is too large for cloud processing. Your saved summary is unchanged."]) }
+        let receiptKey = try DurableResultReceipt.key(body: body, url: base, authorization: try await makeAuthorizationHeader(), experimental: fastExperiment)
+        func exchange(_ url: URL, _ method: String, _ body: Data? = nil) async throws -> [String: Any] {
+            var request = URLRequest(url: url)
+            request.httpMethod = method; request.httpBody = body; request.timeoutInterval = 30
+            request.setValue("application/json", forHTTPHeaderField:"Content-Type")
+            request.setValue(try await makeAuthorizationHeader(), forHTTPHeaderField:"Authorization")
+            let (data, response) = try await DurableNetworkRecovery.run { try await URLSession.shared.data(for: request) }
+            try Self.validateDurableResponse(data:data,status:(response as? HTTPURLResponse)?.statusCode ?? 0)
+            guard let result = try JSONSerialization.jsonObject(with:data) as? [String:Any] else { throw URLError(.cannotParseResponse) }
+            return result
+        }
+        func acknowledge(_ receipt: DurableResultReceipt) async throws -> [String:Any] {
+            let hash = SHA256.hash(data:Data(receipt.output.utf8)).map { String(format:"%02x",$0) }.joined()
+            let result = try await exchange(statusURL,"PATCH",JSONSerialization.data(withJSONObject:["digest":hash]))
+            guard result["received"] as? Bool == true, result["id"] as? String == id else { throw URLError(.cannotParseResponse) }
+            guard let output = try JSONSerialization.jsonObject(with:Data(receipt.output.utf8)) as? [String:Any],
+                  output["sourceRevision"] as? String == value["sourceRevision"] as? String,
+                  output["publicationRevision"] as? String == value["publicationRevision"] as? String,
+                  output["contract"] as? String == value["contract"] as? String,
+                  output["kind"] as? String == value["kind"] as? String,
+                  output["template"] as? String == value["template"] as? String else { throw URLError(.cannotParseResponse) }
+            return output
+        }
+        if let receipt = try DurableResultReceipt.load(key:receiptKey) { return try await acknowledge(receipt) }
+        var submitted:[String:Any]
+        if body.count > 350_000 {
+            let size=240_000, count=(body.count+size-1)/size
+            let hash=SHA256.hash(data:body).map { String(format:"%02x",$0) }.joined()
+            for part in 0..<count {
+                try Task.checkCancellation()
+                let chunk=body.subdata(in:(part*size)..<min(body.count,(part+1)*size)).base64EncodedString()
+                _ = try await exchange(statusURL,"PUT",JSONSerialization.data(withJSONObject:["operation":"part","hash":hash,"count":count,"part":part,"content":chunk]))
+            }
+            submitted = try await exchange(statusURL,"PUT",JSONSerialization.data(withJSONObject:["operation":"complete","hash":hash,"count":count]))
+        } else { submitted = try await exchange(base,"POST",body) }
+        if submitted["state"] as? String == "needs_attention" {
+            if retryUnfinished {
+                let checkpoint = try await exchange(statusURL, "GET")
+                if let revision = checkpoint["revision"] as? Int {
+                    _ = try await exchange(statusURL, "POST", JSONSerialization.data(withJSONObject: ["expectedRevision": revision]))
+                }
+            } else { _ = try await exchange(statusURL, "POST") }
+        }
+        while true {
+            try Task.checkCancellation()
+            // iOS need not run this loop for the service to progress.
+            #if os(iOS)
+            while await MainActor.run(body: { UIApplication.shared.applicationState != .active }) {
+                try await Task.sleep(nanoseconds:1_000_000_000)
+            }
+            #endif
+            let status=try await exchange(statusURL,"GET")
+            if let completed=status["completed"] as? Int, let total=status["total"] as? Int,
+               total > 0, completed >= 0, completed <= total {
+                await onProgress?(completed,total)
+            }
+            switch status["state"] as? String {
+            case "completed":
+                guard let output=status["output"] as? String,let hash=status["digest"] as? String,
+                      SHA256.hash(data:Data(output.utf8)).map({String(format:"%02x",$0)}).joined()==hash else {throw URLError(.cannotParseResponse)}
+                let receipt=DurableResultReceipt(jobID:id,output:output,expiresAt:Date().addingTimeInterval(7*86400))
+                try receipt.save(key:receiptKey)
+                return try await acknowledge(receipt)
+            case "needs_attention","cancelled","superseded","expired":
+                let reason=status["error_code"] as? String ?? status["state"] as? String ?? "unavailable"
+                throw NSError(domain:"SummaryWorkflow",code:409,userInfo:["workflowState":status["state"] as? String ?? "needs_attention", "workflowReason":reason, NSLocalizedDescriptionKey: SummaryWorkflowFailureMessage.message(reason: reason)])
+            default: break
+            }
+            try await Task.sleep(nanoseconds:2_000_000_000)
+        }
+    }
+
+    func cancelSummaryWorkflow(_ id:UUID) async throws {
+        guard let jobs=durableJobsURL else {return}
+        var url=URLComponents(url:jobs.deletingLastPathComponent().appendingPathComponent("summary-workflows"),resolvingAgainstBaseURL:false)!
+        url.queryItems=[URLQueryItem(name:"id",value:id.uuidString.lowercased())]
+        var request=URLRequest(url:url.url!);request.httpMethod="DELETE";request.timeoutInterval=30
+        request.setValue(try await makeAuthorizationHeader(),forHTTPHeaderField:"Authorization")
+        let (data,response)=try await URLSession.shared.data(for:request)
+        if (response as? HTTPURLResponse)?.statusCode == 404 {return}
+        try Self.validateDurableResponse(data:data,status:(response as? HTTPURLResponse)?.statusCode ?? 0)
     }
 }

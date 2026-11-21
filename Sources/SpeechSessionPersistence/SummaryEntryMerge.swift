@@ -10,8 +10,17 @@ public enum SummaryEntryMerge {
         var result: [SummaryEntry] = []
         result.reserveCapacity(generated.count + existing.count)
 
+        // These details are published together with record bullets. A later
+        // general extraction does not own their identities or dispositions.
+        let extractionEntries = existing.filter { $0.provenance != "Record choice review" && $0.originalCategory == nil }
         for gen in generated {
-            if let old = firstMatch(of: gen, in: existing, excluding: consumed) {
+            if let corrected = existing.first(where: {
+                $0.originalCategory != nil && $0.sourceSessionID == gen.sourceSessionID &&
+                ($0.id == gen.id || ($0.title.caseInsensitiveCompare(gen.title) == .orderedSame &&
+                    $0.supportingExcerpt != nil && $0.supportingExcerpt == gen.supportingExcerpt))
+            }) {
+                if consumed.insert(corrected.id).inserted { result.append(corrected) }
+            } else if let old = firstMatch(of: gen, in: extractionEntries, excluding: consumed) {
                 consumed.insert(old.id)
                 result.append(reconcile(generated: gen, existing: old))
             } else {
@@ -20,6 +29,10 @@ public enum SummaryEntryMerge {
         }
 
         for old in existing where !consumed.contains(old.id) {
+            if old.provenance == "Record choice review" {
+                if !result.contains(where: { $0.id == old.id }) { result.append(old) }
+                continue
+            }
             if old.origin == .userAdded || old.origin == .userEdited || old.isDeleted || old.evidence?.instructionIdentity != nil || old.evidence?.factIdentity != nil {
                 var retained = old
                 if supersedeUnmatchedGenerated, old.origin != .userAdded, old.origin != .userEdited, !old.isDeleted {

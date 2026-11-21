@@ -50,6 +50,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>CloudOpenAIBaseURL</key>
 	<string>$(CC_BACKEND_BASE_URL)</string>
+	<key>ServiceSummaryWorkflowsEnabled</key>
+	<true/>
 	<key>DurableAIProcessingEnabled</key>
 	<true/>
 	<key>DurableConditionWorkflowsEnabled</key>

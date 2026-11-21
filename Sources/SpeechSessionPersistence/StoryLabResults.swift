@@ -65,7 +65,7 @@ public struct StoryLabReading: Codable, Equatable, Identifiable, Sendable {
     }
 
     private static func day(_ string: String) -> Date? {
-        for pattern in ["yyyy-MM-dd", "MMM d, yyyy", "MMMM d, yyyy", "d MMM yyyy"] {
+        for pattern in ["yyyy-MM-dd", "MMM d, yyyy", "MMMM d, yyyy", "d MMM yyyy", "MMM d, yyyy hh:mm a", "MMM d, yyyy h:mm a"] {
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")
             formatter.timeZone = TimeZone(secondsFromGMT: 0)
@@ -81,6 +81,103 @@ public struct StoryLabReading: Codable, Equatable, Identifiable, Sendable {
         return date.formatted(style)
     }
 
+    public var abnormalLabel: String? {
+        switch interpretation.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "h", "high", "elevated", "above range", "above normal range", "above reference range": return "↑ High"
+        case "hh", "critical high": return "↑ Critical high"
+        case "l", "low", "below range", "below normal range", "below reference range": return "↓ Low"
+        case "ll", "critical low": return "↓ Critical low"
+        case "a", "abnormal", "out of range": return "Abnormal"
+        case "critical": return "Critical"
+        case "", "unknown", "unspecified": break
+        default: return nil
+        }
+        let comparator = ["<=", ">=", "<", ">", "≤", "≥"].first { result.hasPrefix($0) } ?? ""
+        guard let value = Double(result.dropFirst(comparator.count).trimmingCharacters(in: .whitespaces)), value.isFinite else { return nil }
+        let allowsHigh = !["<", "<=", "≤"].contains(comparator)
+        let allowsLow = ![">", ">=", "≥"].contains(comparator)
+        var bounds = interval.trimmingCharacters(in: .whitespaces)
+        if !unit.isEmpty && bounds.hasSuffix(unit) {
+            bounds = String(bounds.dropLast(unit.count)).trimmingCharacters(in: .whitespaces)
+        }
+        for (symbol, high, inclusive) in [("<=", true, true), ("≤", true, true), ("<", true, false),
+                                           (">=", false, true), ("≥", false, true), (">", false, false)] where bounds.hasPrefix(symbol) {
+            guard let limit = Double(bounds.dropFirst(symbol.count).trimmingCharacters(in: .whitespaces)), limit.isFinite else { return nil }
+            if high { return allowsHigh && (value > limit || ((!inclusive || comparator == ">") && value == limit)) ? "↑ High" : nil }
+            return allowsLow && (value < limit || ((!inclusive || comparator == "<") && value == limit)) ? "↓ Low" : nil
+        }
+        guard let match = bounds.wholeMatch(of: #/([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*(?:-|–|—|to)\s*([+-]?(?:\d+(?:\.\d+)?|\.\d+))/#),
+              let low = Double(match.1), let high = Double(match.2), low <= high else { return nil }
+        if allowsLow && (value < low || (value == low && comparator == "<")) { return "↓ Low" }
+        return allowsHigh && (value > high || (value == high && comparator == ">")) ? "↑ High" : nil
+    }
+
+    public var arrow: String? {
+        guard let label = abnormalLabel, label.hasPrefix("↑") || label.hasPrefix("↓") else { return nil }
+        return String(label.prefix(1))
+    }
+
+    public func isImproving(in history: [StoryLabReading]) -> Bool {
+        guard let date, let value = number, let direction = arrow, !interval.isEmpty else { return false }
+        let earlier = history.filter {
+            $0.name.caseInsensitiveCompare(name) == .orderedSame && $0.unit == unit &&
+            $0.specimen == specimen && $0.context == context &&
+            $0.date.map { $0 < date } == true
+        }
+        guard let previousDate = earlier.compactMap(\.date).max() else { return false }
+        let previous = earlier.filter { $0.date == previousDate }
+        guard let prior = previous.first, prior.interval == interval, prior.arrow == direction,
+              let priorValue = prior.number,
+              previous.allSatisfy({ $0.number == priorValue && $0.interval == interval && $0.arrow == direction }) else { return false }
+        return direction == "↑" ? value < priorValue : value > priorValue
+    }
+
+    public var shareName: String {
+        if let acronym = name.firstMatch(of: #/\(([A-Z][A-Za-z0-9-]{1,9})\)$/#),
+           String(name[..<acronym.range.lowerBound].split(whereSeparator: { !$0.isLetter && !$0.isNumber }).compactMap(\.first)).uppercased() == acronym.1.uppercased() {
+            return String(acronym.1)
+        }
+        switch name.lowercased().replacingOccurrences(of: "-", with: " ") {
+        case "low density lipoprotein", "low density lipoprotein cholesterol": return "LDL"
+        case "low density lipoprotein cholesterol (calculated)": return "LDL (calculated)"
+        case "non high density lipoprotein cholesterol", "non hdl cholesterol": return "Non-HDL"
+        case "cholesterol, total", "total cholesterol": return "Total cholesterol"
+        case "high density lipoprotein", "high density lipoprotein cholesterol": return "HDL"
+        case "thyroid stimulating hormone": return "TSH"
+        case "c reactive protein": return "CRP"
+        default: return name
+        }
+    }
+
+    public static func distinctForSharing(_ readings: [Self]) -> [Self] {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        var result: [Self] = []
+        for reading in readings {
+            guard let date = reading.date, let record = reading.recordID else {
+                if !result.contains(where: { $0.id == reading.id }) { result.append(reading) }
+                continue
+            }
+            if let index = result.firstIndex(where: { prior in
+                guard let previousDate = prior.date else { return false }
+                return prior.recordID == record && prior.name.caseInsensitiveCompare(reading.name) == .orderedSame &&
+                    prior.result == reading.result && prior.unit == reading.unit &&
+                    prior.specimen == reading.specimen && prior.context == reading.context &&
+                    (prior.interval == reading.interval || prior.interval.isEmpty || reading.interval.isEmpty) &&
+                    prior.abnormalLabel == reading.abnormalLabel &&
+                    calendar.isDate(date, inSameDayAs: previousDate) &&
+                    (date == previousDate || !prior.dateLabel.contains(":") || !reading.dateLabel.contains(":"))
+            }) {
+                let prior = result[index]
+                if (prior.interval.isEmpty && !reading.interval.isEmpty) ||
+                    (prior.interval == reading.interval && reading.dateLabel.contains(":") && !prior.dateLabel.contains(":")) {
+                    result[index] = reading
+                }
+            } else { result.append(reading) }
+        }
+        return result
+    }
+
     public var valueLabel: String { [result, unit].filter { !$0.isEmpty }.joined(separator: " ") }
     public var number: Double? {
         guard !unit.isEmpty, result.range(of: #"^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$"#, options: .regularExpression) != nil,
@@ -93,10 +190,10 @@ public struct StoryLabSeries: Identifiable, Sendable {
     public let readings: [StoryLabReading]
     public var latest: StoryLabReading { readings[0] }
     public var id: UUID { latest.id }
-    public var title: String { [latest.name, latest.specimen, latest.context].filter { !$0.isEmpty }.joined(separator: " · ") }
+    public var title: String { [latest.shareName, latest.specimen, latest.context].filter { !$0.isEmpty }.joined(separator: " · ") }
 
     public static func grouped(_ readings: [StoryLabReading]) -> [Self] {
-        let groups = Dictionary(grouping: readings) { reading in
+        let groups = Dictionary(grouping: StoryLabReading.distinctForSharing(readings)) { reading in
             [reading.name.lowercased(), reading.unit, reading.specimen.lowercased(), reading.context.lowercased()]
         }
         return groups.values.flatMap { group -> [Self] in
@@ -143,17 +240,33 @@ public struct StoryLabSparkline: View {
 }
 
 public struct StorySummarySnapshot: Codable, Sendable {
+    public var serviceWorkflowVersion:String? = nil
+    public var publicationSummary:StorySharedSummary? = nil
     public let evidence: [StoryEvidence]
     public let labs: [StoryLabReading]
+
+    /// Array enumeration order is not a clinical revision. Compare every encoded
+    /// field, including identities and duplicate counts, in a stable order.
+    public func hasSameSources(as other: Self) throws -> Bool {
+        let encoder=JSONEncoder();encoder.outputFormatting=[.sortedKeys]
+        func rows<T: Encodable>(_ values:[T]) throws -> [String] {
+            try values.map { String(decoding:try encoder.encode($0),as:UTF8.self) }.sorted()
+        }
+        // Date labels are derived presentation metadata, absent in older frozen requests.
+        func sourceRows(_ values:[StoryEvidence])->[StoryEvidence] {
+            values.map { var source=$0;source.timelineLabel=nil;return source }
+        }
+        return try rows(sourceRows(evidence))==rows(sourceRows(other.evidence)) && rows(labs)==rows(other.labs)
+    }
 }
 
 extension SessionStore {
-    public func storySummarySnapshot() throws -> StorySummarySnapshot {
+    public func storySummarySnapshot(includeTimeline:Bool=true) throws -> StorySummarySnapshot {
         let facts = HealthMemoryProjection.facts(in: try healthSnapshot())
         let readings = facts.filter { $0.category == .testsAndLabs && !$0.preference.hidden }
             .flatMap(\.occurrences).filter { HealthStoryEligibility.includes($0) }
             .flatMap(StoryLabReading.savedReadings)
-        return StorySummarySnapshot(evidence: try storySummaryEvidence(), labs: readings)
+        return StorySummarySnapshot(evidence: try storySummaryEvidence(includeTimeline:includeTimeline), labs: readings)
     }
 }
 
@@ -174,10 +287,10 @@ extension SessionStore {
         let frozen = (try? JSONDecoder().decode(StorySummarySnapshot.self, from: data))?.evidence
             ?? (try? JSONDecoder().decode([StoryEvidence].self, from: data))
         guard let frozen else { return summary }
-        let current = try storySummarySnapshot()
+        let current = try storySummarySnapshot(includeTimeline:frozen.contains{$0.timelineLabel != nil})
         guard !current.labs.isEmpty else { return summary }
         if current.evidence != frozen {
-            guard try storySummaryEvidence(legacyDates: true) == frozen else { return summary }
+            guard try storySummaryEvidence(legacyDates: true,includeTimeline:frozen.contains{$0.timelineLabel != nil}) == frozen else { return summary }
         }
         summary.labReadings = current.labs
         return summary

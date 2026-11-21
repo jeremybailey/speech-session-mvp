@@ -110,6 +110,71 @@ struct SQLiteSessionStorage {
             catch {try? execute(db,"ROLLBACK");throw error}
         }
     }
+    struct MetadataEdit: Encodable {
+        var editedRecordTitle: String?
+        var visitTime: Date?
+        var linkedMemberIDs: Set<UUID>?
+        var selectedFolderIDs: Set<UUID>?
+    }
+
+    // The existing record payload also contains markers for normalized child
+    // tables. Patch only the metadata keys so those children stay attached.
+    func saveMetadata(recordID: UUID?, fields: MetadataEdit, newFolders: ArraySlice<SessionFolder>,
+                      member: (Int, CareTeamMember)?, draft: (position: Int, record: Session, insert: Bool)?, encoder: JSONEncoder) throws -> Bool {
+        try connection { db in
+            try execute(db, "BEGIN IMMEDIATE")
+            do {
+                func run(_ sql: String, _ arguments: [String]) throws {
+                    var stmt: OpaquePointer?
+                    guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { throw SessionStoreError.encodingFailed }
+                    defer { sqlite3_finalize(stmt) }
+                    for (offset, value) in arguments.enumerated() {
+                        guard sqlite3_bind_text(stmt, Int32(offset + 1), value, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self)) == SQLITE_OK else { throw SessionStoreError.encodingFailed }
+                    }
+                    guard sqlite3_step(stmt) == SQLITE_DONE else { throw SessionStoreError.ioFailed("Could not save record metadata.") }
+                }
+                // A new database needs its envelope header before partial writes.
+                var check: OpaquePointer?
+                guard sqlite3_prepare_v2(db, "SELECT 1 FROM metadata WHERE id='envelope'", -1, &check, nil) == SQLITE_OK else { throw SessionStoreError.decodingFailed }
+                let result = sqlite3_step(check)
+                sqlite3_finalize(check)
+                if result == SQLITE_DONE { try execute(db, "ROLLBACK"); return false }
+                guard result == SQLITE_ROW else { throw SessionStoreError.decodingFailed }
+                for index in newFolders.indices {
+                    let folder = newFolders[index]
+                    try run("INSERT INTO folders(id,position,payload) VALUES(?,?,?)",
+                            [folder.id.uuidString, String(index), String(decoding: try encoder.encode(folder), as: UTF8.self)])
+                }
+                if let (position, contact) = member {
+                    try run("INSERT INTO care_team(id,position,payload) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
+                            [contact.id.uuidString, String(position), String(decoding: try encoder.encode(contact), as: UTF8.self)])
+                }
+                if let draft {
+                    let payload = String(decoding: try encoder.encode(draft.record), as: UTF8.self)
+                    let id = draft.record.id.uuidString
+                    if draft.insert {
+                        try run("UPDATE records SET position=position+1 WHERE position>=?", [String(draft.position)])
+                        try run("INSERT INTO records(id,position,payload) VALUES(?,?,?)", [id, String(draft.position), payload])
+                    } else {
+                        try run("UPDATE records SET payload=? WHERE id=?", [payload, id])
+                        guard sqlite3_changes(db) == 1 else { throw StoryEditError.notFound }
+                    }
+                }
+                if let recordID {
+                    let original = fields.selectedFolderIDs == nil ? "payload" : "json_remove(payload,'$.folderID')"
+                    try run("UPDATE records SET payload=json_patch(\(original),?) WHERE id=?",
+                            [String(decoding: try encoder.encode(fields), as: UTF8.self), recordID.uuidString])
+                    guard sqlite3_changes(db) == 1 else { throw StoryEditError.notFound }
+                }
+                try execute(db, "COMMIT")
+                return true
+            } catch {
+                try? execute(db, "ROLLBACK")
+                throw error
+            }
+        }
+    }
+
     func save(_ data: Data) throws {
         try connection { db in
             try execute(db,"BEGIN IMMEDIATE")

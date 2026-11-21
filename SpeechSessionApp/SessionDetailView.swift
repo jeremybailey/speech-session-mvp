@@ -6,6 +6,43 @@ import SpeechSessionFeatures
 import SpeechSessionPersistence
 import SpeechSessionTranscription
 
+private struct RecordTagLayout: Layout {
+
+    private func arrange(_ subviews: Subviews, width: CGFloat,
+                         place: (LayoutSubview, CGPoint, CGSize) -> Void) -> CGSize {
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var usedWidth: CGFloat = 0
+        for tag in subviews {
+            let ideal = tag.sizeThatFits(.unspecified)
+            let size = ideal.width > width
+                ? tag.sizeThatFits(ProposedViewSize(width: width, height: nil)) : ideal
+            if x > 0 && x + size.width > width {
+                x = 0
+                y += rowHeight + 2
+                rowHeight = 0
+            }
+            place(tag, CGPoint(x: x, y: y), size)
+            usedWidth = max(usedWidth, x + size.width)
+            rowHeight = max(rowHeight, size.height)
+            x += size.width
+        }
+        return CGSize(width: width.isFinite ? width : usedWidth, height: y + rowHeight)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(subviews, width: proposal.width ?? .infinity) { _, _, _ in }
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        _ = arrange(subviews, width: bounds.width) { tag, offset, size in
+            tag.place(at: CGPoint(x: bounds.minX + offset.x, y: bounds.minY + offset.y),
+                      anchor: .topLeading, proposal: ProposedViewSize(size))
+        }
+    }
+}
+
 struct SessionDetailView: View {
     let initialSession: Session
     let store: SessionStore
@@ -21,7 +58,7 @@ struct SessionDetailView: View {
     @State private var summaryConsent = false
     @State private var resumeAfterConsent = false
     @State private var summaryTask: Task<Void, Never>?
-    @State private var directory: URL?
+    private var directory: URL { store.storageDirectory }
     @State private var shareableURL: URL?
     @State private var transcriptionConsent = false
     @ObservedObject private var captureWorker = CaptureProcessing.shared
@@ -29,11 +66,20 @@ struct SessionDetailView: View {
     @State private var confirmDelete = false
     @State private var localError: String?
     @State private var selectedTab: DetailTab
+    @State private var retrySummary = false
+    @State private var regeneratingRecord = false
+    @State private var didRegenerateSummary = false
+    @State private var summaryCopied = false
+    @State private var expandedTagGroups: Set<String> = []
+    @State private var lastRemoval: Set<String>?
+    @State private var failedDetailChange: (Set<String>, Bool)?
     @State private var expandedCategories: Set<SummaryEntryCategory> = []
     @Environment(\.askAboutRecord) private var askAboutRecord
     @Environment(\.storyRouter) private var storyRouter
     @State private var routedExcerpt: String?
     @State private var pickingFolders = false
+    @State private var openingRecordFacts: (id: UUID, facts: [HealthFact])?
+    @State private var newDetail: RecordDetailDraft?
     @State private var editingFact: RecordFactSelection?
     @State private var edit: RecordEdit?
     @State private var previewOriginal = false
@@ -46,11 +92,13 @@ struct SessionDetailView: View {
     @FocusState private var noteFocus: NoteFocus?
     @State private var editingNote = false
     @State private var savingNote = false
+    @State private var requestedTemplate: RecordTemplateSelection?
     @State private var draftTitle = ""
     @State private var originalTitle = ""
     @State private var baselineEdits: [String: String] = [:]
     @State private var rawDrawer = false
     @State private var draftBlocks: [NoteBlock] = []
+    @State private var canvasCache = RecordCanvasCache()
     private var storyLab: Bool { Bundle.main.bundleIdentifier == "com.CollectiveCare.storylab" }
     let sourceHighlightExcerpt: String?
 
@@ -64,7 +112,8 @@ struct SessionDetailView: View {
         health.snapshot.sessions.first { $0.id == initialSession.id } ?? home.sessions.first { $0.id == initialSession.id } ?? initialSession
     }
     private var recordFacts: [HealthFact] {
-        health.facts.compactMap { $0.presentedFromRecord(session.id) }
+        let id = initialSession.id
+        return health.facts.compactMap { $0.presentedFromRecord(id) }
     }
     var body: some View {
         VStack(spacing: 0) {
@@ -85,10 +134,9 @@ struct SessionDetailView: View {
             switch selectedTab {
             case .summary: recordSummary
             case .source:
-                if let directory {
-                    SessionSourceView(session: session, storageDirectory: directory,
+                SessionSourceView(session: session, storageDirectory: directory,
                                       highlightedExcerpt: routedExcerpt ?? sourceHighlightExcerpt, shareableFileURL: $shareableURL)
-                } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
+
             case .transcript:
                 ScrollView {
                     let pages = RecordTextPage.sections(in: session.transcript)
@@ -107,7 +155,7 @@ struct SessionDetailView: View {
                                 }
                             }
                         }
-                        if let directory, let assets = session.sourceAssets, !assets.isEmpty {
+                        if let assets = session.sourceAssets, !assets.isEmpty {
                             StorySectionHeading(title: "Attachments")
                             ForEach(assets) { asset in
                                 Button {
@@ -135,10 +183,15 @@ struct SessionDetailView: View {
         }
         .safeAreaInset(edge: .bottom) {
             if editingNote { EmptyView() }
-            else if let capture = session.capture {
+            else if session.recordSummaryWork != nil && !preparingCaptureSummary && session.capture?.pending != true {
+                Button("Retry unfinished summary") { regenerate(retryUnfinished: true) }.padding(8)
+            } else if let capture = session.capture {
                 if preparingCaptureSummary { EmptyView() }
-                else if !capture.failedAssets.isEmpty || captureWorker.errors[session.id] != nil || capture.pending {
-                    Button("Retry unfinished processing") { processCapture() }.padding(8)
+                else if !capture.failedAssets.isEmpty || captureWorker.errors[session.id] != nil || capture.pending || capture.needsRecordSummary == true {
+                    Button("Retry unfinished processing") {
+                        if capture.pending || !capture.failedAssets.isEmpty { processCapture() }
+                        else { regenerate(retryUnfinished: true) }
+                    }.padding(8)
                 } else if !session.transcript.isEmpty && recordFacts.isEmpty {
                     Button("Prepare details") { regenerate() }.padding(8)
                 }
@@ -201,6 +254,12 @@ struct SessionDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     if storyLab {
+                        Button("Copy summary", systemImage: "doc.on.doc") {
+                            UIPasteboard.general.string = copyableSummary
+                            summaryCopied = true
+                            UIAccessibility.post(notification: .announcement, argument: "Summary copied")
+                        }
+                        .disabled(copyableSummary.isEmpty)
                         Button("Edit record", systemImage: "pencil") { selectedTab = .transcript; beginNoteEdit(.title) }
                         Button("View extracted data", systemImage: "doc.text.magnifyingglass") { rawDrawer = true }
                         Button("View details", systemImage: "list.bullet") {
@@ -208,10 +267,12 @@ struct SessionDetailView: View {
                         }
                         Divider()
                     }
-                    Button("Reprocess record", systemImage: "arrow.clockwise") {
+                    if !storyLab {
+                    Button("Regenerate summary", systemImage: "arrow.clockwise") {
                         if summaryBackend == "onDevice" || cloudSummaryConsent { regenerate() }
                         else { summaryConsent = true }
-                    }.disabled(health.isProcessing || session.transcript.isEmpty)
+                    }.disabled(regeneratingRecord || (!storyLab && health.isProcessing) || session.transcript.isEmpty)
+                    }
                     if health.isProcessing { Button("Cancel regeneration") { summaryTask?.cancel() } }
                     Divider()
                     Button("Delete record", systemImage: "trash", role: .destructive) { confirmDelete = true }.disabled(retrying)
@@ -221,9 +282,21 @@ struct SessionDetailView: View {
         }
         .confirmationDialog("Check your summary using cloud processing?", isPresented: $summaryConsent, titleVisibility: .visible) {
             Button("Use cloud processing") { cloudSummaryConsent = true; regenerate() }
-            Button("Cancel", role: .cancel) {}
+            Button("Cancel", role: .cancel) { requestedTemplate = nil }
         } message: { Text("Text from this record will be sent through CollectiveCare’s service to OpenAI for summarization and verification. Temporary processing content has a seven-day expiry and cleanup policy; usage metadata is retained separately.") }
-        .task { directory = await store.storageDirectory; await health.refresh(); if session.capture?.pending == true { processCapture() } }
+        .storyLoadIn()
+        .task(id: initialSession.id) {
+            if storyLab && !health.snapshot.sessions.contains(where: { $0.id == initialSession.id }),
+               let snapshot = try? await store.healthSnapshot(recordID: initialSession.id),
+               snapshot.sessions.contains(where: { $0.id == initialSession.id }) {
+                let facts = await Task.detached(priority: .userInitiated) { HealthMemoryProjection.facts(in: snapshot) }.value
+                guard !Task.isCancelled else { return }
+                openingRecordFacts = (initialSession.id, facts)
+            }
+            await health.loadForNavigation()
+            guard !Task.isCancelled else { return }
+            if session.capture?.pending == true || (session.capture?.needsRecordSummary == true && (cloudSummaryConsent || summaryBackend == "onDevice")) { processCapture() }
+        }
         .onChange(of: session.capture?.pending) { old, new in
             if old == true, new == false, !session.transcript.isEmpty,
                summaryBackend != "onDevice", !cloudSummaryConsent, auth.isSignedIn {
@@ -246,10 +319,8 @@ struct SessionDetailView: View {
         .quickLookPreview($previewAsset)
         .sheet(isPresented: $previewOriginal) {
             NavigationStack {
-                if let directory {
-                    SessionSourceView(session: session, storageDirectory: directory, highlightedExcerpt: routedExcerpt ?? sourceHighlightExcerpt, shareableFileURL: $shareableURL)
-                        .navigationTitle("Source").toolbar { Button("Close") { previewOriginal = false } }
-                }
+                SessionSourceView(session: session, storageDirectory: directory, highlightedExcerpt: routedExcerpt ?? sourceHighlightExcerpt, shareableFileURL: $shareableURL)
+                    .storyLoadIn().navigationTitle("Source").toolbar { Button("Close") { previewOriginal = false } }
             }
         }
         .sheet(isPresented: $rawDrawer) {
@@ -267,10 +338,19 @@ struct SessionDetailView: View {
             }
         }
         .sheet(isPresented: $pickingFolders) { RecordFolderPicker(recordID: session.id, store: store) }
+        .sheet(item: $newDetail) { draft in
+            HealthManualEntryView(model: health, home: home, store: store, topicID: nil, recordDraft: draft)
+        }
         .sheet(item: $editingFact) { selection in
             NavigationStack {
-                HealthFactDetailView(factID: selection.factID, preferredEntryID: selection.entryID, sourceOnlyEntry: selection.sourceOnlyEntry,
-                                     model: health, home: home, store: store)
+                if selection.removalKeys != nil && !health.snapshotReadFailed && !health.snapshot.sessions.contains(where: { $0.id == initialSession.id }) && !health.hasLoaded && openingRecordFacts?.id == initialSession.id && openingRecordFacts?.facts.isEmpty == false {
+                    ProgressView("Opening detail…")
+                } else {
+                    HealthFactDetailView(factID: selection.factID, preferredEntryID: selection.entryID, sourceOnlyEntry: selection.sourceOnlyEntry,
+                                         model: health, home: home, store: store, removeFromRecord: selection.removalKeys.map { keys in
+                                             { try await changeVisibility(keys, hide: true) }
+                                         })
+                }
             }
         }
         .confirmationDialog("Transcribe this audio", isPresented: $transcriptionConsent, titleVisibility: .visible) {
@@ -285,15 +365,54 @@ struct SessionDetailView: View {
                 }
             }
         } message: { Text("This removes the recording or document and the summary details created from it.") }
+        .overlay(alignment: .top) {
+            if summaryCopied {
+                Label("Summary copied", systemImage: "checkmark")
+                    .font(.callout)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(.top, 8)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .task(id: summaryCopied) {
+            guard summaryCopied else { return }
+            do { try await Task.sleep(nanoseconds: 2_000_000_000) }
+            catch { return }
+            summaryCopied = false
+        }
         .alert("Record processing", isPresented: Binding(get: { localError != nil }, set: { if !$0 { localError = nil } })) {
-            Button("OK") { localError = nil }
+            if let (keys, hide) = failedDetailChange {
+                Button("Retry") { performVisibilityChange(keys, hide: hide) }
+            }
+            if retrySummary { Button("Retry summary") { regenerate(retryUnfinished: true) } }
+            Button("OK") { localError = nil; failedDetailChange = nil; retrySummary = false }
         } message: { Text(localError ?? "") }
     }
 
     private func blocks() -> [NoteBlock] {
         let edits = session.summaryParagraphEdits ?? [:]
         var result: [NoteBlock] = []
-        let grouped = Dictionary(grouping: recordFacts, by: \.category)
+        if let bullets = session.recordBullets {
+            let visit = session.appliedRecordTemplate == .visit
+            let ordered = visit ? RecordVisitSection.allCases.flatMap { section in bullets.filter { $0.resolvedVisitSection == section } } : bullets
+            for bullet in ordered {
+                let key = bullet.editKey
+                guard !result.contains(where: { $0.key == key }) else { continue }
+                let text = edits[key] ?? (session.entryIntent == .personalJournal ? bullet.text : RecordBullet.patientCenteredText(bullet.text))
+                let plainJournal = session.entryIntent == .personalJournal && bullet.bulletID != nil &&
+                    bullets.allSatisfy { $0.heading == bullet.heading } && session.transcript.count <= 1200
+                result.append(NoteBlock(key: key, initial: text, text: text, heading: visit ? bullet.resolvedVisitSection.rawValue : (plainJournal ? nil : bullet.heading), bullet: bullet))
+            }
+            for key in edits.keys.sorted() where !result.contains(where: { $0.key == key }) {
+                if let text = edits[key], !text.isEmpty {
+                    result.append(NoteBlock(key: key, initial: text, text: text, heading: "Your edits"))
+                }
+            }
+            return result
+        }
+        let grouped = Dictionary(grouping: recordFacts.filter { $0.displayEntry.linkedSummaryBlockKey == nil }, by: \.category)
         for fact in SummaryEntryCategory.allCases.flatMap({ grouped[$0] ?? [] }) {
             let entry = fact.displayEntry
             var generated = entry.title
@@ -306,7 +425,7 @@ struct SessionDetailView: View {
                       field.label.caseInsensitiveCompare(BodySystem.fieldLabel) != .orderedSame else { continue }
                 generated += "\n" + field.label + ": " + value
             }
-            let text = edits[fact.id] ?? generated
+            let text = edits[fact.id] ?? (entry.origin == .generated ? RecordBullet.patientCenteredText(generated) : generated)
             result.append(NoteBlock(key: fact.id, initial: text, text: text, fact: fact))
         }
         // Keep patient writing even when an underlying detail is later retired.
@@ -320,6 +439,24 @@ struct SessionDetailView: View {
             result.append(NoteBlock(key: "note", initial: text, text: text))
         }
         return result
+    }
+
+    /// Copy the saved text in the same order and with the same edits as the canvas.
+    private var copyableSummary: String {
+        let content = blocks().filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard !content.isEmpty else { return "" }
+        var lines = [session.displayTitle]
+        var previousHeading: String?
+        for block in content {
+            let heading = block.heading ?? block.fact?.category.displayTitle
+            if let heading, heading != previousHeading {
+                lines += ["", heading]
+            }
+            if heading == nil && previousHeading == nil && lines.count == 1 { lines.append("") }
+            lines.append(block.key == "note" ? block.text : "• " + block.text)
+            previousHeading = heading
+        }
+        return lines.joined(separator: "\n")
     }
 
     private func beginNoteEdit(_ focus: NoteFocus) {
@@ -351,8 +488,41 @@ struct SessionDetailView: View {
     }
 
     private var preparingCaptureSummary: Bool {
-        captureWorker.active.contains(session.id) ||
+        regeneratingRecord || captureWorker.active.contains(session.id) ||
             (session.capture?.pending == true && captureWorker.errors[session.id] == nil)
+    }
+
+    private var templateControls: some View {
+        let selection = session.recordSummaryWork?.selection ?? session.recordTemplateSelection ?? .auto
+        let resolved = session.recordSummaryWork == nil ? session.appliedRecordTemplate : nil
+        return Menu {
+            Picker("Summary template", selection: Binding(get: { selection }, set: { option in
+                requestedTemplate = option
+                regenerate()
+            })) {
+                ForEach(RecordTemplateSelection.allCases, id: \.self) { option in
+                    Label(option.menuTitle, systemImage: option.menuIcon).tag(option)
+                }
+            }
+            .pickerStyle(.inline)
+            Divider()
+            if session.recordSummaryWork != nil {
+                Button("Retry unfinished summary", systemImage: "arrow.clockwise") { regenerate(retryUnfinished: true) }
+            } else {
+                Button("Regenerate summary", systemImage: "arrow.clockwise") { regenerate() }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: selection.menuIcon)
+                Text(selection.menuTitle)
+            }
+            .fixedSize().frame(minHeight: 44)
+        }
+        .font(StoryDesignTokens.font(.subheadline))
+        .foregroundStyle(StoryDesignTokens.secondaryInk)
+        .accessibilityLabel("Summary template, " + selection.menuTitle)
+        .accessibilityValue(selection == .auto ? (resolved ?? selection.resolved(for: session)).menuTitle : "")
+        .disabled(preparingCaptureSummary || session.transcript.isEmpty)
     }
 
     private var noteCanvas: some View {
@@ -370,55 +540,71 @@ struct SessionDetailView: View {
                 }.font(StoryDesignTokens.pageTitle).foregroundStyle(StoryDesignTokens.ink)
                     .multilineTextAlignment(.leading)
                 noteMetadata.disabled(editingNote)
-                let content = editingNote ? draftBlocks : blocks()
-                if preparingCaptureSummary && content.allSatisfy({ $0.text.isEmpty }) {
-                    StoryThinkingStatus("Preparing summary…")
+                let projection = cachedCanvas()
+                let content = editingNote ? draftBlocks : projection.blocks
+                let loadedTags = projection.tags
+                let tags = loadedTags ?? []
+                let links = content.map { projection.links[$0.key] ?? [] }
+                let linked = Set(links.flatMap { $0.map(\.id) })
+                if let keys = lastRemoval {
+                    Button("Detail removed · Undo") { performVisibilityChange(keys, hide: false) }
+                }
+                if preparingCaptureSummary {
+                    StoryThinkingStatus(content.allSatisfy({ $0.text.isEmpty }) ? "Preparing summary…" : "Updating summary…")
+                } else if session.recordSummaryWork != nil {
+                    Label("Summary paused — retry to continue", systemImage: "pause.circle")
+                        .font(StoryDesignTokens.caption)
+                } else if didRegenerateSummary {
+                    Label("Summary updated", systemImage: "checkmark.circle")
+                        .font(StoryDesignTokens.caption)
+                }
+                if preparingCaptureSummary && !editingNote && content.allSatisfy({ $0.text.isEmpty }) {
+                    StoryLoadingPlaceholder(label: "Preparing summary", rows: 2, layout: .summary)
+                        .accessibilityHidden(true) // The processing status above announces this work.
                 } else {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(content.indices, id: \.self) { i in
-                            let block = content[i]
-                            if let category = block.fact?.category,
-                               i == 0 || content[i - 1].fact?.category != category {
-                                Text(category.displayTitle)
+                        ForEach(Array(content.enumerated()), id: \.element.key) { i, block in
+                            if let heading = block.heading ?? block.fact?.category.displayTitle,
+                               i == 0 || (content[i - 1].heading ?? content[i - 1].fact?.category.displayTitle) != heading {
+                                Text(heading)
                                     .font(StoryDesignTokens.sectionHeading)
                                     .foregroundStyle(StoryDesignTokens.ink)
                                     .accessibilityAddTraits(.isHeader)
                                     .padding(.top, i == 0 ? 0 : 24)
                             }
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                if block.fact != nil { Text("•").accessibilityHidden(true) }
-                                VStack(alignment: .leading, spacing: 2) {
-                                    if savingNote { Text(verbatim: block.text) }
-                                    else if editingNote {
-                                        TextField("Write a summary…", text: Binding(get: {
-                                            draftBlocks.indices.contains(i) ? draftBlocks[i].text : ""
-                                        }, set: { if draftBlocks.indices.contains(i) { draftBlocks[i].text = $0 } }), axis: .vertical)
-                                            .focused($noteFocus, equals: .block(i)).accessibilityLabel("Note paragraph \(i + 1)")
-                                    } else {
-                                        Button { beginNoteEdit(.block(i)) } label: {
-                                            Text(verbatim: block.text.isEmpty ? "Write a summary…" : block.text)
-                                                .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                                        }.accessibilityHint("Edit record text")
-                                    }
-                                    if let fact = block.fact {
-                                        Button {
-                                            openFact(RecordFactSelection(factID: fact.id, entryID: fact.latest.id))
-                                        } label: {
-                                            StorySourceTag(title: fact.category.displayTitle,
-                                                           systemImage: SummaryCategoryIcon(title: fact.category.displayTitle).icon)
+                                if !block.text.isEmpty {
+                                    bulletMarker(block, tags: links[i], detailsLoaded: loadedTags != nil)
+                                        .alignmentGuide(.firstTextBaseline) { dimensions in
+                                            dimensions[VerticalAlignment.center] + bodyHalfCapHeight
                                         }
-                                        .disabled(editingNote)
-                                        .accessibilityLabel("Open detail: \(fact.title)")
-                                    }
+                                        .disabled(editingNote || savingNote)
+                                }
+                                if savingNote { Text(verbatim: block.text) }
+                                else if editingNote {
+                                    TextField("Write a summary…", text: Binding(get: {
+                                        draftBlocks.indices.contains(i) ? draftBlocks[i].text : ""
+                                    }, set: { if draftBlocks.indices.contains(i) { draftBlocks[i].text = $0 } }), axis: .vertical)
+                                        .focused($noteFocus, equals: .block(i)).accessibilityLabel("Note paragraph \(i + 1)")
+                                } else {
+                                    Button { beginNoteEdit(.block(i)) } label: {
+                                        Text(verbatim: block.text.isEmpty ? "Write a summary…" : block.text)
+                                            .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                                    }.accessibilityHint("Edit record text")
                                 }
                             }.font(StoryDesignTokens.body)
-                                .lineSpacing(4).padding(.top, 8)
+                                .lineSpacing(4).padding(.top, 10)
                         }
                     }
                 }
-                if let directory, let assets = session.sourceAssets, !assets.isEmpty {
+                let remaining = tags.filter { !linked.contains($0.id) }
+                if !remaining.isEmpty {
+                    StorySectionHeading(title: content.contains { $0.bullet?.bulletID != nil } ? "Other extracted details" : "Extracted details")
+                    detailTags(remaining, group: "unlinked")
+                }
+                if let assets = session.sourceAssets, !assets.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Attached").font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
+                        Text("Attachments").font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
                             .accessibilityAddTraits(.isHeader)
                         ScrollView(.horizontal) {
                             LazyHStack(alignment: .top, spacing: 8) {
@@ -449,7 +635,10 @@ struct SessionDetailView: View {
 
     private var noteMetadata: some View {
         RecordMetadataRow(session: session, health: health, editTime: { edit = .time },
-                          editTeam: { edit = .team }, editConditions: { pickingFolders = true })
+                          editTeam: { edit = .team }, editConditions: { pickingFolders = true },
+                          dateOnly: true) {
+            if !editingNote { templateControls }
+        }
     }
 
     // Older records have no timestamps. Break long prose at sentence boundaries
@@ -537,6 +726,174 @@ struct SessionDetailView: View {
         .storyListCanvas().listStyle(.insetGrouped)
     }
 
+    private struct RecordTag: Identifiable {
+        let factID: String
+        let entry: SummaryEntry
+        let heading: String
+        var id: UUID { entry.id }
+    }
+
+    private var recordTags: [RecordTag]? {
+        let recordID = session.id
+        var seen = Set<UUID>()
+        let available: [HealthFact]
+        if health.snapshot.sessions.contains(where: { $0.id == recordID }) {
+            available = recordFacts
+        } else if let openingRecordFacts, openingRecordFacts.id == recordID {
+            available = openingRecordFacts.facts
+        } else {
+            return nil
+        }
+        return available.flatMap { fact in
+            fact.occurrences.compactMap { entry -> RecordTag? in
+                guard entry.sourceSessionID == recordID, seen.insert(entry.id).inserted else { return nil }
+                return RecordTag(factID: fact.id, entry: entry, heading: entry.recordDetailHeading)
+            }
+        }
+    }
+
+    // Text normalization, detail headings and evidence matching are content work,
+    // not layout work. Scrolling/focus/progress must not repeat the full matching pass.
+    private final class RecordCanvasCache {
+        var session: Session?
+        var factsRevision: UInt64 = .max
+        var hasOpeningFacts = false
+        var blocks: [NoteBlock] = []
+        var tags: [RecordTag]?
+        var links: [String: [RecordTag]] = [:]
+    }
+
+    private func cachedCanvas() -> RecordCanvasCache {
+        let current = session
+        let opening = openingRecordFacts?.id == current.id
+        guard canvasCache.session != current || canvasCache.factsRevision != health.factsRevision || canvasCache.hasOpeningFacts != opening else { return canvasCache }
+        let content = blocks()
+        let tags = recordTags
+        var links: [String: [RecordTag]] = [:]
+        for block in content {
+            links[block.key] = (tags ?? []).filter { tag in
+                if let key = tag.entry.linkedSummaryBlockKey { return key == block.key }
+                if block.fact?.id == tag.factID { return true }
+                guard let bullet = block.bullet else { return false }
+                if bullet.heading == SummaryEntryCategory.medications.displayTitle && tag.entry.category != .medications { return false }
+                return bullet.detailEntryIDs?.contains(tag.entry.id) == true || bullet.supports(tag.entry)
+            }
+        }
+        canvasCache.session = current
+        canvasCache.factsRevision = health.factsRevision
+        canvasCache.hasOpeningFacts = opening
+        canvasCache.blocks = content
+        canvasCache.tags = tags
+        canvasCache.links = links
+        return canvasCache
+    }
+
+    @ScaledMetric(relativeTo: .body) private var bodyHalfCapHeight = StoryDesignTokens.readingFont(size: StoryDesignTokens.bodyBaseSize).capHeight / 2
+    @ScaledMetric(relativeTo: .footnote) private var detailIconDiameter: CGFloat = 26
+
+    private func markerIcon(_ symbol: String, fill: Color = StoryDesignTokens.softSurface) -> some View {
+        Image(systemName: symbol)
+            .font(StoryDesignTokens.font(.footnote, weight: .medium))
+            .foregroundStyle(StoryDesignTokens.action)
+            .frame(width: detailIconDiameter, height: detailIconDiameter)
+            .background(fill, in: Circle())
+            .contentShape(Rectangle())
+    }
+
+    @ViewBuilder private func bulletMarker(_ block: NoteBlock, tags: [RecordTag], detailsLoaded: Bool) -> some View {
+        if let first = tags.first {
+            let icon = markerIcon(SummaryCategoryIcon(title: first.entry.category.displayTitle).icon)
+            if tags.count == 1 {
+                Button { openTag(first) } label: { icon }
+                    .accessibilityLabel(first.entry.category.displayTitle + ", " + first.entry.title)
+                    .contextMenu {
+                        Button("Remove from this record", role: .destructive) {
+                            performVisibilityChange(Session.removalKeys(first.entry), hide: true)
+                        }
+                    }
+            } else {
+                Menu {
+                    ForEach(tags) { tag in
+                        Button(tag.entry.title, systemImage: SummaryCategoryIcon(title: tag.entry.category.displayTitle).icon) { openTag(tag) }
+                    }
+                } label: { icon }
+                .accessibilityLabel("Choose from " + String(tags.count) + " linked details")
+            }
+        } else if detailsLoaded {
+            Button {
+                let category = SummaryEntryCategory.allCases.first { $0.displayTitle == block.bullet?.heading } ?? block.fact?.category ?? .otherNotes
+                newDetail = RecordDetailDraft(recordID: session.id, id: block.key, text: block.text, quote: block.bullet?.quote, category: category)
+            } label: { markerIcon("plus", fill: .clear) }
+            .accessibilityLabel("Add new detail")
+        } else {
+            Color.clear.frame(width: detailIconDiameter, height: detailIconDiameter)
+                .allowsHitTesting(false).accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder private func detailTags(_ tags: [RecordTag], group: String) -> some View {
+        let expanded = expandedTagGroups.contains(group)
+        let groups = Dictionary(grouping: tags) { tag in
+            tag.entry.category.rawValue + "|" + tag.heading.lowercased()
+        }
+        let ordered = tags.compactMap { tag -> [RecordTag]? in
+            let key = tag.entry.category.rawValue + "|" + tag.heading.lowercased()
+            guard let group = groups[key], group.first?.id == tag.id else { return nil }
+            return group
+        }
+        RecordTagLayout() {
+            ForEach(Array(ordered.prefix(expanded ? ordered.count : 3)), id: \.first!.id) { group in
+                let tag = group[0]
+                let label = markerIcon(SummaryCategoryIcon(title: tag.entry.category.displayTitle).icon)
+                    .padding(3)
+                if group.count == 1 {
+                    Button { openTag(tag) } label: { label }
+                        .accessibilityLabel(tag.entry.category.displayTitle + ", " + tag.entry.title)
+                        .disabled(editingNote)
+                        .contextMenu {
+                            Button("Remove from this record", role: .destructive) {
+                                performVisibilityChange(Session.removalKeys(tag.entry), hide: true)
+                            }
+                        }
+                } else {
+                    Menu {
+                        ForEach(group) { member in
+                            Button(member.entry.details.isEmpty ? member.entry.title : member.entry.details) { openTag(member) }
+                        }
+                    } label: { label }
+                    .disabled(editingNote)
+                    .accessibilityLabel(tag.heading + ", " + String(group.count) + " details")
+                }
+            }
+        }
+        if ordered.count > 3 {
+            Button(expanded ? "Show fewer" : "Show \(ordered.count - 3) more") {
+                if expanded { expandedTagGroups.remove(group) } else { expandedTagGroups.insert(group) }
+            }
+        }
+    }
+
+    private func openTag(_ tag: RecordTag) {
+        editingFact = RecordFactSelection(factID: tag.factID, entryID: tag.id, removalKeys: Session.removalKeys(tag.entry))
+    }
+
+    private func changeVisibility(_ keys: Set<String>, hide: Bool) async throws {
+        try await store.changeRecordDetailVisibility(session.id, keys: keys, hide: hide)
+        lastRemoval = hide ? keys : nil
+        failedDetailChange = nil
+        await health.refresh()
+    }
+
+    private func performVisibilityChange(_ keys: Set<String>, hide: Bool) {
+        Task {
+            do { try await changeVisibility(keys, hide: hide) }
+            catch {
+                failedDetailChange = (keys, hide)
+                localError = error.localizedDescription
+            }
+        }
+    }
+
     private func openFact(_ selection: RecordFactSelection) {
         if let storyRouter { storyRouter.open(.fact(selection.factID, selection.entryID, selection.sourceOnlyEntry)) }
         else { editingFact = selection }
@@ -549,9 +906,37 @@ struct SessionDetailView: View {
             summaryConsent = true
             return
         }
+        guard !regeneratingRecord else { return }
+        retrySummary = false
+        didRegenerateSummary = false
+        regeneratingRecord = true
         resumeAfterConsent = false
+        let selection = requestedTemplate
+        requestedTemplate = nil
         summaryTask = Task {
+            defer { if !storyLab { regeneratingRecord = false } }
             let transport = summaryBackend == "onDevice" ? nil : await auth.openAIChatTransport(byokFallback: apiKey)
+            if storyLab {
+                do {
+                    try await RecordBulletWriter.run(session, store: store, transport: transport, local: summaryBackend == "onDevice", force: !resume, selection: selection, retryRequested: resume)
+                    await home.loadSessions()
+                    await health.refresh()
+                    regeneratingRecord = false
+                    didRegenerateSummary = true
+                } catch StoryEditError.staleRevision {
+                    regeneratingRecord = false
+                    await home.loadSessions(); await health.refresh()
+                    localError = "The record changed during processing. Your writing is saved. Retry to summarize the latest version."
+                    return
+                } catch {
+                    regeneratingRecord = false
+                    let reason = (error as NSError).userInfo["workflowReason"] as? String
+                    retrySummary = !["expired", "cancelled", "superseded", "workflow_limit", "budget_exhausted"].contains(reason ?? "")
+                    localError = error.localizedDescription
+                    await home.loadSessions(); await health.loadForNavigation()
+                    return
+                }
+            }
             await health.prepareSummaries(transport: transport, onDevice: summaryBackend == "onDevice", forceSessionID: session.id, retryUnfinished: resume)
             await home.loadSessions()
         }
@@ -567,7 +952,7 @@ struct SessionDetailView: View {
         } else { Task { await retrySource() } }
     }
     private func retrySource() async {
-        guard !retrying, let directory else { return }
+        guard !retrying else { return }
         retrying = true
         defer { retrying = false }
         do {
@@ -611,6 +996,7 @@ private struct RecordFactSelection: Identifiable {
     let factID: String
     let entryID: UUID
     var sourceOnlyEntry: SummaryEntry? = nil
+    var removalKeys: Set<String>?
     var id: String { "\(factID)|\(entryID)" }
 }
 
@@ -619,6 +1005,8 @@ private struct NoteBlock {
     let initial: String
     var text: String
     var fact: HealthFact?
+    var heading: String?
+    var bullet: RecordBullet?
 }
 
 private struct RecordTextPage {
@@ -651,19 +1039,46 @@ private struct RecordTextPage {
     }
 }
 
-struct RecordMetadataRow: View {
+private extension RecordTemplateSelection {
+    var menuTitle: String { self == .categories ? "Detailed" : rawValue }
+
+    var menuIcon: String {
+        switch self {
+        case .auto: return "sparkles"
+        case .visit: return "stethoscope"
+        case .categories: return "list.bullet.rectangle"
+        }
+    }
+}
+
+struct RecordMetadataRow<TemplateControl: View>: View {
     let session: Session
     @ObservedObject var health: HealthSummaryModel
     let editTime: () -> Void
     let editTeam: () -> Void
     let editConditions: () -> Void
+    let dateOnly: Bool
+    let templateControl: TemplateControl
+
+    init(session: Session, health: HealthSummaryModel, editTime: @escaping () -> Void,
+         editTeam: @escaping () -> Void, editConditions: @escaping () -> Void, dateOnly: Bool = false,
+         @ViewBuilder templateControl: () -> TemplateControl = { EmptyView() }) {
+        self.session = session
+        self.health = health
+        self.editTime = editTime
+        self.editTeam = editTeam
+        self.editConditions = editConditions
+        self.dateOnly = dateOnly
+        self.templateControl = templateControl()
+    }
 
     var body: some View {
         let ids = health.recordFolders.memberships[session.id] ?? []
         let names = health.recordFolders.folders.filter { ids.contains($0.id) }.map(\.name)
         return ScrollView(.horizontal) {
             HStack(spacing: 16) {
-                Button((session.visitTime ?? session.date).formatted(date: .abbreviated, time: .shortened), systemImage: "calendar") { editTime() }
+                Button((session.visitTime ?? session.date).formatted(date: .abbreviated, time: dateOnly ? .omitted : .shortened), systemImage: "calendar") { editTime() }
+                templateControl
                 Button { editTeam() } label: {
                     HStack(spacing: 4) { Image(systemName: "person.2"); if let n = session.linkedMemberIDs?.count, n > 0 { Text("\(n)") } }
                 }.frame(minWidth: 44, minHeight: 44).accessibilityLabel(teamLabel)
@@ -738,7 +1153,7 @@ struct RecordAttributeEditor: View {
             .navigationTitle(kind == "team" ? "Care team" : kind == "time" ? "Record time" : kind == "title" ? "Record title" : "Edit text")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { Task { await save() } }.disabled(saving || (kind == "title" && value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
                 }
@@ -847,7 +1262,7 @@ private struct RawRecordSheet: View {
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading).padding()
             }
-            .navigationTitle("Extracted data").navigationBarTitleDisplayMode(.inline)
+            .storyLoadIn().navigationTitle("Extracted data").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(editing ? "Discard edits" : "Close") { dismiss() }

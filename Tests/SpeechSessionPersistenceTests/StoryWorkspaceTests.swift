@@ -1,6 +1,49 @@
 import XCTest
 @testable import SpeechSessionPersistence
 final class StoryWorkspaceTests:XCTestCase {
+    func testWarmStorySyncSeesNewRecordRevision() async throws {
+        let s = try store()
+        var record = Session(transcript: "First saved version")
+        try await s.upsert(record)
+        try await s.synchronizeStory()
+        let first = await s.contentRevision
+        try await s.synchronizeStory()
+        let unchanged = await s.contentRevision
+        XCTAssertEqual(unchanged, first)
+        record.transcript = "Updated text"
+        try await s.upsert(record)
+        try await s.synchronizeStory()
+        let workspace = try await s.storyWorkspace()
+        XCTAssertEqual(workspace.sources.filter { $0.recordID == record.id }.map(\.text), ["First saved version", "Updated text"])
+    }
+
+    func testRecordChatDetailCitationsAndLegacyPassages() async throws {
+        let s = try store()
+        let quote = "I do not want to use castor oil today."
+        var record = Session(transcript: "We discussed several options. " + quote)
+        let detail = SummaryEntry(category: .otherNotes, title: "Castor oil", sourceSessionID: record.id, sourceExcerpt: quote)
+        record.summaryEntries = [detail]
+        try await s.save([record])
+        let sources = try await s.storyRecordEvidence(recordID: record.id, query: "castor oil")
+        let direct = try XCTUnwrap(sources.first { $0.detailEntryID == detail.id })
+        XCTAssertEqual(direct.text, quote)
+        XCTAssertEqual(direct.title, "Castor oil")
+        let message = StoryMessage.queuedQuestion("Castor oil?", recordID: record.id)
+        try await s.addStoryMessage(message)
+        try await s.completeStoryQuestion(message.id, text: "Discussed [E1]", citations: [direct.id], evidence: sources)
+        let saved = try await s.storyWorkspace()
+        XCTAssertEqual(saved.messages.last?.evidence?.first?.detailEntryID, detail.id)
+        let legacy = StoryEvidence(id: "E1", text: record.transcript, recordID: record.id, title: "Visit")
+        XCTAssertTrue(legacy.cites(detail))
+        var other = detail
+        other.sourceSessionID = UUID()
+        XCTAssertFalse(legacy.cites(other))
+        try await s.changeRecordDetailVisibility(record.id, keys: Session.removalKeys(detail), hide: true)
+        let remaining = try await s.storyRecordEvidence(recordID: record.id, query: "castor oil")
+        XCTAssertTrue(remaining.allSatisfy { $0.detailEntryID == nil })
+        XCTAssertEqual(remaining.first?.text, record.transcript)
+    }
+
     func testRecordChatIsolatesEvidenceAndSavedAnswers() async throws {
         let store = try store()
         let record = Session(transcript: "The appointment was on Tuesday.")

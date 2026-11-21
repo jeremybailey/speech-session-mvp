@@ -34,3 +34,10 @@ test('new extraction cannot reuse an old truncated job; other request identities
     else assert.equal(current,legacy);
   }
 });
+
+test('structured summary output is budgeted and existing reservations stay pinned',()=>{
+ assert.equal(outputTokenLimit('gpt-6-luna','whole-history-overview'),16000);
+ assert.equal(reservedOutputTokenLimit('gpt-6-luna','whole-history-overview',reservation('gpt-6-luna',16000)),16000);
+ assert.equal(reservedOutputTokenLimit('gpt-6-luna','whole-history-overview',reservation('gpt-6-luna',6000)),6000);
+ assert.equal(outputTokenLimit('gpt-4o-mini','whole-history-overview'),6000);
+});

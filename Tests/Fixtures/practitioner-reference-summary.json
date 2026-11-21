@@ -1,0 +1,679 @@
+[
+  {
+    "stance": null,
+    "text": "Iron deficiency \u2014 identified August 2026, ferritin below laboratory interval",
+    "citationIDs": [
+      "page-1",
+      "page-2"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Clinical Snapshot",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Iron deficiency",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Fatigue \u2014 persistent, limiting work and family activities, reduced exercise tolerance",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Clinical Snapshot",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Fatigue",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Digestive symptoms \u2014 post-meal bloating and constipation since oral iron initiation",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Clinical Snapshot",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Digestive symptoms",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Caregiving demands \u2014 single parent, four workdays weekly, helps care for parent",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Clinical Snapshot",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Caregiving demands",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Daily routines \u2014 irregular meals and sleep on caregiving days",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Clinical Snapshot",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Daily routines",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Energy priority \u2014 workdays and walks w/ daughter",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Clinical Snapshot",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Energy priority",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Plan preferences \u2014 one new intervention at a time, short written plan",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Clinical Snapshot",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Plan preferences",
+    "historyIDs": []
+  },
+  {
+    "stance": "question",
+    "text": "Iron question \u2014 wants to understand cause of low iron",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Clinical Snapshot",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Iron question",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Allergies and sensitivities \u2014 penicillin hives, magnesium citrate diarrhea, ferrous gluconate nausea",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Clinical Snapshot",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Allergies and sensitivities",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Iron treatment responsibility \u2014 Dr. Avery Chen to review regimen and repeat testing, 12 November",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Care Coordination Summary",
+    "responseCitation": null,
+    "recipient": "Dr. Avery Chen",
+    "topic": "Iron review",
+    "historyIDs": []
+  },
+  {
+    "stance": "booked",
+    "text": "Menstrual bleeding assessment \u2014 Dr. Noor Ali, 18 November",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Care Coordination Summary",
+    "responseCitation": null,
+    "recipient": "Dr. Noor Ali",
+    "topic": "Gynecology assessment",
+    "historyIDs": []
+  },
+  {
+    "stance": "booked",
+    "text": "Meal consistency review \u2014 Sam Patel, RD, 26 November",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Care Coordination Summary",
+    "responseCitation": null,
+    "recipient": "Sam Patel, RD",
+    "topic": "Nutrition review",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Visit purpose \u2014 fatigue, iron response, constipation, treatment and repeat-test timing",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": "Discussed",
+    "subjectCitation": null,
+    "heading": "Appointment Preparation Brief",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Visit purpose",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Afternoon fatigue \u2014 decreased from 6/10 to 4/10 on three days weekly",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": "Discussed",
+    "subjectCitation": null,
+    "heading": "Appointment Preparation Brief",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Afternoon fatigue",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Bowel frequency \u2014 changed from daily to every 2\u20133 days",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": "Discussed",
+    "subjectCitation": null,
+    "heading": "Appointment Preparation Brief",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Bowel frequency",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Evening bloating \u2014 most noticeable after large meals",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": "Discussed",
+    "subjectCitation": null,
+    "heading": "Appointment Preparation Brief",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Evening bloating",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Migraine history \u2014 onset in adolescence, 1\u20132 monthly during university, decreased after graduation",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Comprehensive Health History",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Migraine history",
+    "historyIDs": [
+      "history:0"
+    ]
+  },
+  {
+    "stance": null,
+    "text": "Pregnancy and delivery \u2014 full-term pregnancy, vaginal delivery in 2012",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Comprehensive Health History",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Pregnancy and delivery",
+    "historyIDs": [
+      "history:1"
+    ]
+  },
+  {
+    "stance": null,
+    "text": "Postpartum urinary leakage \u2014 resolved after pelvic-floor physiotherapy in 2012",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Comprehensive Health History",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Postpartum urinary leakage",
+    "historyIDs": [
+      "history:2"
+    ]
+  },
+  {
+    "stance": null,
+    "text": "Appendectomy \u2014 uncomplicated recovery in 2017",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Comprehensive Health History",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Appendectomy",
+    "historyIDs": [
+      "history:3"
+    ]
+  },
+  {
+    "stance": null,
+    "text": "Low-back pain \u2014 recurrent after lifting injury in 2019\u20132020, improved w/ physiotherapy, flares after prolonged sitting",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Comprehensive Health History",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Low-back pain",
+    "historyIDs": [
+      "history:4"
+    ]
+  },
+  {
+    "stance": null,
+    "text": "Fatigue onset \u2014 afternoon fatigue during disrupted sleep, 2021\u20132024",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Comprehensive Health History",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Fatigue onset",
+    "historyIDs": [
+      "history:5"
+    ]
+  },
+  {
+    "stance": null,
+    "text": "LDL history \u2014 elevated LDL recorded in 2023",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Comprehensive Health History",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "LDL history",
+    "historyIDs": [
+      "history:6"
+    ]
+  },
+  {
+    "stance": null,
+    "text": "Menstrual flow \u2014 heavier in 2024",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Comprehensive Health History",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Menstrual flow",
+    "historyIDs": [
+      "history:7"
+    ]
+  },
+  {
+    "stance": null,
+    "text": "Bloating onset \u2014 developed during irregular meals, 2021\u20132024",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Comprehensive Health History",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Bloating onset",
+    "historyIDs": [
+      "history:8"
+    ]
+  },
+  {
+    "stance": null,
+    "text": "Migraine recurrence \u2014 increased to 2\u20133 monthly during caregiving stress in 2025",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Comprehensive Health History",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Migraine recurrence",
+    "historyIDs": [
+      "history:9"
+    ]
+  },
+  {
+    "stance": null,
+    "text": "Gluten-exclusion trial \u2014 four weeks in 2025, no change in bloating",
+    "citationIDs": [
+      "page-1",
+      "page-2"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Comprehensive Health History",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Gluten-exclusion trial",
+    "historyIDs": [
+      "history:10"
+    ]
+  },
+  {
+    "stance": null,
+    "text": "Iron deficiency \u2014 identified August 2026",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Comprehensive Health History",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Iron deficiency",
+    "historyIDs": [
+      "history:11"
+    ]
+  },
+  {
+    "stance": null,
+    "text": "Family history \u2014 parent w/ type 2 diabetes, sibling w/ autoimmune thyroid disease",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Comprehensive Health History",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Family history",
+    "historyIDs": [
+      "history:12"
+    ]
+  },
+  {
+    "stance": null,
+    "text": "Social history \u2014 no tobacco, alcohol 0\u20132 drinks weekly, sleep 6\u20137 hours w/ 1\u20132 awakenings",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Comprehensive Health History",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Social history",
+    "historyIDs": [
+      "history:13"
+    ]
+  },
+  {
+    "stance": null,
+    "text": "Iron response \u2014 energy improved during treatment, constipation persists",
+    "citationIDs": [
+      "page-1",
+      "page-2"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Condition-Specific Summary",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Iron response",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Menstrual bleeding \u2014 heavier flow under primary-care and gynecology assessment",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Condition-Specific Summary",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Menstrual bleeding",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Digestive course \u2014 bloating predates iron, constipation followed iron, regular meals improve evening comfort",
+    "citationIDs": [
+      "page-1"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Condition-Specific Summary",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Digestive course",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Ferrous sulfate \u2014 started 14 September 2026, energy improved, constipation persists, regimen review planned",
+    "citationIDs": [
+      "page-2"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Care Plan & Interventions",
+    "responseCitation": null,
+    "recipient": "Dr. Avery Chen",
+    "topic": "Ferrous sulfate",
+    "historyIDs": []
+  },
+  {
+    "stance": "declined",
+    "text": "Ferrous gluconate \u2014 stopped after ten-day August 2026 trial for nausea, energy response unassessed",
+    "citationIDs": [
+      "page-2"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Care Plan & Interventions",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Ferrous gluconate",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Vitamin D3 \u2014 started January 2026, consistent use, no adverse effects",
+    "citationIDs": [
+      "page-2"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Care Plan & Interventions",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Vitamin D3",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Magnesium glycinate \u2014 started July 2026 for sleep support, no change in sleep continuity",
+    "citationIDs": [
+      "page-2"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Care Plan & Interventions",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Magnesium glycinate",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Meals and movement \u2014 iron-containing meals, two prepared lunches, four short walks weekly",
+    "citationIDs": [
+      "page-1",
+      "page-2"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Care Plan & Interventions",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Meals and movement",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Sleep and tracking \u2014 consistent bedtime routine, energy and bowel log",
+    "citationIDs": [
+      "page-1",
+      "page-2"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Care Plan & Interventions",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Sleep and tracking",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Gluten exclusion \u2014 stopped after four weeks in 2025, no bloating change, increased cost and preparation time",
+    "citationIDs": [
+      "page-2"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Care Plan & Interventions",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Gluten exclusion",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Ferritin \u2014 low, 11 \u2192 15 \u2192 18 \u00b5g/L from August to October 2026, interval 30\u2013150",
+    "citationIDs": [
+      "page-2"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Labs & Investigations",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Ferritin",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "Vitamin D \u2014 low, 32 \u2192 39 \u2192 44 nmol/L from August to October 2026, interval 50\u2013125",
+    "citationIDs": [
+      "page-2"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Labs & Investigations",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "Vitamin D",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "LDL cholesterol \u2014 high, 4.1 \u2192 3.9 \u2192 3.8 mmol/L from August to October 2026, above 3.0 target",
+    "citationIDs": [
+      "page-2"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Labs & Investigations",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "LDL cholesterol",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "HbA1c \u2014 high, 5.8 \u2192 5.9 \u2192 6.0% from August to October 2026, interval 4.0\u20135.6",
+    "citationIDs": [
+      "page-2"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Labs & Investigations",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "HbA1c",
+    "historyIDs": []
+  },
+  {
+    "stance": null,
+    "text": "hs-CRP \u2014 high, 5.6 \u2192 4.8 \u2192 4.1 mg/L from August to October 2026, above 3.0 target",
+    "citationIDs": [
+      "page-2"
+    ],
+    "visitSection": null,
+    "subjectCitation": null,
+    "heading": "Labs & Investigations",
+    "responseCitation": null,
+    "recipient": null,
+    "topic": "hs-CRP",
+    "historyIDs": []
+  },
+  {
+    "stance": "deferred",
+    "text": "Repeat CBC and ferritin \u2014 timing to be set at 12 November primary-care review",
+    "citationIDs": [
+      "page-2"
+    ],
+    "visitSection": "Next steps",
+    "subjectCitation": null,
+    "heading": "Labs & Investigations",
+    "responseCitation": null,
+    "recipient": "Dr. Avery Chen",
+    "topic": "Repeat testing",
+    "historyIDs": []
+  }
+]

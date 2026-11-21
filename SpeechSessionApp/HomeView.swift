@@ -194,7 +194,7 @@ struct HomeView: View {
         } message:{Text(accountActionError ?? "Please try again.")}
         .sheet(isPresented: $showSettings) {
             SettingsView(isPresented: $showSettings, store: store, home: home, health: health,
-                         transferIsAvailable: phase == .idle && !isConsumingPendingSharedImport && pendingSharedImportURL == nil, allowsStoryReset: storyRecords && !storyBusy && summaryStatus != "Preparing summary…")
+                         transferIsAvailable: phase == .idle && !isConsumingPendingSharedImport && pendingSharedImportURL == nil, allowsStoryReset: storyRecords && !storyBusy && summaryStatus?.hasPrefix("Preparing ") != true)
         }
         .fullScreenCover(isPresented: $showCameraCapture) {
             CameraCaptureView { image in
