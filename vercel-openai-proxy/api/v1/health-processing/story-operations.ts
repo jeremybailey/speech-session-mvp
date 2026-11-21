@@ -5,6 +5,7 @@ import {database,transaction,submitWithinTransaction,cancel} from '../../_lib/le
 import {advanceStoryOperation} from '../../_lib/story-runtime';
 import {isRecordDeploymentActive} from '../../_lib/record-runtime';
 import {storyRequest,storyPayload,storyResult} from '../../_lib/story-contract';
+import {storyOperationFailure} from '../../_lib/story-failure';
 import {digest} from '../../_lib/incremental-contract';
 export default async function handler(req:VercelRequest,res:VercelResponse){
  res.setHeader('Cache-Control','no-store');
@@ -32,5 +33,5 @@ export default async function handler(req:VercelRequest,res:VercelResponse){
    });
   }else if(!['GET','DELETE'].includes(req.method??''))return res.status(405).end();
   return res.json(await advanceStoryOperation(owner,id));
- }catch(e){const message=(e as Error).message;return res.status((e as any).status===401?401:message==='revision_conflict'?409:message.startsWith('invalid')?422:503).json({error:message==='revision_conflict'?message:'operation_unavailable'});}
+ }catch(e){const failure=storyOperationFailure(e);return res.status(failure.status).json({error:failure.code});}
 }

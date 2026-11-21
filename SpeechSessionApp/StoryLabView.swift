@@ -9,6 +9,7 @@ import SpeechSessionFeatures
     @Published var workspace = StoryWorkspace()
     @Published var records: [Session] = []
     @Published var error: String?
+    @Published var failedQuestionID: UUID?
     @Published var busy = false
     @Published var refreshingNarrative = false
     @Published var didLoadStory = false
@@ -175,7 +176,8 @@ import SpeechSessionFeatures
                 }
                 guard (200..<300).contains(status) else {
                     if kind == "refresh" {throw SummaryStageFailure(state:"service returned HTTP " + String(status))}
-                    throw StoryRequestHTTPFailure(status:status)
+                    let reason=(try? JSONSerialization.jsonObject(with:body)) as? [String:Any]
+                    throw StoryRequestHTTPFailure(status:status,reason:reason?["error"] as? String)
                 }
                 transientFailures = 0
                 data = body
@@ -207,7 +209,12 @@ import SpeechSessionFeatures
                 try await store.applyStoryEdit(edit.id,kind:value["kind"] as? String ?? "clarification",targets:value["targetIDs"] as? [String] ?? [],question:value["question"] as? String,actionUpdates:Dictionary((value["actionUpdates"] as? [[String:String]] ?? []).compactMap{a in guard let id=a["factID"],let status=a["status"] else{return nil};return (id,status)},uniquingKeysWith: {a,_ in a}))
             }
             let questions=try await store.storyWorkspace().messages.filter{$0.role=="user" && $0.state=="queued"}
-            for question in questions {activeQuestionID=question.id;try await answer(question,auth:auth)}
+            for question in questions {
+                activeQuestionID=question.id
+                do {try await answer(question,auth:auth)}
+                catch is CancellationError {return}
+                catch {recordChatFailure(error,questionID:question.id)}
+            }
             activeQuestionID=nil;answerDraft="";answerStatus=""
             await reload()
         } catch {self.error="Your question is saved. The answer couldn’t be loaded yet."}
@@ -239,8 +246,7 @@ import SpeechSessionFeatures
             do {
                 try await answer(question, auth: auth)
             } catch {
-                self.error = "Your question is saved. Tap Retry answer to retrieve it."
-                UserDefaults.standard.set(["code":String((error as NSError).code),"domain":(error as NSError).domain,"operationID":question.id.uuidString],forKey:"storyLab.lastChatFailure")
+                recordChatFailure(error,questionID:question.id)
             }
             do {
                 workspace = try await store.storyWorkspace()
@@ -250,11 +256,20 @@ import SpeechSessionFeatures
         }
         return question.id
     }
+    private func recordChatFailure(_ failure:Error,questionID:UUID) {
+        failedQuestionID=questionID
+        error=(failure as? StoryRequestHTTPFailure)?.reason == "budget_exhausted"
+            ? "The processing allowance is currently full. Your question is saved. Retry when capacity is available."
+            : "Your question is saved, but the answer couldn’t be loaded. You can retry without sending it again."
+        let code=(failure as? StoryRequestHTTPFailure).map {"http:\($0.status)"} ?? String((failure as NSError).code)
+        UserDefaults.standard.set(["code":code,"domain":(failure as NSError).domain,"operationID":questionID.uuidString],forKey:"storyLab.lastChatFailure")
+    }
     private func answer(_ question:StoryMessage,auth:KindeAuthManager) async throws {
         let id = question.id
         let value=try await request(id:id,kind:"chat",revision:0,before:"",after:question.text,targets:[],auth:auth,recordID:question.scopeRecordID)
         let response=value["kind"] as? String == "clarification" ? value["question"] as? String:value["text"] as? String
         try await store.completeStoryQuestion(id,text:response ?? "I couldn’t find an answer in these records.",citations:value["citationIDs"] as? [String] ?? [],evidence:evidence)
+        if failedQuestionID == id {failedQuestionID=nil;error=nil}
     }
     private func sendCancellation(_ id:UUID,auth:KindeAuthManager) async throws {
         if let message=try await store.storyWorkspace().messages.first(where:{$0.id==id}),message.text.hasPrefix("Service summary:") {
@@ -393,7 +408,18 @@ struct StoryLabView: View {
         .sheet(item:$selectedSource){source in NavigationStack{ScrollView{VStack(alignment:.leading,spacing:16){Text(source.title).font(StoryDesignTokens.section);Text(source.text).textSelection(.enabled);if let record=model.records.first(where:{$0.id == source.recordID}){NavigationLink("Open record and original"){SessionDetailView(session:record,store:appModel.store,home:appModel.home,initialTab:.source)}}}.padding()}.storyLoadIn().navigationTitle("Source")}}
         .onChange(of:logAction?.id){_,id in if id != nil {progressEventID=UUID();progressText=""}}
         .sheet(item:$logAction){action in NavigationStack{Form{Text(action.text);TextEditor(text:$progressText).frame(minHeight:160);Button("Save progress"){let text=progressText;Task{await model.action{try await model.store.recordStoryCareEvent(actionID:action.id,kind:"progress",text:text,factIDs:action.factIDs,eventID:progressEventID)};progressText="";logAction=nil;await appModel.health.refresh()}}.disabled(progressText.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)}.storyListCanvas().navigationTitle("How is it going?")}}
-        .alert("Saved writing",isPresented:Binding(get:{model.error != nil},set:{if !$0 {model.error=nil}})){Button("OK"){model.error=nil}} message:{Text(model.error ?? "")}
+        .alert(model.failedQuestionID == nil ? "Saved writing" : "Answer unavailable",isPresented:Binding(get:{model.error != nil},set:{if !$0 {model.error=nil}})) {
+            if let id=model.failedQuestionID {
+                Button("Retry answer") {
+                    model.error=nil
+                    let scope=model.workspace.messages.first(where:{$0.id==id})?.scopeRecordID
+                    openChat(record:model.records.first(where:{$0.id==scope}))
+                    includeQuestion(id)
+                    Task {await model.reconcile(auth:auth)}
+                }
+            }
+            Button("OK",role:.cancel){model.error=nil}
+        } message:{Text(model.error ?? "")}
     }
     private func openChat(record: Session? = nil) {
         if chatRecord?.id != record?.id { message = "" }
@@ -1313,6 +1339,7 @@ private struct StoryTemplateShareView:View {
 
 private struct StoryRequestHTTPFailure:Error {
     let status:Int
+    var reason:String? = nil
 }
 
 private struct SummaryStageFailure:Error {
