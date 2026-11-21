@@ -141,7 +141,8 @@ export function validatePoints(raw:string,p:SummaryInput,s:Step,outputs:Record<s
  const prose=/\b(?:is|are|was|were|has been|have been|(?:patient|clinician|doctor|provider|practitioner|midwife|parent|caregiver)\s+(?:reports?|reported|describes?|described|states?|stated|says|said|notes?|noted|indicates?|indicated)|records list|notes describe|not documented)\b/i;
  if(!Array.isArray(points)||points.length>(p.kind==='overview'?5:80)||points.some((b:any)=>!b||!headings(p).includes(b.heading)||typeof b.text!=='string'||!b.text.trim()||b.text.length>1500||!Array.isArray(b.citationIDs)||!b.citationIDs.length||!b.citationIDs.every((id:any)=>allowed.has(id))||[b.subjectCitation,b.responseCitation].some(id=>id!==null&&!b.citationIDs.includes(id))||p.template==='visit'&&!['Discussed','Decided','Next steps'].includes(b.visitSection)||p.kind==='practitioner'&&isConcisePublicationStep(p,s)&&(!/^\S+(?:\s+\S+){0,5} — \S+(?:\s+\S+){0,15}$/.test(b.text)||/[;.]$/.test(b.text)||b.text.includes(';')||prose.test(b.text))))throw Error('invalid_summary_output');
  // Older completed responses lack this field and remain readable/recoverable.
- // New strict-schema final responses must account for every audited history point.
+ // Every audited item must be represented. One item may legitimately split into
+ // multiple concise bullets, so coverage is at-least-once, not exactly-once.
  if(coverage&&(points.some((point:Point)=>point.historyIDs!==undefined)||!points.length&&coveragePoints(p,s,outputs,'Comprehensive Health History').length>0)){
   const history=coveragePoints(p,s,outputs,'Comprehensive Health History');
   const covered=new Set<string>();
@@ -149,7 +150,7 @@ export function validatePoints(raw:string,p:SummaryInput,s:Step,outputs:Record<s
    if(!Array.isArray(point.historyIDs))throw Error('invalid_summary_output');
    for(const id of point.historyIDs){
     const match=/^history:(0|[1-9]\d*)$/.exec(id);const original=match?history[Number(match[1])]:undefined;
-    if(!original||covered.has(id)||point.heading!=='Comprehensive Health History'||!point.citationIDs.some(ref=>original.citationIDs.includes(ref)))throw Error('invalid_summary_output');
+    if(!original||point.heading!=='Comprehensive Health History'||!point.citationIDs.some(ref=>original.citationIDs.includes(ref)))throw Error('invalid_summary_output');
     covered.add(id);
    }
   }
@@ -162,7 +163,7 @@ export function validatePoints(raw:string,p:SummaryInput,s:Step,outputs:Record<s
    if(!Array.isArray(point.coordinationIDs))throw Error('invalid_summary_output');
    for(const id of point.coordinationIDs){
     const match=/^coordination:(0|[1-9]\d*)$/.exec(id);const original=match?required[Number(match[1])]:undefined;
-    if(!original||covered.has(id)||point.heading!=='Care Coordination Summary'||!point.citationIDs.some(ref=>original.citationIDs.includes(ref)))throw Error('invalid_summary_output');covered.add(id);
+    if(!original||point.heading!=='Care Coordination Summary'||!point.citationIDs.some(ref=>original.citationIDs.includes(ref)))throw Error('invalid_summary_output');covered.add(id);
    }
   }
   if(covered.size!==required.length)throw Error('invalid_summary_output');

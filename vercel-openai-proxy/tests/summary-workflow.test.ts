@@ -397,7 +397,7 @@ test('new publication responses account for audited history while old saved resp
  assert.match(payload.instructions,/Preserve every listed historical milestone/);
  const good=[{...first,historyIDs:['history:0']},{...second,historyIDs:['history:1']}];
  assert.equal(validatePoints(JSON.stringify({points:good}),p,step,outputs).length,2);
- for(const bad of [good.slice(0,1),[...good,{...first,historyIDs:['history:0']}],[{...first,historyIDs:['history:9']},good[1]],[{...first,heading:'Clinical Snapshot',historyIDs:['history:0']},good[1]]])assert.throws(()=>validatePoints(JSON.stringify({points:bad}),p,step,outputs));
+ for(const bad of [good.slice(0,1),[{...first,historyIDs:['history:9']},good[1]],[{...first,heading:'Clinical Snapshot',historyIDs:['history:0']},good[1]]])assert.throws(()=>validatePoints(JSON.stringify({points:bad}),p,step,outputs));
  assert.equal(validatePoints(JSON.stringify({points:[first,second]}),p,step,outputs).length,2);
  const split=validatePoints(JSON.stringify({points:[{...good[0],text:'Appendectomy — 2017; uncomplicated recovery'},good[1]]}),p,step,outputs);
  assert.equal(split.length,3);assert.deepEqual(split[1].historyIDs,[]);
@@ -484,4 +484,14 @@ test('source audits and publication protect history independently of lossy merge
  assert.equal(validatePoints(JSON.stringify({points:restored}),p,publication,outputs).length,2);
  // Inventory IDs must not change with database row order.
  assert.deepEqual(JSON.parse(summaryPayload(p,publication,Object.fromEntries(Object.entries(outputs).reverse()),0).input).requiredHistory,body.requiredHistory);
+});
+
+test('a source-checked milestone may split across supported audit bullets',()=>{
+ const p=input('practitioner');p.pipeline='compact-v2';const audit={...summaryPlan(p).find(s=>s.phase==='audit')!,dependencies:['merged']};
+ const original={...point,heading:'Comprehensive Health History',text:'Past surgery — procedure and recovery',stance:null};
+ const outputs={'check:0':[original],merged:[]};
+ const split=[{...original,text:'Past surgery — procedure',historyIDs:['history:0'],coordinationIDs:[]},{...original,text:'Recovery — postoperative course',historyIDs:['history:0'],coordinationIDs:[]}];
+ assert.equal(validatePoints(JSON.stringify({points:split}),p,audit,outputs).length,2);
+ assert.throws(()=>validatePoints(JSON.stringify({points:split.map(b=>({...b,historyIDs:[]}))}),p,audit,outputs));
+ assert.throws(()=>validatePoints(JSON.stringify({points:[{...split[0],heading:'Clinical Snapshot'},split[1]]}),p,audit,outputs));
 });
