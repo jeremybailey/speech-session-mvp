@@ -131,6 +131,23 @@ export async function resumeSummary(owner:string,id:string,expectedRevision?:num
    await wake(db,id);return {id,state:'queued'};
   }
  }
+ // A formatting-only repair can retain the already checked original wording.
+ // Revalidate the saved receipt before waking; never rerun completed source work.
+ if(w.state==='needs_attention'&&w.error_code==='invalid_summary_output'&&new Date(w.expires_at)>new Date()){
+  const p=(await db.query('SELECT input,plan FROM ai_summary_payloads WHERE workflow_id=$1',[id])).rows[0];
+  const rows=(await db.query(`SELECT s.key,s.state,s.output,j.state job_state,p.result FROM ai_summary_steps s
+   LEFT JOIN ai_jobs j ON j.id=s.job_id LEFT JOIN ai_payloads p ON p.job_id=j.id AND p.expires_at>now() WHERE s.workflow_id=$1`,[id])).rows;
+  const outputs=Object.fromEntries(rows.filter((r:any)=>r.state==='completed').map((r:any)=>[r.key,r.output]));
+  const unfinished=rows.filter((r:any)=>r.state!=='completed');
+  const recoverable=p&&unfinished.length>0&&unfinished.every((r:any)=>{
+   if(r.state!=='running'||r.job_state!=='completed'||!r.output)return false;
+   try{applyEditorialRepair(r.result?.output,r.output,p.input,p.plan.find((s:Step)=>s.key===r.key),outputs,true);return true;}catch{return false;}
+  });
+  if(recoverable){
+   await db.query("UPDATE ai_summary_workflows SET state='queued',error_code=NULL,retry_at=NULL,revision=revision+1 WHERE id=$1",[id]);
+   await wake(db,id);return {id,state:'queued'};
+  }
+ }
  // Unknown provider outcomes and invalid clinical output are never blindly retried.
  return {id,state:w.state};
 });}
@@ -153,7 +170,7 @@ export async function advanceSummary(id:string):Promise<string[]>{return transac
   if(['queued','running'].includes(row.job_state))continue;
   let failure:string|undefined;let editorialRepair=false;
   if(row.job_state==='completed'){
-   try {const step=plan.find(s=>s.key===row.key)!;const result=row.output?applyEditorialRepair(row.result?.output,row.output,input,step,outputs):validatePoints(row.result?.output,input,step,outputs);outputs[row.key]=result;row.state='completed';await db.query("UPDATE ai_summary_steps SET state='completed',output=$3 WHERE workflow_id=$1 AND key=$2",[id,row.key,jsonbPayload(result)]);continue;}
+   try {const step=plan.find(s=>s.key===row.key)!;const result=row.output?applyEditorialRepair(row.result?.output,row.output,input,step,outputs,true):validatePoints(row.result?.output,input,step,outputs);outputs[row.key]=result;row.state='completed';await db.query("UPDATE ai_summary_steps SET state='completed',output=$3 WHERE workflow_id=$1 AND key=$2",[id,row.key,jsonbPayload(result)]);continue;}
    catch {failure='invalid_summary_output';if(!row.output){const candidate=editorialRepairCandidate(row.result?.output,input,plan.find(s=>s.key===row.key)!,outputs);if(candidate){row.output=candidate;editorialRepair=true;await db.query('UPDATE ai_summary_steps SET output=$3 WHERE workflow_id=$1 AND key=$2',[id,row.key,jsonbPayload(candidate)]);}}}
   }else failure=confirmedSummaryProviderFailure(row)?'provider_failed':row.job_state==='uncertain'?'provider_outcome_unknown':row.job_state??'missing_provider_result';
   const providerFailed=confirmedSummaryProviderFailure(row);

@@ -578,3 +578,20 @@ test('editorial repair cannot add facts or remove uncertainty, names, dates or n
  assert.equal(repair('Vitamin K — possibly declined after 2024')[0].text,'Vitamin K — possibly declined after 2024');
  for(const text of ['Vitamin K — declined after 2024','Vitamin K — possibly accepted after 2024','Vitamin K — possibly declined after 2025','Vitamin D — possibly declined after 2024','Vitamin K — possibly declined','Vitamin K — possibly declined after 2024, Dr Smith'])assert.throws(()=>repair(text));
 });
+
+test('wording repair retains checked originals instead of accepting changed facts or failing the document',()=>{
+ const p=input('practitioner');p.pipeline='compact-v2';const plan=summaryPlan(p),step=plan.at(-1)!;
+ const original={...point,heading:'Clinical Snapshot',text:'Vitamin K — is possibly declined after 2024',stance:null,historyIDs:[],coordinationIDs:[]};
+ const second={...original,text:'Back pain — symptoms are intermittent'};
+ const outputs={[step.dependencies[0]]:[original,second]};
+ const candidates=editorialRepairCandidate(JSON.stringify({points:[original,second]}),p,step,outputs)!;
+ const raw=JSON.stringify({repairs:[{index:0,text:'Vitamin K — accepted after 2025'},{index:1,text:'Back pain — intermittent symptoms'}]});
+ assert.throws(()=>applyEditorialRepair(raw,candidates,p,step,outputs));
+ const result=applyEditorialRepair(raw,candidates,p,step,outputs,true);
+ assert.deepEqual(result[0],candidates[0]);assert.equal(result[1].text,'Back pain — intermittent symptoms');
+ const assembled=summaryResult(p,plan,{...outputs,[step.key]:result});
+ assert.equal(assembled.preservedCheckedWording,true);assert.equal(assembled.points.length,2);
+ assert.ok(!assembled.text.includes('accepted'));assert.ok(assembled.text.includes(original.text));
+ assert.throws(()=>applyEditorialRepair(JSON.stringify({repairs:[]}),candidates,p,step,outputs,true));
+ assert.throws(()=>applyEditorialRepair(raw,[{...candidates[0],citationIDs:['invented']},candidates[1]],p,step,outputs,true));
+});

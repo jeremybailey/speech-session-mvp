@@ -44,6 +44,20 @@ public enum StorySummaryTemplate:String,CaseIterable,Codable,Sendable {
         return text
     }
 
+    /// The service may retain a checked original bullet when shortening would
+    /// alter its meaning. This relaxes style only; document structure still holds.
+    public func validatedServiceHandoff(_ raw:String,preservedCheckedWording:Bool)->String? {
+        if !preservedCheckedWording {return validatedHandoff(raw)}
+        guard let text=validatedText(raw) else{return nil}
+        for block in StorySummaryDocument.blocks(StorySummaryDocument.body(text)) {
+            switch block {
+            case .heading(_,level:2),.bullet:continue
+            default:return nil
+            }
+        }
+        return text
+    }
+
     public func validatedText(_ raw:String)->String? {
         let text=raw.replacingOccurrences(of:#"\[E\d+(?:\s*[,;]\s*E\d+)*\]"#,with:"",options:.regularExpression).trimmingCharacters(in:.whitespacesAndNewlines)
         // Verification can restyle a heading without changing its meaning. Normalize

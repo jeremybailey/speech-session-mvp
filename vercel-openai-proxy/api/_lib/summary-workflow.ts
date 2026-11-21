@@ -217,13 +217,13 @@ function preservesEditorialMeaning(before:string,after:string):boolean {
  const substantive=(text:string)=>words(text).filter(word=>!grammar.has(word)).sort();
  return JSON.stringify(substantive(before))===JSON.stringify(substantive(after));
 }
-export function applyEditorialRepair(raw:string,original:Point[],p:SummaryInput,s:Step,outputs:Record<string,Point[]>):Point[]{
+export function applyEditorialRepair(raw:string,original:Point[],p:SummaryInput,s:Step,outputs:Record<string,Point[]>,preserveCheckedWording=false):Point[]{
  const parsed=JSON.parse(raw),required=new Set(original.flatMap((point,index)=>practitionerPointStyleValid(point)?[]:[index]));
  if(!Array.isArray(parsed?.repairs)||parsed.repairs.length!==required.size||!required.size)throw Error('invalid_editorial_repair');
  const points=original.map(point=>({...point}));
- for(const repair of parsed.repairs){if(!required.delete(repair?.index)||typeof repair.text!=='string'||Object.keys(repair).some(k=>!['index','text'].includes(k)))throw Error('invalid_editorial_repair');if(!preservesEditorialMeaning(original[repair.index].text,repair.text))throw Error('invalid_editorial_repair');points[repair.index].text=repair.text;}
+ for(const repair of parsed.repairs){if(!required.delete(repair?.index)||typeof repair.text!=='string'||Object.keys(repair).some(k=>!['index','text'].includes(k)))throw Error('invalid_editorial_repair');if(!preservesEditorialMeaning(original[repair.index].text,repair.text)||!practitionerPointStyleValid({...original[repair.index],text:repair.text})){if(preserveCheckedWording)continue;throw Error('invalid_editorial_repair');}points[repair.index].text=repair.text;}
  if(required.size)throw Error('invalid_editorial_repair');
- return validatePoints(JSON.stringify({points}),p,s,outputs);
+ return validatePoints(JSON.stringify({points}),p,s,outputs,preserveCheckedWording);
 }
 export function summaryResult(p:SummaryInput,plan:Step[],outputs:Record<string,Point[]>) {
  const terminal=plan.filter(s=>s.key.startsWith('final:')&&s.phase==='check').at(-1);
@@ -233,7 +233,7 @@ export function summaryResult(p:SummaryInput,plan:Step[],outputs:Record<string,P
  let points=[...seen.values()];if(p.kind==='overview')points=points.slice(0,5);
  if(!points.length)throw Error('unsupported_summary');
  const text=p.kind==='overview'?points.map(b=>b.text).join(' '):headings(p).map(h=>'## '+h+'\n'+points.filter(b=>b.heading===h).map(b=>'- '+b.text).join('\n')).join('\n\n');
- return {contract:p.contract,kind:p.kind,sourceRevision:p.sourceRevision,publicationRevision:p.publicationRevision,template:p.template,text,points,bulletDates:points.map(b=>({text:b.text,labels:b.temporal&&b.temporal.role!=='unknown'?[`${b.temporal.role==='documented'?'Record':'Date'}: ${b.temporal.start}`]:b.temporal?[...new Set(b.citationIDs.map(id=>p.evidence.find(e=>e.id===id)?.timelineLabel).filter((label):label is string=>!!label&&label.startsWith("Record: ")))]:[...new Set(b.citationIDs.map(id=>p.evidence.find(e=>e.id===id)?.timelineLabel).filter((label):label is string=>!!label))],...(b.temporal?{temporal:b.temporal}:{})})),citationIDs:[...new Set(points.flatMap(b=>b.citationIDs))]};
+ return {...(p.kind==='practitioner'&&points.some(point=>!practitionerPointStyleValid(point))?{preservedCheckedWording:true}:{}),contract:p.contract,kind:p.kind,sourceRevision:p.sourceRevision,publicationRevision:p.publicationRevision,template:p.template,text,points,bulletDates:points.map(b=>({text:b.text,labels:b.temporal&&b.temporal.role!=='unknown'?[`${b.temporal.role==='documented'?'Record':'Date'}: ${b.temporal.start}`]:b.temporal?[...new Set(b.citationIDs.map(id=>p.evidence.find(e=>e.id===id)?.timelineLabel).filter((label):label is string=>!!label&&label.startsWith("Record: ")))]:[...new Set(b.citationIDs.map(id=>p.evidence.find(e=>e.id===id)?.timelineLabel).filter((label):label is string=>!!label))],...(b.temporal?{temporal:b.temporal}:{})})),citationIDs:[...new Set(points.flatMap(b=>b.citationIDs))]};
 }
 
 // Generation failure and unknown billing are different states. A confirmed

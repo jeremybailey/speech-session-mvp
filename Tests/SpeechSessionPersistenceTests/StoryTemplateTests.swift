@@ -20,6 +20,17 @@ final class StoryTemplateTests:XCTestCase {
         XCTAssertNotNil(template.validatedHandoff(handoff("Vision — slow improvement per patient")))
     }
 
+    func testServiceCanKeepCheckedWordingWithoutRelaxingDocumentStructure() {
+        let template=StorySummaryTemplate.practitioner
+        let text=template.sections.enumerated().map { index,heading in
+            "## "+heading+(index==0 ? "\n- Vitamin K — is possibly declined after 2024" : "")
+        }.joined(separator:"\n")
+        XCTAssertNil(template.validatedServiceHandoff(text,preservedCheckedWording:false))
+        XCTAssertEqual(template.validatedServiceHandoff(text,preservedCheckedWording:true),text)
+        XCTAssertNil(template.validatedServiceHandoff(text.replacingOccurrences(of:"## Clinical Snapshot",with:"## Invented section"),preservedCheckedWording:true))
+        XCTAssertNil(template.validatedServiceHandoff(text+"\n\nUnstructured advice paragraph.",preservedCheckedWording:true))
+    }
+
     func testHandoffRetainsDistinctConcisePointsBeyondTwoHundredWords() {
         let template = StorySummaryTemplate.practitioner
         let raw = template.sections.enumerated().map { index, heading in

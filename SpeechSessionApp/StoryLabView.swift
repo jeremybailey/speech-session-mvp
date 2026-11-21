@@ -1421,7 +1421,7 @@ private struct SummaryStageFailure:Error {
                     let label="Preparing summary… \(completed) of \(total) steps"
                     if self?.generationStatus != label {self?.generationStatus=label}
                 }
-                guard let text=output["text"] as? String,let valid=template.validatedHandoff(text) else {
+                guard let text=output["text"] as? String,let valid=template.validatedServiceHandoff(text,preservedCheckedWording:output["preservedCheckedWording"] as? Bool == true) else {
                     throw NSError(domain:"SummaryPublication",code:1,userInfo:[NSLocalizedDescriptionKey:"The completed summary didn’t pass the formatting check. It is saved on this phone; you don’t need to generate it again."])
                 }
                 guard let citations=output["citationIDs"] as? [String],!citations.isEmpty,
