@@ -241,6 +241,9 @@ public struct StoryLabSparkline: View {
 
 public struct StorySummarySnapshot: Codable, Sendable {
     public var includesCareTeam:Bool? = nil
+    public var includesProviderContext:Bool? = nil
+    public var providerContacts:[CareTeamMember]? = nil
+    public var patientName:String? = nil
     public var serviceWorkflowVersion:String? = nil
     public var publicationSummary:StorySharedSummary? = nil
     public let evidence: [StoryEvidence]
@@ -257,17 +260,20 @@ public struct StorySummarySnapshot: Codable, Sendable {
         func sourceRows(_ values:[StoryEvidence])->[StoryEvidence] {
             values.map { var source=$0;source.timelineLabel=nil;return source }
         }
-        return try rows(sourceRows(evidence))==rows(sourceRows(other.evidence)) && rows(labs)==rows(other.labs)
+        return try rows(sourceRows(evidence))==rows(sourceRows(other.evidence)) && rows(labs)==rows(other.labs) && providerContacts == other.providerContacts && patientName == other.patientName
     }
 }
 
 extension SessionStore {
-    public func storySummarySnapshot(includeTimeline:Bool=true,includeCareTeam:Bool=true) throws -> StorySummarySnapshot {
+    public func storySummarySnapshot(includeTimeline:Bool=true,includeCareTeam:Bool=true,includeProviderContext:Bool=true) throws -> StorySummarySnapshot {
         let facts = HealthMemoryProjection.facts(in: try healthSnapshot())
         let readings = facts.filter { $0.category == .testsAndLabs && !$0.preference.hidden }
             .flatMap(\.occurrences).filter { HealthStoryEligibility.includes($0) }
             .flatMap(StoryLabReading.savedReadings)
-        return StorySummarySnapshot(includesCareTeam:includeCareTeam,evidence: try storySummaryEvidence(includeTimeline:includeTimeline,includeCareTeam:includeCareTeam), labs: readings)
+        let workspace=try storyWorkspace()
+        let contacts=includeProviderContext ? HealthFactMatching.displayContacts(try healthSnapshot().careTeam).sorted { $0.id.uuidString < $1.id.uuidString } : nil
+        let name=includeProviderContext ? (workspace.sharedSummary?.patientNameEdited == true ? workspace.sharedSummary?.patientName : try recordedSummaryPatientName(for:nil)) : nil
+        return StorySummarySnapshot(includesCareTeam:includeCareTeam,includesProviderContext:includeProviderContext,providerContacts:contacts,patientName:name,evidence: try storySummaryEvidence(includeTimeline:includeTimeline,includeCareTeam:includeCareTeam), labs: readings)
     }
 }
 

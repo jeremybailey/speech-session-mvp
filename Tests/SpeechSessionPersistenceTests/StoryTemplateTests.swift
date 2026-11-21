@@ -585,11 +585,37 @@ final class StoryTemplateTests:XCTestCase {
         _ = try await store.saveCareTeamMember(CareTeamMember(name:"Dr. Example",role:"Neurologist",organization:"Example Clinic",email:"private@example.test",phone:"555-0100",notes:"Previous provider"))
         let snapshot=try await store.storySummarySnapshot()
         XCTAssertEqual(snapshot.includesCareTeam,true)
+        XCTAssertEqual(snapshot.providerContacts?.first?.phone,"555-0100")
+        let old=try await store.storySummarySnapshot(includeProviderContext:false)
+        XCTAssertNil(old.providerContacts);XCTAssertNil(old.patientName)
+        XCTAssertFalse(try snapshot.hasSameSources(as:old))
         let text=snapshot.evidence.map(\.text).joined(separator:"\n")
         XCTAssertTrue(text.contains("Dr. Example"));XCTAssertTrue(text.contains("Neurologist"));XCTAssertTrue(text.contains("Previous provider"))
         XCTAssertFalse(text.contains("private@example.test"));XCTAssertFalse(text.contains("555-0100"))
         let legacy=try await store.storySummarySnapshot(includeCareTeam:false)
         XCTAssertFalse(legacy.evidence.contains{$0.id.hasPrefix("CARE-")})
+    }
+
+    func testProviderPresentationUsesExactLocalFieldsAndExcludesPatient() throws {
+        let provider=CareTeamMember(name:"Taylor Example",role:"PT",organization:"Example Physio",email:"taylor@example.test",phone:"555-0123",notes:"")
+        let text="## Clinical Snapshot\n- Safety — no current concerns\n\n## Care Coordination Summary\n- Alex Example, PT — previous care\n- Taylor Example — previous ankle care"
+        let dates=[StorySummaryBulletDate(text:"Taylor Example — previous ankle care",labels:["Record: 2024-09-06"])]
+        let view=StorySummaryDocument.practitionerPresentation(text,hasAbnormalLabs:false,bulletDates:dates,providerContacts:[provider],patientName:"Alex Example")
+        let expected="Taylor Example, PT — Example Physio; previous ankle care; Phone: 555-0123; Email: taylor@example.test"
+        XCTAssertTrue(view.blocks.contains(.bullet(expected)))
+        XCTAssertTrue(view.blocks.contains(.bullet("Safety — no current concerns")))
+        XCTAssertFalse(view.blocks.contains(.bullet("Alex Example, PT — previous care")))
+        XCTAssertEqual(view.dates.first(where:{$0.text==expected})?.labels,["Record: 2024-09-06"])
+        let pdf=try StorySummaryPDF.render(text:text,title:"Practitioner summary",generatedAt:Date(),patientName:"Alex Example",bulletDates:dates,providerContacts:[provider])
+        let content=try XCTUnwrap(PDFDocument(data:pdf)?.string)
+        XCTAssertTrue(content.contains("Taylor Example, PT"));XCTAssertTrue(content.contains("555-0123"));XCTAssertTrue(content.contains("taylor@example.test"))
+        if let path=ProcessInfo.processInfo.environment["CC_PROVIDER_PREVIEW"] {try pdf.write(to:URL(fileURLWithPath:path))}
+        let ambiguous=StorySummaryDocument.practitionerPresentation(text,hasAbnormalLabs:false,bulletDates:dates,providerContacts:[provider,provider],patientName:"Alex Example")
+        XCTAssertTrue(ambiguous.blocks.contains(.bullet("Taylor Example — previous ankle care")))
+        let partial=StorySummaryDocument.practitionerPresentation("## Care Coordination Summary\n- Taylor — previous care",hasAbnormalLabs:false,bulletDates:[],providerContacts:[provider])
+        XCTAssertTrue(partial.blocks.contains(.bullet("Taylor — previous care")))
+        let empty=StorySummaryDocument.practitionerPresentation("## Care Coordination Summary\n- Alex Example — previous care",hasAbnormalLabs:false,bulletDates:[],patientName:"Alex Example")
+        XCTAssertFalse(empty.blocks.contains(.heading("Care Coordination Summary",level:2)))
     }
 
     func testSemanticDatesOverrideWordingAndDoNotTurnDocumentationIntoEventYears() throws {

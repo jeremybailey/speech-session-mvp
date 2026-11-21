@@ -14,6 +14,22 @@ function validDate(value:string):boolean {
  if(value.length!==10)return true;
  const date=new Date(value+'T00:00:00Z');return !isNaN(+date)&&date.toISOString().slice(0,10)===value;
 }
+// Validate the supplied precision, not merely the year. A quoted year alone
+// cannot justify an invented month/day during summarization.
+function supportsPrecision(value:string,quote:string):boolean {
+ if(value.length===4)return true;
+ const dates:string[]=[];
+ for(const m of quote.matchAll(/\b((?:19|20)\d{2})-(\d{2})(?:-(\d{2}))?\b/g))dates.push(m[1]+'-'+m[2]+(m[3]?'-'+m[3]:''));
+ const months=['jan(?:uary)?','feb(?:ruary)?','mar(?:ch)?','apr(?:il)?','may','jun(?:e)?','jul(?:y)?','aug(?:ust)?','sep(?:t(?:ember)?)?','oct(?:ober)?','nov(?:ember)?','dec(?:ember)?'];
+ const monthIndex=(name:string)=>months.findIndex(pattern=>new RegExp('^'+pattern+'$').test(name));
+ for(const m of quote.matchAll(/\b([a-z]+)\s+(?:(\d{1,2})(?:st|nd|rd|th)?[,]?\s+)?((?:19|20)\d{2})\b/g)){
+  const month=monthIndex(m[1]);if(month>=0)dates.push(m[3]+'-'+String(month+1).padStart(2,'0')+(m[2]?'-'+m[2].padStart(2,'0'):''));
+ }
+ for(const m of quote.matchAll(/\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+)[,]?\s+((?:19|20)\d{2})\b/g)){
+  const month=monthIndex(m[2]);if(month>=0)dates.push(m[3]+'-'+String(month+1).padStart(2,'0')+'-'+m[1].padStart(2,'0'));
+ }
+ return dates.some(date=>date===value||value.length===7&&date.startsWith(value+'-'));
+}
 export function validateSummaryTemporal(value:any,pointCitations:string[],evidence:{id:string;text:string}[]):void {
  if(!value||!['event','ongoing','documented','unknown'].includes(value.role)||typeof value.approximate!=='boolean'||!Array.isArray(value.citationIDs)||!value.citationIDs.every((id:any)=>typeof id==='string'&&pointCitations.includes(id)))throw Error('invalid_summary_temporal');
  if(value.role==='unknown'){
@@ -32,7 +48,7 @@ export function validateSummaryTemporal(value:any,pointCitations:string[],eviden
   supported.add(String(anchor+direction*Number(relative[2])));supported.add(String(anchor+direction*Number(relative[3]??relative[2])));
   if(relative[1]&&!value.approximate)throw Error('invalid_summary_temporal');
  }
- if(!supported.has(value.start.slice(0,4))||value.end&&!supported.has(value.end.slice(0,4)))throw Error('invalid_summary_temporal');
+ if(!supported.has(value.start.slice(0,4))||value.end&&!supported.has(value.end.slice(0,4))||!supportsPrecision(value.start,quote)||value.end&&!supportsPrecision(value.end,quote))throw Error('invalid_summary_temporal');
 }
 
 // Date labels are optional presentation metadata. An unsupported label must not

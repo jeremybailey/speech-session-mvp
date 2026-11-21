@@ -1115,7 +1115,7 @@ private struct StoryTemplateShareView:View {
                             }
                         }
                         let abnormalLabs = (summary.labReadings ?? []).filter { $0.abnormalLabel != nil }
-                        let presentation = StorySummaryDocument.practitionerPresentation(summary.text, hasAbnormalLabs: !abnormalLabs.isEmpty, bulletDates: summary.bulletDates ?? [])
+                        let presentation = StorySummaryDocument.practitionerPresentation(summary.text, hasAbnormalLabs: !abnormalLabs.isEmpty, bulletDates: summary.bulletDates ?? [], providerContacts: summary.providerContacts ?? [], patientName: job.patientName)
                         let blocks = presentation.blocks
                         ForEach(Array(blocks.enumerated()),id:\.offset) {index,block in
                             switch block {
@@ -1414,7 +1414,7 @@ private struct SummaryStageFailure:Error {
                 stageID=serviceID
                 let encoder=JSONEncoder();encoder.outputFormatting=[.sortedKeys]
                 let sourceKey=SHA256.hash(data:try encoder.encode(frozen)).map{String(format:"%02x",$0)}.joined()
-                let request=try await store.prepareServiceSummary(ServiceSummaryRequest(id:serviceID,kind:"practitioner",target:"practitioner",sourceRevision:sourceKey,publicationRevision:id.uuidString,template:"practitioner",evidence:frozen.evidence,structuredLabs:!frozen.labs.isEmpty))
+                let request=try await store.prepareServiceSummary(ServiceSummaryRequest(id:serviceID,kind:"practitioner",target:"practitioner",sourceRevision:sourceKey,publicationRevision:id.uuidString,template:"practitioner",evidence:frozen.evidence,structuredLabs:!frozen.labs.isEmpty,patientName:frozen.patientName))
                 let value=try JSONSerialization.jsonObject(with:encoder.encode(request)) as! [String:Any]
                 generationStatus=Self.preparingLabel
                 let output=try await serviceTransport.summaryWorkflow(value, retryUnfinished: retryUnfinished) { [weak self] completed,total in
@@ -1429,6 +1429,7 @@ private struct SummaryStageFailure:Error {
                     throw NSError(domain:"SummaryPublication",code:2,userInfo:[NSLocalizedDescriptionKey:"The completed summary’s source references couldn’t be verified. Your previous summary is unchanged."])
                 }
                 var document=StorySharedSummary(templateID:template.rawValue,text:valid,evidence:request.evidence.filter{citations.contains($0.id)},patientName:patientName)
+                document.providerContacts=frozen.providerContacts
                 document.patientNameEdited=nameEdited || summary?.patientNameEdited == true
                 if let raw=output["bulletDates"],JSONSerialization.isValidJSONObject(raw) {
                     document.bulletDates=try JSONDecoder().decode([StorySummaryBulletDate].self,from:JSONSerialization.data(withJSONObject:raw))
@@ -1482,6 +1483,7 @@ private struct SummaryStageFailure:Error {
             let identifiedName = !nameEdited && summary?.patientNameEdited != true && patientName.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty ? StorySummaryDocument.patientName(in:text):patientName
             var document=StorySharedSummary(templateID:template.rawValue,text:StorySummaryDocument.body(text),evidence:accepted,patientName:identifiedName)
             document.patientNameEdited = nameEdited || summary?.patientNameEdited == true
+            document.providerContacts = frozen?.providerContacts
             document.labReadings = frozen?.labs
             patientName=identifiedName ?? ""
             try await store.completeStorySharedSummary(id,summary:document)

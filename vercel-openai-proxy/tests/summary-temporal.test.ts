@@ -29,3 +29,15 @@ test('unsupported optional timing becomes unknown while supported timing survive
   assert.deepEqual(supportedSummaryTemporal(bad,['e1'],evidence),{role:'unknown',start:null,end:null,approximate:false,sourceQuote:null,citationIDs:[]});
  }
 });
+
+test('date precision cannot invent a month or day from a supported year',()=>{
+ for(const start of ['2024-08-06','2024-09-07'])assert.throws(()=>validateSummaryTemporal({...timing,start},['e1'],evidence));
+ for(const quote of ['September 2024','Maybe 6, 2024','Marching 6, 2024']){
+  assert.throws(()=>validateSummaryTemporal({...timing,start:'2024-09-06',sourceQuote:quote},['e1'],[{id:'e1',text:quote}]));
+ }
+ for(const quote of ['September 6, 2024','6 September 2024','2024-09-06']){
+  validateSummaryTemporal({...timing,sourceQuote:quote},['e1'],[{id:'e1',text:quote}]);
+  validateSummaryTemporal({...timing,start:'2024-09',sourceQuote:quote},['e1'],[{id:'e1',text:quote}]);
+ }
+ assert.equal(supportedSummaryTemporal({...timing,start:'2024-09-07'},['e1'],evidence).role,'unknown');
+});

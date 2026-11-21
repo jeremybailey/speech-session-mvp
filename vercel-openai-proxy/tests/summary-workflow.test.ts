@@ -548,3 +548,33 @@ test('editorial recovery repairs only rejected wording and retains accepted cont
  assert.equal(editorialRepairCandidate(JSON.stringify({points:[{...bad,historyIDs:[]}]}),p,step,outputs),undefined);
  assert.equal(editorialRepairCandidate(JSON.stringify({points:[{...bad,citationIDs:['invented']}]}),p,step,outputs),undefined);
 });
+
+test('known patient identity is never a provider or a mandatory provider checklist item',()=>{
+ const p=input('practitioner');p.patientName='Alex Example';p.pipeline='compact-v2';
+ assert.equal(validateSummaryInput({...p,patientName:' Alex Example '}).patientName,'Alex Example');
+ for(const name of ['',42,'a'.repeat(201)])assert.throws(()=>validateSummaryInput({...p,patientName:name}));
+ const plan=summaryPlan(p),audit={...plan.find(s=>s.phase==='audit')!,dependencies:['merged']};
+ for(const name of ['Alex Example','Dr. Alex Example','Alex Example, PT']){
+  const bad={...point,heading:'Care Coordination Summary',text:name+' — previous care',stance:null};
+  assert.throws(()=>validatePoints(JSON.stringify({points:[bad]}),p,plan[0],{}));
+  const payload=summaryPayload(p,audit,{'check:0':[bad],merged:[]},0);
+  const body=JSON.parse(payload.input);
+  assert.equal(body.patientIdentity,'Alex Example');assert.deepEqual(body.requiredCoordination,[]);
+ }
+ for(const step of plan){
+  const payload=summaryPayload(p,step,{},0);
+  assert.equal(JSON.parse(payload.input).patientIdentity,'Alex Example');
+  assert.match(payload.instructions,/credentials/);
+ }
+});
+
+test('editorial repair cannot add facts or remove uncertainty, names, dates or negation',()=>{
+ const p=input('practitioner');p.pipeline='compact-v2';const step=summaryPlan(p).at(-1)!;
+ const original={...point,heading:'Clinical Snapshot',text:'Vitamin K — is possibly declined after 2024',stance:null,historyIDs:[],coordinationIDs:[]};
+ const outputs={[step.dependencies[0]]:[original]};
+ const candidates=editorialRepairCandidate(JSON.stringify({points:[original]}),p,step,outputs)!;
+ assert.ok(candidates);
+ const repair=(text:string)=>applyEditorialRepair(JSON.stringify({repairs:[{index:0,text}]}),candidates,p,step,outputs);
+ assert.equal(repair('Vitamin K — possibly declined after 2024')[0].text,'Vitamin K — possibly declined after 2024');
+ for(const text of ['Vitamin K — declined after 2024','Vitamin K — possibly accepted after 2024','Vitamin K — possibly declined after 2025','Vitamin D — possibly declined after 2024','Vitamin K — possibly declined','Vitamin K — possibly declined after 2024, Dr Smith'])assert.throws(()=>repair(text));
+});

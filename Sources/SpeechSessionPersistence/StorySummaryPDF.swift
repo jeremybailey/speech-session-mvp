@@ -22,7 +22,7 @@ public enum StorySummaryPDF {
     }
 
     @MainActor public static func renderSummary(_ summary: StorySharedSummary, title: String, patientName: String?, typography: Typography? = nil) throws -> Data {
-        try render(text: summary.text, title: title, generatedAt: summary.generatedAt, patientName: patientName, labs: summary.labReadings ?? [], bulletDates:summary.bulletDates ?? [], typography: typography) { series, context, rect in
+        try render(text: summary.text, title: title, generatedAt: summary.generatedAt, patientName: patientName, labs: summary.labReadings ?? [], bulletDates:summary.bulletDates ?? [], providerContacts:summary.providerContacts ?? [], typography: typography) { series, context, rect in
             let renderer = ImageRenderer(content: StoryLabSparkline(series).frame(width: rect.width, height: rect.height).environment(\.colorScheme, .light))
             renderer.render { _, paint in
                 context.saveGState()
@@ -32,7 +32,7 @@ public enum StorySummaryPDF {
             }
         }
     }
-    public static func render(text:String,title:String,generatedAt:Date,patientName:String?=nil,labs:[StoryLabReading]=[],bulletDates:[StorySummaryBulletDate]=[],typography:Typography?=nil,drawChart:((StoryLabSeries,CGContext,CGRect)->Void)?=nil) throws -> Data {
+    public static func render(text:String,title:String,generatedAt:Date,patientName:String?=nil,labs:[StoryLabReading]=[],bulletDates:[StorySummaryBulletDate]=[],providerContacts:[CareTeamMember]=[],typography:Typography?=nil,drawChart:((StoryLabSeries,CGContext,CGRect)->Void)?=nil) throws -> Data {
         let output=NSMutableData();var page=CGRect(x:0,y:0,width:612,height:792)
         guard let consumer=CGDataConsumer(data:output as CFMutableData),let context=CGContext(consumer:consumer,mediaBox:&page,nil) else {throw StoryEditError.invalidMutation}
         let ink=typography?.ink ?? CGColor(red:0.282,green:0.239,blue:0.247,alpha:1)
@@ -219,7 +219,7 @@ public enum StorySummaryPDF {
         context.move(to:CGPoint(x:50,y:y));context.addLine(to:CGPoint(x:562,y:y));context.strokePath()
         y-=16
         let abnormalLabs = labs.filter { $0.abnormalLabel != nil }
-        let presentation = StorySummaryDocument.practitionerPresentation(text, hasAbnormalLabs: !abnormalLabs.isEmpty, bulletDates: bulletDates)
+        let presentation = StorySummaryDocument.practitionerPresentation(text, hasAbnormalLabs: !abnormalLabs.isEmpty, bulletDates: bulletDates, providerContacts:providerContacts, patientName:patientName)
         let blocks = presentation.blocks
         var section=""
         var renderedRows=Set<Int>()

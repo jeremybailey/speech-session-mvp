@@ -74,9 +74,10 @@ public struct ServiceSummaryRequest: Codable, Sendable {
     public var template:String
     public var evidence:[StoryEvidence]
     public var structuredLabs:Bool
-    public init(id:UUID,kind:String,target:String,sourceRevision:String,publicationRevision:String,template:String,evidence:[StoryEvidence],structuredLabs:Bool=false) {
+    public var patientName:String? = nil
+    public init(id:UUID,kind:String,target:String,sourceRevision:String,publicationRevision:String,template:String,evidence:[StoryEvidence],structuredLabs:Bool=false,patientName:String?=nil) {
         self.id=id.uuidString.lowercased();self.kind=kind;self.target=target;self.sourceRevision=sourceRevision
-        self.publicationRevision=publicationRevision;self.template=template;self.structuredLabs=structuredLabs
+        self.publicationRevision=publicationRevision;self.template=template;self.structuredLabs=structuredLabs;self.patientName=patientName
         self.evidence=evidence.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.flatMap { source -> [StoryEvidence] in
             guard source.text.utf8.count>20_000 else{return [source]}
             var chunks:[StoryEvidence]=[];var start=source.text.startIndex

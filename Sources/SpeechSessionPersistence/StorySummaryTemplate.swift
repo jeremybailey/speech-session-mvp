@@ -171,6 +171,7 @@ public struct StorySummaryBulletDate:Codable,Equatable,Sendable {
 }
 public struct StorySharedSummary:Codable,Equatable,Sendable {
     public var bulletDates:[StorySummaryBulletDate]? = nil
+    public var providerContacts:[CareTeamMember]? = nil
     public func dates(for text:String, section:String? = nil, displayDates:[StorySummaryBulletDate]? = nil)->[String] {
         let items=(displayDates ?? bulletDates ?? []).filter { StorySummaryDocument.shareShorthand($0.text)==text }
         if section == "Comprehensive Health History" {
@@ -323,7 +324,7 @@ public enum StorySummaryDocument {
     }
 
     /// A read-only presentation: saved bullets and their source evidence stay unchanged.
-    public static func practitionerPresentation(_ text: String, hasAbnormalLabs: Bool, bulletDates: [StorySummaryBulletDate]) -> (blocks: [StorySummaryBlock], dates: [StorySummaryBulletDate]) {
+    public static func practitionerPresentation(_ text: String, hasAbnormalLabs: Bool, bulletDates: [StorySummaryBulletDate], providerContacts: [CareTeamMember] = [], patientName: String? = nil) -> (blocks: [StorySummaryBlock], dates: [StorySummaryBulletDate]) {
         var output: [StorySummaryBlock] = []
         var dates: [StorySummaryBulletDate] = []
         func labels(for point: String) -> [String] {
@@ -381,6 +382,38 @@ public enum StorySummaryDocument {
             }
             output.replaceSubrange(range, with: entries.map { $0.1 })
         }
+        // Contact fields are rendered verbatim from the frozen local roster, never
+        // generated or guessed from a person's name or profession.
+        func identity(_ name: String) -> String {
+            name.lowercased().replacingOccurrences(of: #"^(?:dr\.?|mr\.?|mrs\.?|ms\.?)\s+"#, with: "", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        var inProviders=false
+        output=output.compactMap { block in
+            if case let .heading(title,level)=block,level==2 {inProviders=title == "Care Coordination Summary"}
+            guard inProviders,case let .bullet(text)=block else{return block}
+            let fields=topicAndNote(text),key=identity(fields.topic)
+            if let patientName,!patientName.isEmpty,(key==identity(patientName) || key.hasPrefix(identity(patientName)+", ")) {return nil}
+            let matches=providerContacts.filter { contact in
+                let name=identity(contact.name),role=contact.role.trimmingCharacters(in:.whitespacesAndNewlines)
+                return !name.isEmpty && (key==name || (!role.isEmpty && key==identity(contact.name+", "+role)))
+            }
+            guard matches.count==1,let contact=matches.first else{return block}
+            let role=contact.role.trimmingCharacters(in:.whitespacesAndNewlines)
+            let title=contact.name+(role.isEmpty ? "" : ", "+role)
+            var details=[String]()
+            if !contact.organization.isEmpty && !fields.note.localizedCaseInsensitiveContains(contact.organization) {details.append(contact.organization)}
+            details.append(fields.note)
+            for (label,value) in [("Phone",contact.phone),("Email",contact.email),("Address",contact.address ?? "")] where !value.isEmpty && !fields.note.contains(value) {details.append(label+": "+value)}
+            let revised=title+" — "+details.filter{!$0.isEmpty}.joined(separator:"; ")
+            for i in dates.indices where dates[i].text==text {dates[i].text=revised}
+            return .bullet(revised)
+        }
+        // Removing a mistaken patient entry must not leave an empty section.
+        output=output.enumerated().filter { index,block in
+            guard case .heading(_,2)=block else{return true}
+            return index+1<output.count && { if case .heading(_,2)=output[index+1] {return false};return true }()
+        }.map(\.element)
         return (output, dates)
     }
 

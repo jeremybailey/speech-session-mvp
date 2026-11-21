@@ -538,7 +538,7 @@ extension SessionStore {
     }
     public func completeStorySharedSummary(_ operationID:UUID,summary:StorySharedSummary,expectedSnapshot:StorySummarySnapshot? = nil) throws {
         if let expectedSnapshot {
-            let current=try storySummarySnapshot(includeTimeline:expectedSnapshot.evidence.contains{$0.timelineLabel != nil},includeCareTeam:expectedSnapshot.includesCareTeam == true)
+            let current=try storySummarySnapshot(includeTimeline:expectedSnapshot.evidence.contains{$0.timelineLabel != nil},includeCareTeam:expectedSnapshot.includesCareTeam == true,includeProviderContext:expectedSnapshot.includesProviderContext == true)
             let saved=try loadEnvelope().story.sharedSummary
             // Older requests froze the display copy with recovered labs. Recreate
             // that same copy from current saved data; real edits still differ.
