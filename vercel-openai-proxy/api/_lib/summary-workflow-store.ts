@@ -5,7 +5,7 @@ import {database,transaction,submitWithinTransaction,jsonbPayload} from './ledge
 import {runJob} from './worker';
 import {mayReplaceUnconfirmedStep} from './summary-retry-policy';
 import {jobQueue} from './queue';
-import {canonical,digest,validateSummaryInput,summaryPlan,summaryPayload,validatePoints,summaryResult,SummaryInput,Step,Point,confirmedSummaryProviderFailure,confirmedSummaryOutputLimit,isConcisePublicationStep} from './summary-workflow';
+import {canonical,digest,validateSummaryInput,summaryPlan,summaryPayload,validatePoints,editorialRepairCandidate,applyEditorialRepair,summaryResult,SummaryInput,Step,Point,confirmedSummaryProviderFailure,confirmedSummaryOutputLimit,isConcisePublicationStep} from './summary-workflow';
 const active=['queued','running','retry_scheduled'];
 export const summaryTopic='summary-workflows';
 export function summariesEnabled(kind?:string){return process.env.AI_DURABLE_ENABLED==='true'&&process.env.AI_QUEUE_ENABLED==='true'&&process.env.AI_SUMMARY_WORKFLOWS_ENABLED==='true'&&(!kind||(process.env.AI_SUMMARY_WORKFLOW_KINDS??'practitioner').split(',').includes(kind));}
@@ -151,15 +151,15 @@ export async function advanceSummary(id:string):Promise<string[]>{return transac
  const outputs:Record<string,Point[]>={};for(const r of rows)if(r.state==='completed')outputs[r.key]=r.output;
  for(const row of rows.filter((r:any)=>r.state==='running')){
   if(['queued','running'].includes(row.job_state))continue;
-  let failure:string|undefined;
+  let failure:string|undefined;let editorialRepair=false;
   if(row.job_state==='completed'){
-   try {const result=validatePoints(row.result?.output,input,plan.find(s=>s.key===row.key)!,outputs);outputs[row.key]=result;row.state='completed';await db.query("UPDATE ai_summary_steps SET state='completed',output=$3 WHERE workflow_id=$1 AND key=$2",[id,row.key,jsonbPayload(result)]);continue;}
-   catch {failure='invalid_summary_output';}
+   try {const step=plan.find(s=>s.key===row.key)!;const result=row.output?applyEditorialRepair(row.result?.output,row.output,input,step,outputs):validatePoints(row.result?.output,input,step,outputs);outputs[row.key]=result;row.state='completed';await db.query("UPDATE ai_summary_steps SET state='completed',output=$3 WHERE workflow_id=$1 AND key=$2",[id,row.key,jsonbPayload(result)]);continue;}
+   catch {failure='invalid_summary_output';if(!row.output){const candidate=editorialRepairCandidate(row.result?.output,input,plan.find(s=>s.key===row.key)!,outputs);if(candidate){row.output=candidate;editorialRepair=true;await db.query('UPDATE ai_summary_steps SET output=$3 WHERE workflow_id=$1 AND key=$2',[id,row.key,jsonbPayload(candidate)]);}}}
   }else failure=confirmedSummaryProviderFailure(row)?'provider_failed':row.job_state==='uncertain'?'provider_outcome_unknown':row.job_state??'missing_provider_result';
   const providerFailed=confirmedSummaryProviderFailure(row);
   const outputLimited=confirmedSummaryOutputLimit(row);
   const transient=providerFailed || outputLimited || row.job_state==='incomplete'&&[429,502,503,504].includes(row.result?.diagnostics?.providerHTTPStatus);
-  const repair=failure==='invalid_summary_output'&&row.attempt<(isConcisePublicationStep(input,plan.find(s=>s.key===row.key)!)?3:1);
+  const repair=editorialRepair||failure==='invalid_summary_output'&&row.attempt<(isConcisePublicationStep(input,plan.find(s=>s.key===row.key)!)?3:1);
   if((repair||transient&&row.attempt<(providerFailed||outputLimited?2:5))&&w.calls<w.max_calls){
    row.state='queued';row.attempt++;row.job_id=null;
    await db.query("UPDATE ai_summary_steps SET state='queued',attempt=$3,job_id=NULL,error_code=$4 WHERE workflow_id=$1 AND key=$2",[id,row.key,row.attempt,failure]);
@@ -179,7 +179,7 @@ export async function advanceSummary(id:string):Promise<string[]>{return transac
  for(const step of plan){const row=rows.find((r:any)=>r.key===step.key);if(!slots||row.state!=='queued'||!step.dependencies.every(k=>outputs[k]!==undefined))continue;
   if(calls>=w.max_calls){await db.query("UPDATE ai_summary_workflows SET state='needs_attention',error_code='workflow_limit' WHERE id=$1",[id]);return [];}
   try {
-   const payload=summaryPayload(input,step,outputs,row.attempt);
+   const payload=summaryPayload(input,step,outputs,row.attempt,row.output??undefined);
    const child=await submitWithinTransaction(db,w.owner,payload,w.budget_id,'gpt-6-luna',summaryReasoning(w.execution_policy,step));
    await db.query('INSERT INTO ai_summary_children(workflow_id,job_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[id,child.id]);
    await db.query('UPDATE ai_payloads SET expires_at=LEAST(expires_at,$2) WHERE job_id=$1',[child.id,w.expires_at]);

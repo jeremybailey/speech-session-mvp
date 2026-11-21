@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {Pool} from 'pg';
-import {validateSummaryInput,summaryPlan,summaryPayload,validatePoints,summaryResult,SummaryInput,digest,confirmedSummaryProviderFailure} from '../api/_lib/summary-workflow';
+import {validateSummaryInput,summaryPlan,summaryPayload,validatePoints,editorialRepairCandidate,applyEditorialRepair,summaryResult,SummaryInput,digest,confirmedSummaryProviderFailure} from '../api/_lib/summary-workflow';
 import {submitSummary,advanceSummary,resumeSummary,summaryStatus,acknowledgeSummary,cancelSummary,cleanupSummaries,runSummary} from '../api/_lib/summary-workflow-store';
 import {database,claim,settle,transaction} from '../api/_lib/ledger';
 function input(kind:'record'|'practitioner'|'overview'='record'):SummaryInput{return {id:randomUUID(),contract:'summary-workflow-v1',kind,target:randomUUID(),sourceRevision:'source-1',publicationRevision:'edit-1',template:kind==='record'?'detailed':kind,evidence:[{id:'1001',text:'Declined a sweep today. May reconsider next week.'}]};}
@@ -531,4 +531,20 @@ test('long practitioner publication has room for history and providers together'
  assert.equal(validatePoints(JSON.stringify({points:Array.from({length:100},()=>b)}),p,step,outputs).length,100);
  assert.throws(()=>validatePoints(JSON.stringify({points:Array.from({length:161},()=>b)}),p,step,outputs));
  const draft=summaryPlan(p)[0];assert.equal((summaryPayload(p,draft,{},0).response_format.json_schema as any).schema.properties.points.maxItems,80);
+});
+
+test('editorial recovery repairs only rejected wording and retains accepted content and metadata',()=>{
+ const p=input('practitioner');p.pipeline='compact-v2';const step=summaryPlan(p).at(-1)!;
+ const good={...point,heading:'Clinical Snapshot',text:'Back pain — intermittent',stance:null,historyIDs:[],coordinationIDs:[]};
+ const bad={...good,heading:'Comprehensive Health History',text:'Back pain — symptoms are intermittent',historyIDs:['history:0'],coordinationIDs:[]};
+ const outputs={'audit:0':[bad],[step.dependencies[0]]:[good,bad]};
+ const candidates=editorialRepairCandidate(JSON.stringify({points:[good,bad]}),p,step,outputs)!;
+ assert.equal(candidates.length,2);
+ const payload=summaryPayload(p,step,outputs,4,candidates),body=JSON.parse(payload.input);
+ assert.deepEqual(body.repairs.map((x:any)=>x.index),[1]);assert.equal(body.records.length,1);
+ const result=applyEditorialRepair(JSON.stringify({repairs:[{index:1,text:'Back pain — intermittent symptoms'}]}),candidates,p,step,outputs);
+ assert.deepEqual(result[0],candidates[0]);assert.deepEqual(result[1],{...candidates[1],text:'Back pain — intermittent symptoms'});
+ for(const repairs of [[],[{index:0,text:'Changed — accepted point'}],[{index:1,text:'Pain — is present'}],[{index:1,text:'Back pain — intermittent',citationIDs:['invented']}]] )assert.throws(()=>applyEditorialRepair(JSON.stringify({repairs}),candidates,p,step,outputs));
+ assert.equal(editorialRepairCandidate(JSON.stringify({points:[{...bad,historyIDs:[]}]}),p,step,outputs),undefined);
+ assert.equal(editorialRepairCandidate(JSON.stringify({points:[{...bad,citationIDs:['invented']}]}),p,step,outputs),undefined);
 });
