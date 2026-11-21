@@ -507,3 +507,17 @@ test('duplicate provider coverage annotation in another section is removed only 
  assert.deepEqual(result[0].coordinationIDs,['coordination:0']);assert.deepEqual(result[1].coordinationIDs,[]);assert.equal(result[1].text,extra.text);
  assert.throws(()=>validatePoints(JSON.stringify({points:[extra]}),p,audit,outputs));
 });
+
+test('publication never exposes colliding coverage IDs from earlier audit batches',()=>{
+ const p=input('practitioner');p.pipeline='compact-v2';p.evidence.push({id:'1002',text:'Second historical event.'});
+ const a={...point,heading:'Comprehensive Health History',text:'First surgery — 2012',historyIDs:['history:0'],coordinationIDs:[]};
+ const b={...a,text:'Second surgery — 2015',citationIDs:['1002'],subjectCitation:null,responseCitation:null};
+ const final=summaryPlan(p).at(-1)!;
+ const outputs={'audit:0':[a],'audit:1':[b],[final.dependencies[0]]:[a,b]};
+ const body=JSON.parse(summaryPayload(p,final,outputs,0).input);
+ assert.deepEqual(body.requiredHistory.map((x:any)=>x.id),['history:0','history:1']);
+ for(const point of [...body.mainDraft,...body.requiredHistory.map((x:any)=>x.point)]){
+  assert.equal(point.historyIDs,undefined);assert.equal(point.coordinationIDs,undefined);
+ }
+ assert.deepEqual(outputs['audit:1'][0].historyIDs,['history:0']);
+});
