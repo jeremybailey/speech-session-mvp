@@ -342,15 +342,23 @@ struct SignInGateView: View {
 
     var body: some View {
         NavigationStack {
+            GeometryReader { geometry in
+                let lockupWidth = min(560, max(1, geometry.size.width - 80))
+                let referenceFont = UIFont(name: StoryDesignTokens.headingFamily, size: 100) ?? UIFont.systemFont(ofSize: 100)
+                let referenceWidth = ("CollectiveCare" as NSString).size(withAttributes: [.font: referenceFont]).width
+                let wordmarkSize = 100 * lockupWidth / referenceWidth
             VStack(spacing: 0) {
                 Spacer(minLength: 24)
 
-                VStack(spacing: 12) {
+                VStack(spacing: wordmarkSize * 0.25) {
                     Image(systemName: "heart.fill")
-                        .font(.system(size: 40)).foregroundStyle(StoryDesignTokens.action)
+                        .font(.system(size: wordmarkSize * 0.8)).foregroundStyle(StoryDesignTokens.action)
                         .accessibilityHidden(true)
                     Text("CollectiveCare")
-                        .font(StoryDesignTokens.pageTitle)
+                        .font(.custom(StoryDesignTokens.headingFamily, fixedSize: wordmarkSize))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .frame(width: lockupWidth)
                         .multilineTextAlignment(.center)
                 }
 
@@ -379,13 +387,13 @@ struct SignInGateView: View {
 
 
                 }
-                .padding(20)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 20)
+                .frame(width: lockupWidth)
+                .padding(.vertical, 20)
 
                 Spacer(minLength: 16)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
             .background(BrandPalette.canvas.ignoresSafeArea())
             .storyLoadIn().navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
