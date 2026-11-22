@@ -59,3 +59,10 @@ The service is now active and the founder phone has the pilot candidate. Wider p
 - These follow-up UI changes require a new build; build 223 does not contain them. Light/Dark account acceptance gates remain unverified, and no TestFlight upload has occurred.
 
 - Empty-state follow-up compiled successfully for generic iOS (unsigned Debug); diff whitespace check passed. Record detail source review confirmed missing-detail creation waits for details to load, and empty in-progress summaries show a loading placeholder. These are source/build checks, not completed fresh-account visual checks.
+
+## Pilot 224 — fresh-account feedback
+
+- User created a test account and supplied Light-mode screenshots. These exposed a dark sign-in label on red, white panels on cream, inconsistent agreement heading slash spacing, and mismatched summary presentation. Home and capture empty states were positively reviewed. These screenshots do not establish Dark-mode or confirming-button acceptance.
+- Build 224 fixes the sign-in label/spinner using white-on-brand-red, adds a small heart lockup, removes the sign-in plate, and uses cream for the shared Light-mode surface token. Agreement heading spacing is normalized only for display; canonical text, version, hash and acceptance are unchanged.
+- Practitioner summary now pushes from More Summaries, matching care-plan navigation and toolbar treatment. Both empty summaries offer a bottom Add your first record action. Practitioner state observes saved home records (ignoring drafts); care-plan capture dismissal refreshes model data. The CTA disappears after a record is saved.
+- Signed generic-device build succeeded. Installed pilot 224 on the connected iPhone and pushed source commit 612491c to GitHub. No TestFlight upload. Mirroring reported iPhone in Use; updated visual checks, including Light/Dark acceptance, remain pending.
