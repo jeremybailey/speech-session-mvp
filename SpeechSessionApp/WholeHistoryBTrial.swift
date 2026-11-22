@@ -829,7 +829,9 @@ struct BTrialConditionListView: View {
             if terminal.contains(state) {
                 if state == "cancelled" {throw CancellationError()}
                 try await store.finishRecordUpdate(current.id,state:state)
-                return state != "completed"
+                // A blocked job is unfinished; validated omissions are not a job failure.
+                if state == "blocked" { throw URLError(.cannotLoadFromNetwork) }
+                return state == "completed_with_withheld_items"
             }
             try await Task.sleep(nanoseconds:3_000_000_000)
             status=try await request("status",receipt:current,records:[],transport:transport)

@@ -207,6 +207,8 @@ final class HealthSummaryModel: ObservableObject {
     /// One owner for the full update. New saved inputs are coalesced after each pass;
     /// already-current stages use their validated cache instead of making requests.
     /// Capture must not drop its detail handoff when an earlier record owns the updater.
+    private var incrementalDetailsFinished = false
+
     func finishCapturedRecordDetails(transport: OpenAIChatTransport?, onDevice: Bool) async throws {
         while true {
             try Task.checkCancellation()
@@ -220,7 +222,8 @@ final class HealthSummaryModel: ObservableObject {
                 throw SummaryProcessingError.unavailable("Detail processing is paused. Retry when you’re ready to continue.")
             }
             await updateHealthStory(transport: transport, onDevice: onDevice, explicitlyRequested: true)
-            if state(for: .details) == .needsAttention || state(for: .details) == .interrupted {
+            let completedIncrementalDetails = !onDevice && IncrementalRecordCoordinator.enabled && incrementalDetailsFinished
+            if !completedIncrementalDetails && (state(for: .details) == .needsAttention || state(for: .details) == .interrupted) {
                 throw SummaryProcessingError.unavailable(updateError ?? "Details couldn’t be completed. Retry to continue saved work.")
             }
             return
@@ -393,6 +396,7 @@ final class HealthSummaryModel: ObservableObject {
     }
 
     private func updateIncrementalRecords(transport:OpenAIChatTransport?,explicitlyRequested:Bool) async {
+        incrementalDetailsFinished = false
         guard !isProcessing,!isUpdatingStory,!isTransferringData,let transport,
               explicitlyRequested || !stoppedForCurrentSources else {return}
         if explicitlyRequested {
@@ -407,6 +411,8 @@ final class HealthSummaryModel: ObservableObject {
         defer {automaticPolicy.finished(updateInputKey);isUpdatingStory=false;isProcessing=false;progress=""}
         do {
             let withheld=try await IncrementalRecordCoordinator.run(store:store,transport:transport,collectSavedResults:explicitlyRequested) {await self.refresh()}
+            // Verified omissions are a completed outcome, independent of overview success.
+            incrementalDetailsFinished = true
             try Task.checkCancellation()
             await refresh()
             updateStates=[.details:.ready,.conditions:.ready,.overview:.updating]

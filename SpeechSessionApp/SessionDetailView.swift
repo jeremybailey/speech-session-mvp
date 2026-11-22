@@ -188,9 +188,17 @@ struct SessionDetailView: View {
             } else if let capture = session.capture {
                 if preparingCaptureSummary { EmptyView() }
                 else if !capture.failedAssets.isEmpty || captureWorker.errors[session.id] != nil || capture.pending || capture.needsRecordSummary == true {
-                    Button("Retry unfinished processing") {
-                        if capture.pending || !capture.failedAssets.isEmpty || captureWorker.errors[session.id] != nil { processCapture() }
-                        else { regenerate(retryUnfinished: true) }
+                    VStack(spacing: 8) {
+                        if let reason = captureWorker.errors[session.id] {
+                            Text(reason)
+                                .font(StoryDesignTokens.caption)
+                                .foregroundStyle(StoryDesignTokens.secondaryInk)
+                                .multilineTextAlignment(.center)
+                        }
+                        Button("Retry unfinished processing") {
+                            if capture.pending || !capture.failedAssets.isEmpty || captureWorker.errors[session.id] != nil { processCapture() }
+                            else { regenerate(retryUnfinished: true) }
+                        }
                     }.padding(8)
                 }
             } else if retrying {
