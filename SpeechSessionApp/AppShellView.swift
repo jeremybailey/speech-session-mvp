@@ -232,7 +232,7 @@ private struct IntroAgreementView: View {
                     Text(releaseLabel).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
                 releaseFeature("text.alignleft", "Choose how records are summarized", "Use Visit or Detailed summaries, or let Auto choose. Open linked details directly from each summary and correct them when needed.")
-                releaseFeature("doc.text", "Find your summaries in one place", "Open More Summaries for your practitioner and care plan summaries. Preview a PDF before sharing it with your care team.")
+                releaseFeature("doc.text", "Find your summaries in one place", "Open Summaries for your practitioner and care plan summaries. Preview a PDF before sharing it with your care team.")
                 releaseFeature("arrow.triangle.2.circlepath", "Keep summaries moving", "Submitted summaries can keep processing when you leave the app or lock your phone. If interrupted, retry to resume saved progress.")
 
             }

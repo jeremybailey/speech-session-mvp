@@ -718,22 +718,36 @@ struct StoryLabView: View {
     private var summariesList: some View {
         List {
             Button { showPractitionerFromList=true } label: {
-                Label("Practitioner summary",systemImage:"doc.text")
-                    .foregroundStyle(StoryDesignTokens.ink)
+                summaryListRow("Practitioner summary", symbol: "doc.text")
+                    .overlay(alignment: .trailing) {
+                        Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
+                            .foregroundStyle(StoryDesignTokens.secondaryInk).accessibilityHidden(true)
+                    }
             }
             .listRowBackground(StoryDesignTokens.canvas)
             NavigationLink(value:StoryRoute.carePlan) {
-                Label("Care plan summary",systemImage:"list.bullet.clipboard")
+                summaryListRow("Care plan summary", symbol: "list.bullet.clipboard")
             }
             .listRowBackground(StoryDesignTokens.canvas)
         }
         .listStyle(.plain)
         .storyListCanvas()
-        .navigationTitle("More Summaries")
+        .navigationTitle("Summaries")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented:$showPractitionerFromList) {
             StoryTemplateShareView(home:appModel.home,records:model.records,store:appModel.store,job:sharing,embedded:true)
         }
+    }
+
+    private func summaryListRow(_ title: String, symbol: String) -> some View {
+        HStack(spacing: 16) {
+            StoryRecordIcon(symbol: symbol)
+            Text(title).font(StoryDesignTokens.label)
+                .foregroundStyle(StoryDesignTokens.ink)
+            Spacer(minLength: 16)
+        }
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
     }
 
     @ViewBuilder private var currentPlan:some View {
@@ -1076,7 +1090,7 @@ struct StoryRecordsList:View {
             StoryRecordIcon(symbol: "list.bullet.clipboard")
                 .saturation(showFirstRecordGuide ? 0 : 1)
                 .opacity(showFirstRecordGuide ? 0.65 : 1)
-            Text("More Summaries…").font(StoryDesignTokens.label)
+            Text("Summaries").font(StoryDesignTokens.label)
                 .foregroundStyle(showFirstRecordGuide ? StoryDesignTokens.secondaryInk : StoryDesignTokens.ink)
         }
         .frame(maxWidth: .infinity, minHeight: StoryDesignTokens.controlHeight, alignment: .leading)
