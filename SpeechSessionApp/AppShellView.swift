@@ -22,8 +22,13 @@ struct AppShellView: View {
                 ContentView(appModel:appModel)
             } else if !kindeAuth.isSignedIn {
                 SignInGateView()
-            } else if agreement.acceptedOwner == kindeAuth.accountID, agreement.acceptedOwner != nil {
-                ContentView(appModel: appModel)
+            } else if let owner = agreement.acceptedOwner, owner == kindeAuth.accountID {
+                ReleaseUpdateGate(owner: owner) {
+                    ContentView(appModel: appModel)
+                } notes: { acknowledge in
+                    IntroAgreementView(state: agreement, auth: kindeAuth, acknowledge: acknowledge)
+                }
+                .id(agreement.acceptedOwner)
             } else {
                 IntroAgreementView(state: agreement, auth: kindeAuth)
             }
@@ -90,16 +95,36 @@ struct AppShellView: View {
 
 // MARK: - Intro agreement
 
+private struct ReleaseUpdateGate<Content: View, Notes: View>: View {
+    @AppStorage private var seen: Bool
+    let content: () -> Content
+    let notes: (@escaping () -> Void) -> Notes
+
+    init(owner: String, @ViewBuilder content: @escaping () -> Content,
+         @ViewBuilder notes: @escaping (@escaping () -> Void) -> Notes) {
+        _seen = AppStorage(wrappedValue: false, pilotUpdateReceiptKey(owner))
+        self.content = content
+        self.notes = notes
+    }
+
+    var body: some View {
+        if seen { content() } else { notes { seen = true } }
+    }
+}
+
+private func pilotUpdateReceiptKey(_ owner: String) -> String { "storylab.update.summaries-and-recovery-v1." + owner }
+
 private struct IntroAgreementView: View {
     @ObservedObject var state: PilotAgreementState
     let auth: KindeAuthManager
+    var acknowledge: (() -> Void)? = nil
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     welcome
-                    if let document = state.document {
+                    if acknowledge == nil, let document = state.document {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Before you begin")
                                 .font(StoryDesignTokens.sectionHeading).accessibilityAddTraits(.isHeader)
@@ -108,7 +133,7 @@ private struct IntroAgreementView: View {
                         }
                         VStack(alignment: .leading, spacing: 0) {
                             ForEach(Array(document.paragraphs.enumerated()), id: \.offset) { index, paragraph in
-                                Text(.init(paragraph))
+                                Text(.init(agreementDisplayText(paragraph)))
                                     .font(StoryDesignTokens.font(.body)).lineSpacing(5)
                                     .fixedSize(horizontal: false, vertical: true)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -118,26 +143,27 @@ private struct IntroAgreementView: View {
                                 }
                             }
                         }
-                        .background(BrandPalette.surface, in: RoundedRectangle(cornerRadius: 24))
+                        .background(BrandPalette.canvas, in: RoundedRectangle(cornerRadius: 24))
                         VStack(spacing: 14) {
                             Label("Your acceptance is recorded with your account, date, and agreement version.", systemImage: "checkmark.shield")
                                 .font(StoryDesignTokens.font(.footnote)).foregroundStyle(StoryDesignTokens.secondaryInk)
                                 .fixedSize(horizontal: false, vertical: true)
                             Button { Task { await state.accept(auth: auth) } } label: {
                                 HStack(spacing: 10) {
-                                    if state.busy { ProgressView().tint(.white) }
+                                    if state.busy { ProgressView().tint(StoryDesignTokens.onAction) }
                                     Text(state.busy ? "Confirming…" : document.action)
                                         .font(StoryDesignTokens.font(.headline, weight: .semibold))
                                 }
+                                .foregroundStyle(StoryDesignTokens.onAction)
                                 .frame(maxWidth: .infinity).padding(.vertical, 12)
                             }
-                            .buttonStyle(.borderedProminent)
+                            .storyControlStyle(prominent: true)
                             .buttonBorderShape(.roundedRectangle(radius: 16))
                             .disabled(state.busy)
                             Text("Agreement \(document.version)")
                                 .font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                         }
-                    } else if state.busy {
+                    } else if acknowledge == nil && state.busy {
                         StoryLoadingPlaceholder(label: "Loading agreement", rows: 2, layout: .narrative)
                             .frame(maxWidth: .infinity).padding(24)
                     }
@@ -151,11 +177,26 @@ private struct IntroAgreementView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(BrandPalette.surface, in: RoundedRectangle(cornerRadius: 20))
                     }
-                    Button("Sign out") { Task { await auth.logout() } }
-                        .font(StoryDesignTokens.font(.subheadline)).frame(maxWidth: .infinity).disabled(state.busy)
+                    if acknowledge == nil { Button("Sign out") { Task { await auth.logout() } }
+                        .font(StoryDesignTokens.font(.subheadline)).frame(maxWidth: .infinity).disabled(state.busy) }
                 }
                 .frame(maxWidth: 640).padding(.horizontal, 20).padding(.vertical, 24)
                 .frame(maxWidth: .infinity)
+            }
+            .safeAreaInset(edge: .bottom) {
+                if let acknowledge {
+                    Button(action: acknowledge) {
+                        Text("Continue")
+                            .font(StoryDesignTokens.label)
+                            .foregroundStyle(StoryDesignTokens.onAction)
+                            .frame(maxWidth: .infinity, minHeight: StoryDesignTokens.controlHeight)
+                    }
+                    .storyControlStyle(prominent: true)
+                    .frame(maxWidth: 640)
+                    .padding(.horizontal, 20).padding(.vertical, 12)
+                    .frame(maxWidth: .infinity)
+                    .background(BrandPalette.canvas)
+                }
             }
             .background(BrandPalette.canvas.ignoresSafeArea())
             .storyLoadIn(ready: !state.busy || state.document != nil)
@@ -164,27 +205,36 @@ private struct IntroAgreementView: View {
         }
     }
 
+    // Presentation-only whitespace: keep the signed document and receipt hash unchanged.
+    private func agreementDisplayText(_ paragraph: String) -> String {
+        guard let start = paragraph.range(of: "**"),
+              let end = paragraph.range(of: "**", range: start.upperBound..<paragraph.endIndex) else { return paragraph }
+        let heading = String(paragraph[start.upperBound..<end.lowerBound])
+            .replacingOccurrences(of: #"\s*/\s*"#, with: " / ", options: .regularExpression)
+        return String(paragraph[..<start.upperBound]) + heading + String(paragraph[end.lowerBound...])
+    }
+
     private var welcome: some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("PILOT UPDATE")
+                Text("WHAT’S NEW")
                     .font(StoryDesignTokens.font(.caption, weight: .semibold)).tracking(2)
                     .foregroundStyle(BrandPalette.icon)
-                Text("Your health story,\nbrought together.")
+                Text("Clearer summaries,\nready to share.")
                     .font(StoryDesignTokens.pageTitle).fixedSize(horizontal: false, vertical: true)
-                Text("Collect your records, organize your conditions, and see the bigger picture.")
+                Text("More useful summaries, with your records close at hand.")
                     .font(StoryDesignTokens.font(.body)).foregroundStyle(StoryDesignTokens.secondaryInk)
             }
-            releasePreview
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("In this update").font(StoryDesignTokens.sectionHeading)
                     Spacer()
                     Text(releaseLabel).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
-                releaseFeature("arrow.triangle.2.circlepath", "A connected update", "Details, conditions, and overview update in sequence.")
-                releaseFeature("waveform", "Clearer recordings", "Journal and appointment titles make recordings easier to find.")
-                releaseFeature("arrow.clockwise", "Better recovery", "Retry expired processing results without starting your whole story again.")
+                releaseFeature("text.alignleft", "Choose how records are summarized", "Use Visit or Detailed summaries, or let Auto choose. Open linked details directly from each summary and correct them when needed.")
+                releaseFeature("doc.text", "Find your summaries in one place", "Open Summaries for your practitioner and care plan summaries. Preview a PDF before sharing it with your care team.")
+                releaseFeature("arrow.triangle.2.circlepath", "Keep summaries moving", "Submitted summaries can keep processing when you leave the app or lock your phone. If interrupted, retry to resume saved progress.")
+
             }
         }
     }
@@ -208,37 +258,7 @@ private struct IntroAgreementView: View {
         }
     }
 
-    // Decorative preview uses no patient information and scales with text size.
-    private var releasePreview: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    Image(systemName: "heart.text.clipboard").foregroundStyle(BrandPalette.icon)
-                    Spacer()
-                    Image(systemName: "person.crop.circle").foregroundStyle(StoryDesignTokens.secondaryInk)
-                }.font(StoryDesignTokens.heading(.title2))
-                Text("My health story").font(StoryDesignTokens.heading(.title2))
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("Updating your health story").font(StoryDesignTokens.font(.subheadline, weight: .bold))
-                    ForEach(["Read records", "Organize conditions", "Update overview"], id: \.self) { title in
-                        HStack(spacing: 10) {
-                            Image(systemName: "checkmark.circle.fill").foregroundStyle(BrandPalette.icon)
-                            Text(title).font(StoryDesignTokens.font(.subheadline))
-                            Spacer()
-                        }
-                    }
-                }
-                .padding(18).frame(maxWidth: .infinity, alignment: .leading)
-                .background(BrandPalette.canvas, in: RoundedRectangle(cornerRadius: 18))
-            }
-            .padding(22)
-            .background(BrandPalette.surface, in: UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28))
-            .padding(.horizontal, 26).padding(.top, 26)
-        }
-        .background(BrandPalette.conditionIconBackground, in: RoundedRectangle(cornerRadius: 24))
-        .clipped()
-        .accessibilityHidden(true)
-    }
+
 }
 
 @MainActor
@@ -290,6 +310,7 @@ private final class PilotAgreementState: ObservableObject {
                 throw URLError(.cannotParseResponse)
             }
             try save(envelope, owner: owner)
+            UserDefaults.standard.set(true, forKey: pilotUpdateReceiptKey(owner))
         } catch {
             guard operation == operationID else { return }
             self.error = "Your acceptance could not be confirmed. Retry to check its status; you will not create a duplicate receipt."
@@ -329,12 +350,27 @@ struct SignInGateView: View {
 
     var body: some View {
         NavigationStack {
+            GeometryReader { geometry in
+                let lockupWidth = min(560, max(1, geometry.size.width - 80))
+                let referenceFont = StoryDesignTokens.headingFace(size: 100)
+                let referenceWidth = ("CollectiveCare" as NSString).size(withAttributes: [.font: referenceFont]).width
+                let wordmarkSize = lockupWidth / (referenceWidth / 100 + 0.95)
             VStack(spacing: 0) {
                 Spacer(minLength: 24)
 
-                Text("CollectiveCare")
-                    .font(StoryDesignTokens.pageTitle)
-                    .multilineTextAlignment(.center)
+                HStack(alignment: .center, spacing: wordmarkSize * 0.20) {
+                    Image(systemName: "heart.fill")
+                        .resizable().scaledToFit()
+                        .frame(width: wordmarkSize * 0.75, height: wordmarkSize * 0.75)
+                        .foregroundStyle(StoryDesignTokens.action)
+                        .accessibilityHidden(true)
+                    Text("CollectiveCare")
+                        .font(.custom(StoryDesignTokens.headingFamily, fixedSize: wordmarkSize).bold())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .frame(width: wordmarkSize * referenceWidth / 100)
+                        .multilineTextAlignment(.leading)
+                }
 
                 Spacer(minLength: 32)
 
@@ -353,21 +389,21 @@ struct SignInGateView: View {
                                     .frame(maxWidth: .infinity)
                             }
                         }
+                        .foregroundStyle(StoryDesignTokens.onAction)
                         .padding(.vertical, 14)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .storyControlStyle(prominent: true)
                     .disabled(isSigningIn)
 
 
                 }
-                .padding(20)
-                .frame(maxWidth: .infinity)
-                .liquidGlassCard(cornerRadius: 20)
-                .padding(.horizontal, 20)
+                .frame(width: lockupWidth)
+                .padding(.vertical, 20)
 
                 Spacer(minLength: 16)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
             .background(BrandPalette.canvas.ignoresSafeArea())
             .storyLoadIn().navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)

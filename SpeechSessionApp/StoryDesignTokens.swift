@@ -16,7 +16,7 @@ enum StoryDesignTokens {
     static let ink = adaptive(0x483D3F, 0xFFF1DC, highLight: 0x211B1D, highDark: 0xFFFFFF)
     static let secondaryInk = adaptive(0x716468, 0xC8B9B8, highLight: 0x55474B, highDark: 0xEADBD6)
     static let canvas = adaptive(0xFFFCF7, 0x201C1D)
-    static let surface = adaptive(0xFFFFFF, 0x302A2B)
+    static let surface = adaptive(0xFFFCF7, 0x302A2B)
     static let softSurface = adaptive(0xFFEECF, 0x413537)
     static let onSoftSurface = adaptive(0x483D3F, 0xFFEECF)
 

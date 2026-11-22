@@ -3,21 +3,45 @@ import SwiftUI
 /// Shared inline status for work that interprets or generates record content.
 struct StoryThinkingStatus: View {
     let label: String
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .footnote) private var markerWidth: CGFloat = 26
     init(_ label: String = "Thinking…") { self.label = label }
 
     var body: some View {
         HStack(spacing: 7) {
-            Image(systemName: "heart.fill")
-                .font(.footnote)
-                .foregroundStyle(StoryDesignTokens.action)
-                .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
+            StoryThinkingHeart()
+                .frame(width: markerWidth, height: markerWidth)
+                .fixedSize()
                 .accessibilityHidden(true)
             Text(label)
                 .font(StoryDesignTokens.font(.subheadline, weight: .medium))
                 .foregroundStyle(StoryDesignTokens.secondaryInk)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Processing symbol for the overall status label.
+struct StoryThinkingHeart: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Image(systemName: "heart.fill")
+            .font(.footnote)
+            .foregroundStyle(StoryDesignTokens.action)
+            .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
+    }
+}
+
+/// A quiet placeholder for each detail while its extraction is pending.
+struct StoryPendingDetailDot: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .footnote) private var diameter: CGFloat = 5
+
+    var body: some View {
+        Image(systemName: "circle.fill")
+            .font(.system(size: diameter))
+            .foregroundStyle(StoryDesignTokens.secondaryInk.opacity(0.65))
+            .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
     }
 }
 

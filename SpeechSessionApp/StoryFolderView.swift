@@ -12,7 +12,6 @@ final class StoryFolderRouter: ObservableObject {
     @Published var lastDeleted: SessionFolder?
     @Published var capture: Session?
     var onCaptureDismiss: (() -> Void)?
-    var finishedCapture: UUID?
     var documentImportID: UUID?
     func newCapture(importDocument: Bool = false) {
         guard capture == nil else { return }

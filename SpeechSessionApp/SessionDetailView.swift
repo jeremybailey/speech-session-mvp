@@ -188,12 +188,18 @@ struct SessionDetailView: View {
             } else if let capture = session.capture {
                 if preparingCaptureSummary { EmptyView() }
                 else if !capture.failedAssets.isEmpty || captureWorker.errors[session.id] != nil || capture.pending || capture.needsRecordSummary == true {
-                    Button("Retry unfinished processing") {
-                        if capture.pending || !capture.failedAssets.isEmpty { processCapture() }
-                        else { regenerate(retryUnfinished: true) }
+                    VStack(spacing: 8) {
+                        if let reason = captureWorker.errors[session.id] {
+                            Text(reason)
+                                .font(StoryDesignTokens.caption)
+                                .foregroundStyle(StoryDesignTokens.secondaryInk)
+                                .multilineTextAlignment(.center)
+                        }
+                        Button("Retry unfinished processing") {
+                            if capture.pending || !capture.failedAssets.isEmpty || captureWorker.errors[session.id] != nil { processCapture() }
+                            else { regenerate(retryUnfinished: true) }
+                        }
                     }.padding(8)
-                } else if !session.transcript.isEmpty && recordFacts.isEmpty {
-                    Button("Prepare details") { regenerate() }.padding(8)
                 }
             } else if retrying {
                 HStack { ProgressView(); Text("Reading your original…") }.padding().background(.regularMaterial)
@@ -295,7 +301,11 @@ struct SessionDetailView: View {
             }
             await health.loadForNavigation()
             guard !Task.isCancelled else { return }
-            if session.capture?.pending == true || (session.capture?.needsRecordSummary == true && (cloudSummaryConsent || summaryBackend == "onDevice")) { processCapture() }
+            if session.capture?.pending == true ||
+                ((session.capture?.needsRecordSummary == true || (session.capture != nil && session.needsSummaryVerification && health.shouldAutomaticallyUpdate(onDevice: summaryBackend == "onDevice", consent: cloudSummaryConsent))) &&
+                 (cloudSummaryConsent || summaryBackend == "onDevice") && !health.isExplicitlyPaused && captureWorker.errors[session.id] == nil) {
+                processCapture()
+            }
         }
         .onChange(of: session.capture?.pending) { old, new in
             if old == true, new == false, !session.transcript.isEmpty,
@@ -549,7 +559,9 @@ struct SessionDetailView: View {
                 if let keys = lastRemoval {
                     Button("Detail removed · Undo") { performVisibilityChange(keys, hide: false) }
                 }
-                if preparingCaptureSummary {
+                if captureWorker.extractingDetails.contains(session.id) {
+                    StoryThinkingStatus("Extracting details…")
+                } else if preparingCaptureSummary {
                     StoryThinkingStatus(content.allSatisfy({ $0.text.isEmpty }) ? "Preparing summary…" : "Updating summary…")
                 } else if session.recordSummaryWork != nil {
                     Label("Summary paused — retry to continue", systemImage: "pause.circle")
@@ -574,7 +586,9 @@ struct SessionDetailView: View {
                             }
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 if !block.text.isEmpty {
-                                    bulletMarker(block, tags: links[i], detailsLoaded: loadedTags != nil)
+                                    bulletMarker(block, tags: links[i], detailsLoaded: loadedTags != nil && !preparingCaptureSummary && session.recordSummaryWork == nil, detailsPending: captureWorker.active.contains(session.id) || regeneratingRecord)
+                                        .frame(width: detailIconDiameter, height: detailIconDiameter)
+                                        .fixedSize()
                                         .alignmentGuide(.firstTextBaseline) { dimensions in
                                             dimensions[VerticalAlignment.center] + bodyHalfCapHeight
                                         }
@@ -593,6 +607,7 @@ struct SessionDetailView: View {
                                     }.accessibilityHint("Edit record text")
                                 }
                             }.font(StoryDesignTokens.body)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .lineSpacing(4).padding(.top, 10)
                         }
                     }
@@ -800,7 +815,7 @@ struct SessionDetailView: View {
             .contentShape(Rectangle())
     }
 
-    @ViewBuilder private func bulletMarker(_ block: NoteBlock, tags: [RecordTag], detailsLoaded: Bool) -> some View {
+    @ViewBuilder private func bulletMarker(_ block: NoteBlock, tags: [RecordTag], detailsLoaded: Bool, detailsPending: Bool) -> some View {
         if let first = tags.first {
             let icon = markerIcon(SummaryCategoryIcon(title: first.entry.category.displayTitle).icon)
             if tags.count == 1 {
@@ -819,6 +834,10 @@ struct SessionDetailView: View {
                 } label: { icon }
                 .accessibilityLabel("Choose from " + String(tags.count) + " linked details")
             }
+        } else if detailsPending {
+            StoryPendingDetailDot()
+                .frame(width: detailIconDiameter, height: detailIconDiameter)
+                .accessibilityLabel("Extracting details")
         } else if detailsLoaded {
             Button {
                 let category = SummaryEntryCategory.allCases.first { $0.displayTitle == block.bullet?.heading } ?? block.fact?.category ?? .otherNotes

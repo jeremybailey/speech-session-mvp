@@ -528,6 +528,7 @@ struct StoryCaptureView: View {
 final class CaptureProcessing: ObservableObject {
     static let shared = CaptureProcessing()
     @Published private(set) var active: Set<UUID> = []
+    @Published private(set) var extractingDetails: Set<UUID> = []
     @Published private(set) var errors: [UUID: String] = [:]
 
     func start(_ record: Session, store: SessionStore, home: HomeViewModel, health: HealthSummaryModel, auth: KindeAuthManager) {
@@ -537,7 +538,7 @@ final class CaptureProcessing: ObservableObject {
         errors[record.id] = nil
         Task {
             let backgroundLease=SummaryBackgroundTaskLease(name:"Process record") {}
-            defer { backgroundLease.end(); active.remove(record.id) }
+            defer { backgroundLease.end(); extractingDetails.remove(record.id); active.remove(record.id) }
             do {
                 guard let latest = try await store.loadAll().first(where: { $0.id == record.id }),
                       latest.capture?.isDraft != true else { return }
@@ -558,7 +559,8 @@ final class CaptureProcessing: ObservableObject {
                         await home.loadSessions()
                         await health.refresh()
                     }
-                    await health.updateHealthStory(transport: transport, onDevice: local, explicitlyRequested: true)
+                    extractingDetails.insert(record.id)
+                    try await health.finishCapturedRecordDetails(transport: transport, onDevice: local)
                     await home.loadSessions()
                 }
             } catch { errors[record.id] = error.localizedDescription }
