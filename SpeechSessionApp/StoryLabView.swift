@@ -355,13 +355,17 @@ struct StoryLabView: View {
             folderRouter.onCaptureDismiss?()
             folderRouter.onCaptureDismiss = nil
             Task { await model.reload(); await appModel.health.loadForNavigation() }
-            if let id = folderRouter.finishedCapture {
-                folderRouter.finishedCapture = nil
-                folderRouter.open(.record(id))
-            }
         }) { record in
             StoryCaptureView(record: record, store: appModel.store, home: appModel.home, auth: auth, importDocument: folderRouter.documentImportID == record.id) { completed in
-                folderRouter.finishedCapture = completed
+                if let completed {
+                    // Prepare the destination while capture still covers the navigation stack.
+                    // Dismissing then reveals the summary without flashing Home or pushing again.
+                    var transaction = Transaction(animation: nil)
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        folderRouter.open(.record(completed))
+                    }
+                }
                 folderRouter.capture = nil
             }
             .environmentObject(appModel.health)
