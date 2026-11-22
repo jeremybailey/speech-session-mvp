@@ -586,7 +586,7 @@ struct SessionDetailView: View {
                             }
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 if !block.text.isEmpty {
-                                    bulletMarker(block, tags: links[i], detailsLoaded: loadedTags != nil && !preparingCaptureSummary && session.recordSummaryWork == nil)
+                                    bulletMarker(block, tags: links[i], detailsLoaded: loadedTags != nil && !preparingCaptureSummary && session.recordSummaryWork == nil, detailsPending: captureWorker.active.contains(session.id) || regeneratingRecord)
                                         .alignmentGuide(.firstTextBaseline) { dimensions in
                                             dimensions[VerticalAlignment.center] + bodyHalfCapHeight
                                         }
@@ -812,7 +812,7 @@ struct SessionDetailView: View {
             .contentShape(Rectangle())
     }
 
-    @ViewBuilder private func bulletMarker(_ block: NoteBlock, tags: [RecordTag], detailsLoaded: Bool) -> some View {
+    @ViewBuilder private func bulletMarker(_ block: NoteBlock, tags: [RecordTag], detailsLoaded: Bool, detailsPending: Bool) -> some View {
         if let first = tags.first {
             let icon = markerIcon(SummaryCategoryIcon(title: first.entry.category.displayTitle).icon)
             if tags.count == 1 {
@@ -831,6 +831,12 @@ struct SessionDetailView: View {
                 } label: { icon }
                 .accessibilityLabel("Choose from " + String(tags.count) + " linked details")
             }
+        } else if detailsPending {
+            ProgressView()
+                .controlSize(.small)
+                .tint(StoryDesignTokens.secondaryInk)
+                .frame(width: detailIconDiameter, height: detailIconDiameter)
+                .accessibilityLabel("Extracting details")
         } else if detailsLoaded {
             Button {
                 let category = SummaryEntryCategory.allCases.first { $0.displayTitle == block.bullet?.heading } ?? block.fact?.category ?? .otherNotes
