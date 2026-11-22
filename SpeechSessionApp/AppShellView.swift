@@ -347,7 +347,7 @@ struct SignInGateView: View {
 
                 VStack(spacing: 12) {
                     Image(systemName: "heart.fill")
-                        .font(.system(size: 28)).foregroundStyle(StoryDesignTokens.action)
+                        .font(.system(size: 40)).foregroundStyle(StoryDesignTokens.action)
                         .accessibilityHidden(true)
                     Text("CollectiveCare")
                         .font(StoryDesignTokens.pageTitle)
