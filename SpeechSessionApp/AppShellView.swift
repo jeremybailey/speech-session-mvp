@@ -140,7 +140,7 @@ private struct IntroAgreementView: View {
                         }
                         VStack(alignment: .leading, spacing: 0) {
                             ForEach(Array(document.paragraphs.enumerated()), id: \.offset) { index, paragraph in
-                                Text(.init(paragraph))
+                                Text(.init(agreementDisplayText(paragraph)))
                                     .font(StoryDesignTokens.font(.body)).lineSpacing(5)
                                     .fixedSize(horizontal: false, vertical: true)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -150,7 +150,7 @@ private struct IntroAgreementView: View {
                                 }
                             }
                         }
-                        .background(BrandPalette.surface, in: RoundedRectangle(cornerRadius: 24))
+                        .background(BrandPalette.canvas, in: RoundedRectangle(cornerRadius: 24))
                         VStack(spacing: 14) {
                             Label("Your acceptance is recorded with your account, date, and agreement version.", systemImage: "checkmark.shield")
                                 .font(StoryDesignTokens.font(.footnote)).foregroundStyle(StoryDesignTokens.secondaryInk)
@@ -195,6 +195,15 @@ private struct IntroAgreementView: View {
             .navigationTitle("CollectiveCare")
             .navigationBarTitleDisplayMode(.inline)
         }
+    }
+
+    // Presentation-only whitespace: keep the signed document and receipt hash unchanged.
+    private func agreementDisplayText(_ paragraph: String) -> String {
+        guard let start = paragraph.range(of: "**"),
+              let end = paragraph.range(of: "**", range: start.upperBound..<paragraph.endIndex) else { return paragraph }
+        let heading = String(paragraph[start.upperBound..<end.lowerBound])
+            .replacingOccurrences(of: #"\s*/\s*"#, with: " / ", options: .regularExpression)
+        return String(paragraph[..<start.upperBound]) + heading + String(paragraph[end.lowerBound...])
     }
 
     private var welcome: some View {
@@ -336,9 +345,14 @@ struct SignInGateView: View {
             VStack(spacing: 0) {
                 Spacer(minLength: 24)
 
-                Text("CollectiveCare")
-                    .font(StoryDesignTokens.pageTitle)
-                    .multilineTextAlignment(.center)
+                VStack(spacing: 12) {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 28)).foregroundStyle(StoryDesignTokens.action)
+                        .accessibilityHidden(true)
+                    Text("CollectiveCare")
+                        .font(StoryDesignTokens.pageTitle)
+                        .multilineTextAlignment(.center)
+                }
 
                 Spacer(minLength: 32)
 
@@ -357,16 +371,16 @@ struct SignInGateView: View {
                                     .frame(maxWidth: .infinity)
                             }
                         }
+                        .foregroundStyle(StoryDesignTokens.onAction)
                         .padding(.vertical, 14)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .storyControlStyle(prominent: true)
                     .disabled(isSigningIn)
 
 
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity)
-                .liquidGlassCard(cornerRadius: 20)
                 .padding(.horizontal, 20)
 
                 Spacer(minLength: 16)

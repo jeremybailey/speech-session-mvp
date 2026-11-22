@@ -354,6 +354,7 @@ struct StoryLabView: View {
             folderRouter.documentImportID = nil
             folderRouter.onCaptureDismiss?()
             folderRouter.onCaptureDismiss = nil
+            Task { await model.reload(); await appModel.health.loadForNavigation() }
             if let id = folderRouter.finishedCapture {
                 folderRouter.finishedCapture = nil
                 folderRouter.open(.record(id))
@@ -726,8 +727,8 @@ struct StoryLabView: View {
         .storyListCanvas()
         .navigationTitle("More Summaries")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented:$showPractitionerFromList) {
-            StoryTemplateShareView(home:appModel.home,records:model.records,store:appModel.store,job:sharing)
+        .navigationDestination(isPresented:$showPractitionerFromList) {
+            StoryTemplateShareView(home:appModel.home,records:model.records,store:appModel.store,job:sharing,embedded:true)
         }
     }
 
@@ -791,9 +792,9 @@ struct StoryLabView: View {
             .padding()
         }
         .safeAreaInset(edge: .bottom) {
-            if currentCarePlans.isEmpty && recordedCarePlans.isEmpty && overview?.groups.isEmpty != false {
-                Button { folderRouter.newCapture(importDocument: true) } label: {
-                    Label("Upload a care plan", systemImage: "paperclip")
+            if !model.records.contains(where: { $0.capture?.isDraft != true }) {
+                Button { folderRouter.newCapture() } label: {
+                    Label("Add your first record", systemImage: "plus")
                         .font(StoryDesignTokens.label)
                         .foregroundStyle(StoryDesignTokens.onAction)
                         .frame(maxWidth: .infinity, minHeight: StoryDesignTokens.controlHeight)
@@ -1243,24 +1244,49 @@ private struct StoryAnswerText:UIViewRepresentable {
 }
 
 /// A single generated document; the share sheet is the only step that sends it elsewhere.
+private struct StoryFirstRecordCapture: View {
+    let store: SessionStore
+    @ObservedObject var home: HomeViewModel
+    @EnvironmentObject private var auth: KindeAuthManager
+    @Environment(\.dismiss) private var dismiss
+    @State private var record: Session = {
+        var value = Session(transcript: "", inputType: .document, sourceAssets: [])
+        value.capture = RecordCapture()
+        return value
+    }()
+    var body: some View {
+        StoryCaptureView(record: record, store: store, home: home, auth: auth, importDocument: false) { _ in
+            dismiss()
+        }
+    }
+}
+
 private struct StoryTemplateShareView:View {
-    let home:HomeViewModel
+    @ObservedObject var home:HomeViewModel
     let records:[Session]
     let store:SessionStore
     @ObservedObject var job:StorySummaryGeneration
+    var embedded = false
+    @State private var addingFirstRecord = false
     @EnvironmentObject private var auth:KindeAuthManager
     @Environment(\.dismiss) private var dismiss
     @State private var pdfPreview:StorySummaryPreviewItem?
     private let template=StorySummaryTemplate.practitioner
+    private var hasRecords: Bool { home.sessions.contains { $0.capture?.isDraft != true } }
     var body:some View {
-        NavigationStack {
+        Group {
+            if embedded { summaryContent }
+            else { NavigationStack { summaryContent } }
+        }
+    }
+    private var summaryContent: some View {
             ScrollView {
                 VStack(alignment:.leading,spacing:20) {
                     VStack(alignment:.leading,spacing:6) {
                         Text(template.title).font(StoryDesignTokens.pageTitle).accessibilityAddTraits(.isHeader)
-                        TextField("Patient name",text:Binding(get:{job.patientName},set:{job.patientName=$0;job.nameEdited=true})).font(StoryDesignTokens.label)
+                        if job.summary != nil || hasRecords { TextField("Patient name",text:Binding(get:{job.patientName},set:{job.patientName=$0;job.nameEdited=true})).font(StoryDesignTokens.label)
                             .textContentType(.name).disabled(job.generating)
-                            .onSubmit {job.savePatientName()}
+                            .onSubmit {job.savePatientName()} }
                     }
                     if job.generating {
                         StoryThinkingStatus(job.generationStatus)
@@ -1357,13 +1383,12 @@ private struct StoryTemplateShareView:View {
                         }
                     } else if !job.restored && auth.isSignedIn {
                         StoryLoadingPlaceholder(label:"Loading saved summary", rows: 3, layout: .summary)
-                    } else if !job.generating && records.isEmpty && job.operationID == nil {
+                    } else if !job.generating && !hasRecords && job.operationID == nil {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Add your first record")
                                 .font(StoryDesignTokens.sectionHeading)
                             Text("Your practitioner summary brings together your records. Add a visit, note, photo or file from your health story to get started.")
                                 .foregroundStyle(StoryDesignTokens.secondaryInk)
-                            Button("Back to summaries") { dismiss() }
                         }
                     } else if !job.generating {
                         Text("Bring your records together into a summary you can preview and share with your care team.")
@@ -1376,26 +1401,45 @@ private struct StoryTemplateShareView:View {
                     }
                 }.frame(maxWidth:.infinity,alignment:.leading).padding(20)
             }
+            .safeAreaInset(edge: .bottom) {
+                if job.restored && !hasRecords && !job.generating && job.operationID == nil {
+                    Button {
+                        addingFirstRecord = true
+                    } label: {
+                        Label("Add your first record", systemImage: "plus")
+                            .font(StoryDesignTokens.label)
+                            .foregroundStyle(StoryDesignTokens.onAction)
+                            .frame(maxWidth: .infinity, minHeight: StoryDesignTokens.controlHeight)
+                    }
+                    .storyControlStyle(prominent: true)
+                    .padding(.horizontal).padding(.vertical, 8)
+                }
+            }
+            .sheet(isPresented: $addingFirstRecord) {
+                StoryFirstRecordCapture(store: store, home: home)
+            }
             .font(StoryDesignTokens.body)
             .foregroundStyle(StoryDesignTokens.ink)
             .background(StoryDesignTokens.canvas)
             .storyLoadIn(ready: job.restored || job.summary != nil || !auth.isSignedIn)
-            .navigationTitle("Practitioner summary").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement:.topBarLeading) {
-                    Button {dismiss()} label:{Image(systemName:"xmark")}.accessibilityLabel("Close summary")
+                if !embedded {
+                    ToolbarItem(placement:.topBarLeading) {
+                        Button {dismiss()} label:{Image(systemName:"xmark")}.accessibilityLabel("Close summary")
+                    }
                 }
                 ToolbarItem(placement:.topBarTrailing) {
                     Button(job.operationID == nil ? "Regenerate summary" : "Retry unfinished summary",systemImage:"arrow.clockwise") {
                         job.start(auth:auth,retryUnfinished:true)
                     }.labelStyle(.iconOnly)
-                        .disabled(job.generating || !auth.isSignedIn || !job.restored || (records.isEmpty && job.operationID == nil))
+                        .disabled(job.generating || !auth.isSignedIn || !job.restored || (!hasRecords && job.operationID == nil))
                 }
                 ToolbarItem(placement:.topBarTrailing){
-                    if let summary=job.summary {
-                        Button {preparePDF(summary)} label:{Label("Share PDF",systemImage:"square.and.arrow.up").labelStyle(.iconOnly)}
-                            .storyControlStyle(prominent:true).disabled(job.generating)
-                    }
+                    Button {
+                        if let summary = job.summary { preparePDF(summary) }
+                    } label: { Label("Share PDF",systemImage:"square.and.arrow.up").labelStyle(.iconOnly) }
+                        .disabled(job.summary == nil || job.generating)
                 }
             }
             .onChange(of:job.summary?.generatedAt,initial:true){_,date in if let date {job.markViewed(date)}}
@@ -1404,7 +1448,6 @@ private struct StoryTemplateShareView:View {
             }
             .task {await job.resumeWhenActive(auth: auth)}
             .onDisappear {job.savePatientName()}
-        }
     }
     private func labValue(_ reading: StoryLabReading, history: [StoryLabReading]) -> some View {
         let improving = reading.isImproving(in: history)
