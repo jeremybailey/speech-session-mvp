@@ -346,20 +346,22 @@ struct SignInGateView: View {
                 let lockupWidth = min(560, max(1, geometry.size.width - 80))
                 let referenceFont = StoryDesignTokens.headingFace(size: 100)
                 let referenceWidth = ("CollectiveCare" as NSString).size(withAttributes: [.font: referenceFont]).width
-                let wordmarkSize = 100 * lockupWidth / referenceWidth
+                let wordmarkSize = lockupWidth / (referenceWidth / 100 + 0.95)
             VStack(spacing: 0) {
                 Spacer(minLength: 24)
 
-                VStack(spacing: wordmarkSize * 0.25) {
+                HStack(alignment: .center, spacing: wordmarkSize * 0.20) {
                     Image(systemName: "heart.fill")
-                        .font(.system(size: wordmarkSize * 0.8)).foregroundStyle(StoryDesignTokens.action)
+                        .resizable().scaledToFit()
+                        .frame(width: wordmarkSize * 0.75, height: wordmarkSize * 0.75)
+                        .foregroundStyle(StoryDesignTokens.action)
                         .accessibilityHidden(true)
                     Text("CollectiveCare")
                         .font(.custom(StoryDesignTokens.headingFamily, fixedSize: wordmarkSize).bold())
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
-                        .frame(width: lockupWidth)
-                        .multilineTextAlignment(.center)
+                        .frame(width: wordmarkSize * referenceWidth / 100)
+                        .multilineTextAlignment(.leading)
                 }
 
                 Spacer(minLength: 32)
