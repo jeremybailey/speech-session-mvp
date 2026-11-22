@@ -1411,11 +1411,6 @@ private struct StoryTemplateShareView:View {
                     } else if !job.generating {
                         Text("Bring your records together into a summary you can preview and share with your care team.")
                             .foregroundStyle(StoryDesignTokens.secondaryInk)
-                        Button { job.start(auth: auth, retryUnfinished: true) } label: {
-                            Text("Generate summary").foregroundStyle(StoryDesignTokens.onAction)
-                        }
-                        .storyControlStyle(prominent: true)
-                        .disabled(!auth.isSignedIn || !job.restored)
                     }
                 }.frame(maxWidth:.infinity,alignment:.leading).padding(20)
             }
@@ -1430,6 +1425,16 @@ private struct StoryTemplateShareView:View {
                             .frame(maxWidth: .infinity, minHeight: StoryDesignTokens.controlHeight)
                     }
                     .storyControlStyle(prominent: true)
+                    .padding(.horizontal).padding(.vertical, 8)
+                } else if job.restored && job.summary == nil && !job.generating {
+                    Button { job.start(auth: auth, retryUnfinished: true) } label: {
+                        Text("Generate summary")
+                            .font(StoryDesignTokens.label)
+                            .foregroundStyle(StoryDesignTokens.onAction)
+                            .frame(maxWidth: .infinity, minHeight: StoryDesignTokens.controlHeight)
+                    }
+                    .storyControlStyle(prominent: true)
+                    .disabled(!auth.isSignedIn)
                     .padding(.horizontal).padding(.vertical, 8)
                 }
             }
