@@ -1,5 +1,7 @@
 # CollectiveCare Release Notes
 
+Before uploading a pilot build, open the launch update on a returning test account and the agreement on a fresh test account. Check both in Light and Dark appearance: each enabled primary button must have a white label on the brand-red fill, including the confirmation label while accepting. Record the results as `launchCTALightModePassed` and `launchCTADarkModePassed` in the release evidence. A previously dismissed update screen does not count as a check.
+
 ## Version 1.0993 (18)
 
 - Refreshed pilot agreement presentation with release highlights, an app preview graphic, and clearer typography. Agreement wording and acceptance auditing are unchanged.

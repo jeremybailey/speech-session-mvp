@@ -99,7 +99,7 @@ struct SessionDetailView: View {
     @State private var rawDrawer = false
     @State private var draftBlocks: [NoteBlock] = []
     @State private var canvasCache = RecordCanvasCache()
-    private var storyLab: Bool { Bundle.main.bundleIdentifier == "com.CollectiveCare.storylab" }
+    private var storyLab: Bool { Bundle.main.bundleIdentifier == "com.CollectiveCare.pilot" }
     let sourceHighlightExcerpt: String?
 
     init(session: Session, store: SessionStore, home: HomeViewModel, initialTab: DetailTab = .transcript, sourceHighlightExcerpt: String? = nil) {

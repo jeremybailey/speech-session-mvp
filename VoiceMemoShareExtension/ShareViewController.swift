@@ -7,7 +7,7 @@ import SwiftUI
 
 /// Share extension → App Group handoff for audio (Voice Memos), images (Photos), or PDF/text files.
 final class ShareViewController: UIViewController {
-    private let appGroupID = "group.com.CollectiveCare.storylab"
+    private let appGroupID = "group.com.CollectiveCare.pilot"
 
     /// Voice Memos often registers multiple audio UTIs; prefer AAC/MPEG-4 audio before generic/movie wrappers.
     private static let preferredAudioTypeIdentifiers: [String] = [

@@ -11,7 +11,7 @@ struct AppShellView: View {
 
     private var storyFixture:Bool {
         #if DEBUG
-        return Bundle.main.bundleIdentifier == "com.CollectiveCare.storylab" && ProcessInfo.processInfo.arguments.contains("--storylab-fixture")
+        return Bundle.main.bundleIdentifier == "com.CollectiveCare.pilot" && ProcessInfo.processInfo.arguments.contains("--storylab-fixture")
         #else
         return false
         #endif
@@ -22,8 +22,13 @@ struct AppShellView: View {
                 ContentView(appModel:appModel)
             } else if !kindeAuth.isSignedIn {
                 SignInGateView()
-            } else if agreement.acceptedOwner == kindeAuth.accountID, agreement.acceptedOwner != nil {
-                ContentView(appModel: appModel)
+            } else if let owner = agreement.acceptedOwner, owner == kindeAuth.accountID {
+                PilotUpdateGate(owner: owner) {
+                    ContentView(appModel: appModel)
+                } notes: { acknowledge in
+                    IntroAgreementView(state: agreement, auth: kindeAuth, acknowledge: acknowledge)
+                }
+                .id(agreement.acceptedOwner)
             } else {
                 IntroAgreementView(state: agreement, auth: kindeAuth)
             }
@@ -34,7 +39,7 @@ struct AppShellView: View {
         .tint(StoryDesignTokens.action)
         .onOpenURL { url in
             guard !KindeAuthManager.isKindeOAuthCallbackURL(url) else { return }
-            if url.scheme == "collectivecare-storylab", url.host == "record-start" {
+            if url.scheme == "collectivecare", url.host == "record-start" {
                 NotificationCenter.default.post(name: .liveActivityStartRecording, object: nil)
                 return
             }
@@ -90,16 +95,43 @@ struct AppShellView: View {
 
 // MARK: - Intro agreement
 
+private struct PilotUpdateGate<Content: View, Notes: View>: View {
+    @AppStorage private var seen: Bool
+    let content: () -> Content
+    let notes: (@escaping () -> Void) -> Notes
+
+    init(owner: String, @ViewBuilder content: @escaping () -> Content,
+         @ViewBuilder notes: @escaping (@escaping () -> Void) -> Notes) {
+        _seen = AppStorage(wrappedValue: false, pilotUpdateReceiptKey(owner))
+        self.content = content
+        self.notes = notes
+    }
+
+    var body: some View {
+        if seen { content() } else { notes { seen = true } }
+    }
+}
+
+private func pilotUpdateReceiptKey(_ owner: String) -> String { "pilot.update.capture-timeline-conditions." + owner }
+
 private struct IntroAgreementView: View {
     @ObservedObject var state: PilotAgreementState
     let auth: KindeAuthManager
+    var acknowledge: (() -> Void)? = nil
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     welcome
-                    if let document = state.document {
+                    if let acknowledge {
+                        Button(action: acknowledge) {
+                            Text("Continue to my health story")
+                                .font(StoryDesignTokens.font(.headline, weight: .semibold))
+                                .foregroundStyle(StoryDesignTokens.onAction)
+                        }
+                        .storyControlStyle(prominent: true)
+                    } else if let document = state.document {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Before you begin")
                                 .font(StoryDesignTokens.sectionHeading).accessibilityAddTraits(.isHeader)
@@ -125,13 +157,14 @@ private struct IntroAgreementView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                             Button { Task { await state.accept(auth: auth) } } label: {
                                 HStack(spacing: 10) {
-                                    if state.busy { ProgressView().tint(.white) }
+                                    if state.busy { ProgressView().tint(StoryDesignTokens.onAction) }
                                     Text(state.busy ? "Confirming…" : document.action)
                                         .font(StoryDesignTokens.font(.headline, weight: .semibold))
                                 }
+                                .foregroundStyle(StoryDesignTokens.onAction)
                                 .frame(maxWidth: .infinity).padding(.vertical, 12)
                             }
-                            .buttonStyle(.borderedProminent)
+                            .storyControlStyle(prominent: true)
                             .buttonBorderShape(.roundedRectangle(radius: 16))
                             .disabled(state.busy)
                             Text("Agreement \(document.version)")
@@ -151,8 +184,8 @@ private struct IntroAgreementView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(BrandPalette.surface, in: RoundedRectangle(cornerRadius: 20))
                     }
-                    Button("Sign out") { Task { await auth.logout() } }
-                        .font(StoryDesignTokens.font(.subheadline)).frame(maxWidth: .infinity).disabled(state.busy)
+                    if acknowledge == nil { Button("Sign out") { Task { await auth.logout() } }
+                        .font(StoryDesignTokens.font(.subheadline)).frame(maxWidth: .infinity).disabled(state.busy) }
                 }
                 .frame(maxWidth: 640).padding(.horizontal, 20).padding(.vertical, 24)
                 .frame(maxWidth: .infinity)
@@ -172,19 +205,19 @@ private struct IntroAgreementView: View {
                     .foregroundStyle(BrandPalette.icon)
                 Text("Your health story,\nbrought together.")
                     .font(StoryDesignTokens.pageTitle).fixedSize(horizontal: false, vertical: true)
-                Text("Collect your records, organize your conditions, and see the bigger picture.")
+                Text("Your pilot feedback shaped three changes.")
                     .font(StoryDesignTokens.font(.body)).foregroundStyle(StoryDesignTokens.secondaryInk)
             }
-            releasePreview
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("In this update").font(StoryDesignTokens.sectionHeading)
                     Spacer()
                     Text(releaseLabel).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
-                releaseFeature("arrow.triangle.2.circlepath", "A connected update", "Details, conditions, and overview update in sequence.")
-                releaseFeature("waveform", "Clearer recordings", "Journal and appointment titles make recordings easier to find.")
-                releaseFeature("arrow.clockwise", "Better recovery", "Retry expired processing results without starting your whole story again.")
+                releaseFeature("plus.circle", "Capture information your way", "Tap + to record a visit or voice journal, write a note, take a photo, or upload a file. Tap Done and we’ll extract the details into an editable summary.")
+                releaseFeature("bubble.left", "Find what matters now", "Browse your records in a timeline, or tap Ask anything. Try “What are my triglyceride levels?” or “What medications am I taking?” Tap a reference to open the record behind the answer.")
+                releaseFeature("folder", "Organize records by condition", "Conditions work like folders. Create your own, move a record, or file it under more than one condition. Its extracted details go with it.")
+
             }
         }
     }
@@ -208,37 +241,7 @@ private struct IntroAgreementView: View {
         }
     }
 
-    // Decorative preview uses no patient information and scales with text size.
-    private var releasePreview: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    Image(systemName: "heart.text.clipboard").foregroundStyle(BrandPalette.icon)
-                    Spacer()
-                    Image(systemName: "person.crop.circle").foregroundStyle(StoryDesignTokens.secondaryInk)
-                }.font(StoryDesignTokens.heading(.title2))
-                Text("My health story").font(StoryDesignTokens.heading(.title2))
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("Updating your health story").font(StoryDesignTokens.font(.subheadline, weight: .bold))
-                    ForEach(["Read records", "Organize conditions", "Update overview"], id: \.self) { title in
-                        HStack(spacing: 10) {
-                            Image(systemName: "checkmark.circle.fill").foregroundStyle(BrandPalette.icon)
-                            Text(title).font(StoryDesignTokens.font(.subheadline))
-                            Spacer()
-                        }
-                    }
-                }
-                .padding(18).frame(maxWidth: .infinity, alignment: .leading)
-                .background(BrandPalette.canvas, in: RoundedRectangle(cornerRadius: 18))
-            }
-            .padding(22)
-            .background(BrandPalette.surface, in: UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28))
-            .padding(.horizontal, 26).padding(.top, 26)
-        }
-        .background(BrandPalette.conditionIconBackground, in: RoundedRectangle(cornerRadius: 24))
-        .clipped()
-        .accessibilityHidden(true)
-    }
+
 }
 
 @MainActor
@@ -290,6 +293,7 @@ private final class PilotAgreementState: ObservableObject {
                 throw URLError(.cannotParseResponse)
             }
             try save(envelope, owner: owner)
+            UserDefaults.standard.set(true, forKey: pilotUpdateReceiptKey(owner))
         } catch {
             guard operation == operationID else { return }
             self.error = "Your acceptance could not be confirmed. Retry to check its status; you will not create a duplicate receipt."
