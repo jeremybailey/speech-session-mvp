@@ -560,7 +560,7 @@ final class CaptureProcessing: ObservableObject {
                         await health.refresh()
                     }
                     extractingDetails.insert(record.id)
-                    await health.updateHealthStory(transport: transport, onDevice: local, explicitlyRequested: true)
+                    try await health.finishCapturedRecordDetails(transport: transport, onDevice: local)
                     await home.loadSessions()
                 }
             } catch { errors[record.id] = error.localizedDescription }

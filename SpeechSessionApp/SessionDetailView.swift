@@ -189,11 +189,9 @@ struct SessionDetailView: View {
                 if preparingCaptureSummary { EmptyView() }
                 else if !capture.failedAssets.isEmpty || captureWorker.errors[session.id] != nil || capture.pending || capture.needsRecordSummary == true {
                     Button("Retry unfinished processing") {
-                        if capture.pending || !capture.failedAssets.isEmpty { processCapture() }
+                        if capture.pending || !capture.failedAssets.isEmpty || captureWorker.errors[session.id] != nil { processCapture() }
                         else { regenerate(retryUnfinished: true) }
                     }.padding(8)
-                } else if !session.transcript.isEmpty && recordFacts.isEmpty {
-                    Button("Prepare details") { regenerate() }.padding(8)
                 }
             } else if retrying {
                 HStack { ProgressView(); Text("Reading your original…") }.padding().background(.regularMaterial)
@@ -295,7 +293,11 @@ struct SessionDetailView: View {
             }
             await health.loadForNavigation()
             guard !Task.isCancelled else { return }
-            if session.capture?.pending == true || (session.capture?.needsRecordSummary == true && (cloudSummaryConsent || summaryBackend == "onDevice")) { processCapture() }
+            if session.capture?.pending == true ||
+                ((session.capture?.needsRecordSummary == true || (session.capture != nil && session.needsSummaryVerification && health.shouldAutomaticallyUpdate(onDevice: summaryBackend == "onDevice", consent: cloudSummaryConsent))) &&
+                 (cloudSummaryConsent || summaryBackend == "onDevice") && !health.isExplicitlyPaused && captureWorker.errors[session.id] == nil) {
+                processCapture()
+            }
         }
         .onChange(of: session.capture?.pending) { old, new in
             if old == true, new == false, !session.transcript.isEmpty,

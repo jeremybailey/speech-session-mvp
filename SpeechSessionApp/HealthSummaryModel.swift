@@ -206,6 +206,27 @@ final class HealthSummaryModel: ObservableObject {
 
     /// One owner for the full update. New saved inputs are coalesced after each pass;
     /// already-current stages use their validated cache instead of making requests.
+    /// Capture must not drop its detail handoff when an earlier record owns the updater.
+    func finishCapturedRecordDetails(transport: OpenAIChatTransport?, onDevice: Bool) async throws {
+        while true {
+            try Task.checkCancellation()
+            while isProcessing || isUpdatingStory || isTransferringData {
+                try await Task.sleep(for: .milliseconds(250))
+            }
+            await refresh()
+            // Refresh suspends; another capture may have acquired the updater meanwhile.
+            if isProcessing || isUpdatingStory || isTransferringData { continue }
+            guard !isExplicitlyPaused else {
+                throw SummaryProcessingError.unavailable("Detail processing is paused. Retry when you’re ready to continue.")
+            }
+            await updateHealthStory(transport: transport, onDevice: onDevice, explicitlyRequested: true)
+            if state(for: .details) == .needsAttention || state(for: .details) == .interrupted {
+                throw SummaryProcessingError.unavailable(updateError ?? "Details couldn’t be completed. Retry to continue saved work.")
+            }
+            return
+        }
+    }
+
     func updateHealthStory(transport: OpenAIChatTransport?, onDevice: Bool, explicitlyRequested: Bool = false,
                            forceConditionRefresh: Bool = false, retryUnfinished: Bool = false) async {
         if !onDevice && IncrementalRecordCoordinator.enabled {
