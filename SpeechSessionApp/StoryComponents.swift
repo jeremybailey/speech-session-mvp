@@ -3,21 +3,29 @@ import SwiftUI
 /// Shared inline status for work that interprets or generates record content.
 struct StoryThinkingStatus: View {
     let label: String
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     init(_ label: String = "Thinking…") { self.label = label }
 
     var body: some View {
         HStack(spacing: 7) {
-            Image(systemName: "heart.fill")
-                .font(.footnote)
-                .foregroundStyle(StoryDesignTokens.action)
-                .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
+            StoryThinkingHeart()
                 .accessibilityHidden(true)
             Text(label)
                 .font(StoryDesignTokens.font(.subheadline, weight: .medium))
                 .foregroundStyle(StoryDesignTokens.secondaryInk)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The same processing symbol in status labels and pending detail slots.
+struct StoryThinkingHeart: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Image(systemName: "heart.fill")
+            .font(.footnote)
+            .foregroundStyle(StoryDesignTokens.action)
+            .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
     }
 }
 

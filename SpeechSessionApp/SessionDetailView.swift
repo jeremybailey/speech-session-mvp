@@ -832,9 +832,7 @@ struct SessionDetailView: View {
                 .accessibilityLabel("Choose from " + String(tags.count) + " linked details")
             }
         } else if detailsPending {
-            ProgressView()
-                .controlSize(.small)
-                .tint(StoryDesignTokens.secondaryInk)
+            StoryThinkingHeart()
                 .frame(width: detailIconDiameter, height: detailIconDiameter)
                 .accessibilityLabel("Extracting details")
         } else if detailsLoaded {
