@@ -549,7 +549,9 @@ struct SessionDetailView: View {
                 if let keys = lastRemoval {
                     Button("Detail removed · Undo") { performVisibilityChange(keys, hide: false) }
                 }
-                if preparingCaptureSummary {
+                if captureWorker.extractingDetails.contains(session.id) {
+                    StoryThinkingStatus("Extracting details…")
+                } else if preparingCaptureSummary {
                     StoryThinkingStatus(content.allSatisfy({ $0.text.isEmpty }) ? "Preparing summary…" : "Updating summary…")
                 } else if session.recordSummaryWork != nil {
                     Label("Summary paused — retry to continue", systemImage: "pause.circle")
@@ -574,7 +576,7 @@ struct SessionDetailView: View {
                             }
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 if !block.text.isEmpty {
-                                    bulletMarker(block, tags: links[i], detailsLoaded: loadedTags != nil)
+                                    bulletMarker(block, tags: links[i], detailsLoaded: loadedTags != nil && !preparingCaptureSummary && session.recordSummaryWork == nil)
                                         .alignmentGuide(.firstTextBaseline) { dimensions in
                                             dimensions[VerticalAlignment.center] + bodyHalfCapHeight
                                         }
