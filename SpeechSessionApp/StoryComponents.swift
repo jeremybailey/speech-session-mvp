@@ -3,11 +3,14 @@ import SwiftUI
 /// Shared inline status for work that interprets or generates record content.
 struct StoryThinkingStatus: View {
     let label: String
+    @ScaledMetric(relativeTo: .footnote) private var markerWidth: CGFloat = 26
     init(_ label: String = "Thinking…") { self.label = label }
 
     var body: some View {
         HStack(spacing: 7) {
             StoryThinkingHeart()
+                .frame(width: markerWidth, height: markerWidth)
+                .fixedSize()
                 .accessibilityHidden(true)
             Text(label)
                 .font(StoryDesignTokens.font(.subheadline, weight: .medium))

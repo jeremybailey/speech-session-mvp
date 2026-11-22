@@ -587,6 +587,8 @@ struct SessionDetailView: View {
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 if !block.text.isEmpty {
                                     bulletMarker(block, tags: links[i], detailsLoaded: loadedTags != nil && !preparingCaptureSummary && session.recordSummaryWork == nil, detailsPending: captureWorker.active.contains(session.id) || regeneratingRecord)
+                                        .frame(width: detailIconDiameter, height: detailIconDiameter)
+                                        .fixedSize()
                                         .alignmentGuide(.firstTextBaseline) { dimensions in
                                             dimensions[VerticalAlignment.center] + bodyHalfCapHeight
                                         }
@@ -605,6 +607,7 @@ struct SessionDetailView: View {
                                     }.accessibilityHint("Edit record text")
                                 }
                             }.font(StoryDesignTokens.body)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .lineSpacing(4).padding(.top, 10)
                         }
                     }
