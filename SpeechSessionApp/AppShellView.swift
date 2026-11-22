@@ -344,7 +344,7 @@ struct SignInGateView: View {
         NavigationStack {
             GeometryReader { geometry in
                 let lockupWidth = min(560, max(1, geometry.size.width - 80))
-                let referenceFont = UIFont(name: StoryDesignTokens.headingFamily, size: 100) ?? UIFont.systemFont(ofSize: 100)
+                let referenceFont = StoryDesignTokens.headingFace(size: 100)
                 let referenceWidth = ("CollectiveCare" as NSString).size(withAttributes: [.font: referenceFont]).width
                 let wordmarkSize = 100 * lockupWidth / referenceWidth
             VStack(spacing: 0) {
@@ -355,7 +355,7 @@ struct SignInGateView: View {
                         .font(.system(size: wordmarkSize * 0.8)).foregroundStyle(StoryDesignTokens.action)
                         .accessibilityHidden(true)
                     Text("CollectiveCare")
-                        .font(.custom(StoryDesignTokens.headingFamily, fixedSize: wordmarkSize))
+                        .font(.custom(StoryDesignTokens.headingFamily, fixedSize: wordmarkSize).bold())
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
                         .frame(width: lockupWidth)
