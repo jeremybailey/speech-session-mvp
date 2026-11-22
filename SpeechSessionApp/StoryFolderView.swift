@@ -4,7 +4,7 @@ import SpeechSessionFeatures
 import SpeechSessionPersistence
 
 enum StoryRoute: Hashable {
-    case folders, carePlan, allDetails, folder(UUID), record(UUID), fact(String, UUID?, SummaryEntry?)
+    case folders, summaries, carePlan, allDetails, folder(UUID), record(UUID), fact(String, UUID?, SummaryEntry?)
 }
 
 final class StoryFolderRouter: ObservableObject {
@@ -50,6 +50,7 @@ struct StoryFolderDestination: View {
     let store: SessionStore
     @ObservedObject var home: HomeViewModel
     @EnvironmentObject private var health: HealthSummaryModel
+    let summaries: () -> AnyView
     let carePlan: () -> AnyView
     var body: some View {
         if case .record(let id) = route,
@@ -65,6 +66,7 @@ struct StoryFolderDestination: View {
     }
     @ViewBuilder private var destination: some View {
         switch route {
+        case .summaries: summaries()
         case .carePlan: carePlan().navigationTitle("").navigationBarTitleDisplayMode(.inline)
         case .folders: StoryFolderBrowser(store: store)
         case .allDetails:

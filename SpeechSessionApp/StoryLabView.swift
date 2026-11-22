@@ -321,6 +321,8 @@ struct StoryLabView: View {
     @State private var showConversation=false
     @State private var showCheckIn=false
     @State private var showCareOverviewSummary=false
+    @State private var showPractitionerFromList=false
+    @State private var carePlanPDF:StorySummaryPreviewItem?
     @State private var showRecordedRecommendations=false
     @State private var selectedSource:StoryEvidence?
     @State private var sourceChoices:[StoryEvidence]=[]
@@ -336,7 +338,7 @@ struct StoryLabView: View {
         NavigationStack(path: $folderRouter.path) {
             HomeView(home:appModel.home,recording:appModel.recording,store:appModel.store,storyRecords:true,storyNarrative:model.didLoadStory ? model.narrative : nil,retryStoryLoad:model.initialStoryLoadFailed ? {Task {await model.reload()}} : nil,storyBusy:model.busy || model.refreshingNarrative,summaryStatus:sharing.homeStatus,summaryDrawer:{AnyView(StoryTemplateShareView(home:appModel.home,records:model.records,store:appModel.store,job:sharing))},askStory:{openChat()},refreshStory:{Task{await model.refreshNarrative(auth:auth)}},pendingSharedImportURL:$appModel.pendingSharedImportURL,advanceSharedImportQueue:appModel.enqueuePendingSharedImportIfAvailable)
                 .navigationDestination(for: StoryRoute.self) { route in
-                    StoryFolderDestination(route: route, store: appModel.store, home: appModel.home) { AnyView(currentPlan) }
+                    StoryFolderDestination(route: route, store: appModel.store, home: appModel.home, summaries: { AnyView(summariesList) }, carePlan: { AnyView(currentPlan) })
                         .environment(\.storyRouter, folderRouter)
                 }
                 .onAppear {
@@ -621,7 +623,7 @@ struct StoryLabView: View {
                 }
             }
             .navigationDestination(for: StoryRoute.self) { route in
-                StoryFolderDestination(route: route, store: appModel.store, home: appModel.home) { AnyView(currentPlan) }
+                StoryFolderDestination(route: route, store: appModel.store, home: appModel.home, summaries: { AnyView(summariesList) }, carePlan: { AnyView(currentPlan) })
                     .environment(\.storyRouter, chatRouter)
             }
             .navigationDestination(item: $citedPassage) { source in
@@ -708,6 +710,27 @@ struct StoryLabView: View {
         return appModel.health.facts.contains{action.factIDs.contains($0.id) && $0.preference.actionStatus == .current}
     }
     private var adoptedActions:[HealthCarePlan.Action]{actions.filter{adopted($0)}}
+    private var summariesList: some View {
+        List {
+            Button { showPractitionerFromList=true } label: {
+                Label("Practitioner summary",systemImage:"doc.text")
+                    .foregroundStyle(StoryDesignTokens.ink)
+            }
+            .listRowBackground(StoryDesignTokens.canvas)
+            NavigationLink(value:StoryRoute.carePlan) {
+                Label("Care plan summary",systemImage:"list.bullet.clipboard")
+            }
+            .listRowBackground(StoryDesignTokens.canvas)
+        }
+        .listStyle(.plain)
+        .storyListCanvas()
+        .navigationTitle("More Summaries")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented:$showPractitionerFromList) {
+            StoryTemplateShareView(home:appModel.home,records:model.records,store:appModel.store,job:sharing)
+        }
+    }
+
     @ViewBuilder private var currentPlan:some View {
         if model.didLoadStory {
             loadedPlan
@@ -720,10 +743,14 @@ struct StoryLabView: View {
         let overview=saved.map(PractitionerCarePlan.init(summary:))
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
-                Text("My care plan")
+                Text("Care plan summary")
                     .font(StoryDesignTokens.pageTitle)
                     .accessibilityAddTraits(.isHeader)
 
+                if sharing.generating { StoryThinkingStatus(sharing.generationStatus) }
+                if let error=sharing.error {
+                    Text(error).foregroundStyle(StoryDesignTokens.secondaryInk)
+                }
                 VStack(alignment: .leading, spacing: 12) {
                     careSectionHeading("Following now")
                     if currentCarePlans.isEmpty {
@@ -778,6 +805,66 @@ struct StoryLabView: View {
         .foregroundStyle(StoryDesignTokens.ink)
         .background(StoryDesignTokens.canvas)
         .storyLoadIn()
+        .toolbar {
+            ToolbarItem(placement:.topBarTrailing) {
+                Button(sharing.operationID == nil ? "Regenerate summary":"Retry unfinished summary",systemImage:"arrow.clockwise") {
+                    sharing.start(auth:auth,retryUnfinished:true)
+                }.labelStyle(.iconOnly)
+                    .disabled(sharing.generating || !sharing.restored || !auth.isSignedIn)
+            }
+            ToolbarItem(placement:.topBarTrailing) {
+                Button("Share care plan",systemImage:"square.and.arrow.up") { shareCarePlan() }
+                    .labelStyle(.iconOnly)
+                    .disabled(currentCarePlans.isEmpty && recordedCarePlans.isEmpty && overview?.groups.isEmpty != false)
+            }
+        }
+        .sheet(item:$carePlanPDF) { item in StorySummaryPDFPreview(item:item) }
+        .task {await sharing.resumeWhenActive(auth:auth)}
+    }
+
+    private func shareCarePlan() {
+        let saved=sharing.summary ?? model.workspace.sharedSummary
+        var lines:[String]=[]
+        func appendPlans(_ plans:[HealthCarePlan],following:Bool) {
+            for plan in plans {
+                lines.append("### "+HealthStoryText.displayName(plan.title))
+                for action in plan.actions where adopted(action) == following {
+                    lines.append("- "+action.text)
+                    for (label,value) in [("When",action.timing),("Context",action.context),("Who",action.owner)] {
+                        if let value,!value.isEmpty {lines.append(label+": "+value)}
+                    }
+                    if !following,action.status != "Current" {lines.append(action.status)}
+                }
+            }
+        }
+        if !currentCarePlans.isEmpty {
+            lines.append("## Following now")
+            appendPlans(currentCarePlans,following:true)
+        }
+        if let saved {
+            let overview=PractitionerCarePlan(summary:saved)
+            if !overview.groups.isEmpty {lines.append("## Treatments & next steps")}
+            for group in overview.groups {
+                lines.append("### "+group.title)
+                for item in group.items {
+                    lines.append("- "+item.note+(item.date.map{" ("+$0+")"} ?? ""))
+                }
+            }
+        }
+        if !recordedCarePlans.isEmpty {
+            lines.append("## Recorded recommendations")
+            lines.append("Not marked as part of your current plan.")
+            appendPlans(recordedCarePlans,following:false)
+        }
+        do {
+            let data=try StorySummaryPDF.render(text:lines.joined(separator:"\n"),title:"Care plan summary",generatedAt:saved?.generatedAt ?? Date(),patientName:sharing.patientName,typography:StoryDesignTokens.summaryPDFTypography)
+            let folder=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString,isDirectory:true)
+            try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+            let url=folder.appendingPathComponent("Care Plan Summary.pdf")
+            try data.write(to:url,options:[.atomic,.completeFileProtectionUntilFirstUserAuthentication])
+            guard let document=PDFDocument(data:data),document.pageCount>0 else {throw StoryEditError.invalidMutation}
+            carePlanPDF=StorySummaryPreviewItem(url:url,document:document,share:false)
+        } catch {sharing.error="The PDF couldn’t be prepared. Your care plan is still saved."}
     }
 
     private func careOverview(_ overview:PractitionerCarePlan,summary:StorySharedSummary)->some View {
@@ -984,7 +1071,7 @@ struct StoryRecordsList:View {
             StoryRecordIcon(symbol: "list.bullet.clipboard")
                 .saturation(showFirstRecordGuide ? 0 : 1)
                 .opacity(showFirstRecordGuide ? 0.65 : 1)
-            Text("My care plan").font(StoryDesignTokens.label)
+            Text("More Summaries…").font(StoryDesignTokens.label)
                 .foregroundStyle(showFirstRecordGuide ? StoryDesignTokens.secondaryInk : StoryDesignTokens.ink)
         }
         .frame(maxWidth: .infinity, minHeight: StoryDesignTokens.controlHeight, alignment: .leading)
@@ -1002,8 +1089,8 @@ struct StoryRecordsList:View {
                         .listRowSeparator(.hidden).listRowBackground(StoryDesignTokens.canvas)
                 } else if let retryStoryLoad { Button("Retry loading overview",action:retryStoryLoad) }
                 else {StoryLoadingPlaceholder(label:"Loading overview", rows: 2, layout: .narrative).listRowSeparator(.hidden)}
-                NavigationLink(value: StoryRoute.carePlan) { carePlanLabel }
-                    .accessibilityHint("View your current plan and recorded recommendations")
+                NavigationLink(value: StoryRoute.summaries) { carePlanLabel }
+                    .accessibilityHint("View your practitioner and care plan summaries")
                 .listRowSeparator(.hidden).listRowBackground(StoryDesignTokens.canvas)
             }
             if let summaryStatus {
@@ -1283,22 +1370,20 @@ private struct StoryTemplateShareView:View {
             .foregroundStyle(StoryDesignTokens.ink)
             .background(StoryDesignTokens.canvas)
             .storyLoadIn(ready: job.restored || job.summary != nil || !auth.isSignedIn)
-            .navigationTitle("Share summary").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Practitioner summary").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement:.topBarLeading) {
                     Button {dismiss()} label:{Image(systemName:"xmark")}.accessibilityLabel("Close summary")
                 }
                 ToolbarItem(placement:.topBarTrailing) {
-                    if let summary=job.summary {
-                        Menu {
-                            Button("Preview PDF",systemImage:"doc.richtext"){preparePDF(summary)}
-                            Button(job.operationID == nil ? "Regenerate summary" : "Retry unfinished summary",systemImage:"arrow.clockwise"){job.start(auth:auth, retryUnfinished: true)}.disabled(!auth.isSignedIn || !job.restored)} label: {Image(systemName:"ellipsis")}
-                            .accessibilityLabel("Summary options").disabled(job.generating)
-                    }
+                    Button(job.operationID == nil ? "Regenerate summary" : "Retry unfinished summary",systemImage:"arrow.clockwise") {
+                        job.start(auth:auth,retryUnfinished:true)
+                    }.labelStyle(.iconOnly)
+                        .disabled(job.generating || !auth.isSignedIn || !job.restored)
                 }
                 ToolbarItem(placement:.topBarTrailing){
                     if let summary=job.summary {
-                        Button {preparePDF(summary,share:true)} label:{Label("Share PDF",systemImage:"square.and.arrow.up").labelStyle(.iconOnly)}
+                        Button {preparePDF(summary)} label:{Label("Share PDF",systemImage:"square.and.arrow.up").labelStyle(.iconOnly)}
                             .storyControlStyle(prominent:true).disabled(job.generating)
                     }
                 }

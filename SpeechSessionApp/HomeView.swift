@@ -109,13 +109,6 @@ struct HomeView: View {
                         .accessibilityLabel("Conditions")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showSummaryDrawer = true } label: {
-                        Label("Share", systemImage: "square.and.arrow.up").labelStyle(.iconOnly)
-                    }
-                        .tint(StoryDesignTokens.ink)
-                        .accessibilityHint("Open your practitioner summary")
-                }
-                ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Section(kindeAuth.isSignedIn ? (kindeAuth.userPreview.map {"Signed in · "+$0} ?? "Signed in"):"Signed out") {
                             Button("Settings",systemImage:"gearshape") {showSettings=true}.disabled(phase != .idle)
