@@ -112,7 +112,7 @@ private struct PilotUpdateGate<Content: View, Notes: View>: View {
     }
 }
 
-private func pilotUpdateReceiptKey(_ owner: String) -> String { "pilot.update.capture-timeline-conditions." + owner }
+private func pilotUpdateReceiptKey(_ owner: String) -> String { "pilot.update.summaries-and-recovery-v1." + owner }
 
 private struct IntroAgreementView: View {
     @ObservedObject var state: PilotAgreementState
@@ -124,14 +124,7 @@ private struct IntroAgreementView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     welcome
-                    if let acknowledge {
-                        Button(action: acknowledge) {
-                            Text("Continue to my health story")
-                                .font(StoryDesignTokens.font(.headline, weight: .semibold))
-                                .foregroundStyle(StoryDesignTokens.onAction)
-                        }
-                        .storyControlStyle(prominent: true)
-                    } else if let document = state.document {
+                    if acknowledge == nil, let document = state.document {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Before you begin")
                                 .font(StoryDesignTokens.sectionHeading).accessibilityAddTraits(.isHeader)
@@ -170,7 +163,7 @@ private struct IntroAgreementView: View {
                             Text("Agreement \(document.version)")
                                 .font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                         }
-                    } else if state.busy {
+                    } else if acknowledge == nil && state.busy {
                         StoryLoadingPlaceholder(label: "Loading agreement", rows: 2, layout: .narrative)
                             .frame(maxWidth: .infinity).padding(24)
                     }
@@ -189,6 +182,21 @@ private struct IntroAgreementView: View {
                 }
                 .frame(maxWidth: 640).padding(.horizontal, 20).padding(.vertical, 24)
                 .frame(maxWidth: .infinity)
+            }
+            .safeAreaInset(edge: .bottom) {
+                if let acknowledge {
+                    Button(action: acknowledge) {
+                        Text("Continue")
+                            .font(StoryDesignTokens.label)
+                            .foregroundStyle(StoryDesignTokens.onAction)
+                            .frame(maxWidth: .infinity, minHeight: StoryDesignTokens.controlHeight)
+                    }
+                    .storyControlStyle(prominent: true)
+                    .frame(maxWidth: 640)
+                    .padding(.horizontal, 20).padding(.vertical, 12)
+                    .frame(maxWidth: .infinity)
+                    .background(BrandPalette.canvas)
+                }
             }
             .background(BrandPalette.canvas.ignoresSafeArea())
             .storyLoadIn(ready: !state.busy || state.document != nil)
@@ -212,9 +220,9 @@ private struct IntroAgreementView: View {
                 Text("PILOT UPDATE")
                     .font(StoryDesignTokens.font(.caption, weight: .semibold)).tracking(2)
                     .foregroundStyle(BrandPalette.icon)
-                Text("Your health story,\nbrought together.")
+                Text("Clearer summaries,\nready to share.")
                     .font(StoryDesignTokens.pageTitle).fixedSize(horizontal: false, vertical: true)
-                Text("Your pilot feedback shaped three changes.")
+                Text("More useful summaries, with your records close at hand.")
                     .font(StoryDesignTokens.font(.body)).foregroundStyle(StoryDesignTokens.secondaryInk)
             }
             VStack(alignment: .leading, spacing: 18) {
@@ -223,9 +231,9 @@ private struct IntroAgreementView: View {
                     Spacer()
                     Text(releaseLabel).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
                 }
-                releaseFeature("plus.circle", "Capture information your way", "Tap + to record a visit or voice journal, write a note, take a photo, or upload a file. Tap Done and we’ll extract the details into an editable summary.")
-                releaseFeature("bubble.left", "Find what matters now", "Browse your records in a timeline, or tap Ask anything. Try “What are my triglyceride levels?” or “What medications am I taking?” Tap a reference to open the record behind the answer.")
-                releaseFeature("folder", "Organize records by condition", "Conditions work like folders. Create your own, move a record, or file it under more than one condition. Its extracted details go with it.")
+                releaseFeature("text.alignleft", "Choose how records are summarized", "Use Visit or Detailed summaries, or let Auto choose. Open linked details directly from each summary and correct them when needed.")
+                releaseFeature("doc.text", "Find your summaries in one place", "Open More Summaries for your practitioner and care plan summaries. Preview a PDF before sharing it with your care team.")
+                releaseFeature("arrow.triangle.2.circlepath", "Keep summaries moving", "Submitted summaries can keep processing when you leave the app or lock your phone. If interrupted, retry to resume saved progress.")
 
             }
         }
