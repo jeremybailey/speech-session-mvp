@@ -742,7 +742,7 @@ struct StoryLabView: View {
     private func summaryListRow(_ title: String, symbol: String) -> some View {
         HStack(spacing: 16) {
             StoryRecordIcon(symbol: symbol)
-            Text(title).font(StoryDesignTokens.label)
+            Text(title).font(StoryDesignTokens.font(.title3, weight: .semibold))
                 .foregroundStyle(StoryDesignTokens.ink)
             Spacer(minLength: 16)
         }
