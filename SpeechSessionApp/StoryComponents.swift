@@ -20,7 +20,7 @@ struct StoryThinkingStatus: View {
     }
 }
 
-/// The same processing symbol in status labels and pending detail slots.
+/// Processing symbol for the overall status label.
 struct StoryThinkingHeart: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -28,6 +28,19 @@ struct StoryThinkingHeart: View {
         Image(systemName: "heart.fill")
             .font(.footnote)
             .foregroundStyle(StoryDesignTokens.action)
+            .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
+    }
+}
+
+/// A quiet placeholder for each detail while its extraction is pending.
+struct StoryPendingDetailDot: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .footnote) private var diameter: CGFloat = 5
+
+    var body: some View {
+        Image(systemName: "circle.fill")
+            .font(.system(size: diameter))
+            .foregroundStyle(StoryDesignTokens.secondaryInk.opacity(0.65))
             .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
     }
 }
