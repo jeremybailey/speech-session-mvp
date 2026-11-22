@@ -50,3 +50,12 @@ Next: reconnect device, install the signed candidate, compare private baseline a
 - Build-only activation and queue verification deployments were removed after recording success. No patient input was submitted by these service checks.
 
 The service is now active and the founder phone has the pilot candidate. Wider pilot TestFlight upload/distribution has not occurred. Before distribution, complete returning-account launch-update and fresh-account agreement checks in both Light and Dark appearance (an already-dismissed update is not evidence), plus real-summary acceptance on the upgraded pilot. Existing automated and fictional-data results do not replace these remaining release gates.
+
+## Follow-up acceptance and empty-state audit
+
+- User confirmed the upgraded pilot's real summary generation succeeded.
+- Fresh practitioner summary previously exposed Generate with zero records; replaced with first-record guidance and a return action. Toolbar regeneration is disabled with zero records unless unfinished work exists to resume. The same guard applies to care-plan regeneration.
+- Empty care-plan guidance now includes visits and notes as sources, alongside uploaded care plans. Existing home first-record guidance and disabled empty care-plan PDF export are retained.
+- These follow-up UI changes require a new build; build 223 does not contain them. Light/Dark account acceptance gates remain unverified, and no TestFlight upload has occurred.
+
+- Empty-state follow-up compiled successfully for generic iOS (unsigned Debug); diff whitespace check passed. Record detail source review confirmed missing-detail creation waits for details to load, and empty in-progress summaries show a loading placeholder. These are source/build checks, not completed fresh-account visual checks.

@@ -771,7 +771,7 @@ struct StoryLabView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         careSectionHeading("Recorded recommendations")
                         if recordedCarePlans.isEmpty {
-                            Text("Upload your care plan to see what your care team recommended.")
+                            Text("Add a visit, note or care plan to see recommendations here.")
                                 .font(StoryDesignTokens.body).foregroundStyle(StoryDesignTokens.secondaryInk)
                         } else {
                             Text("Not marked as part of your current plan.")
@@ -810,7 +810,7 @@ struct StoryLabView: View {
                 Button(sharing.operationID == nil ? "Regenerate summary":"Retry unfinished summary",systemImage:"arrow.clockwise") {
                     sharing.start(auth:auth,retryUnfinished:true)
                 }.labelStyle(.iconOnly)
-                    .disabled(sharing.generating || !sharing.restored || !auth.isSignedIn)
+                    .disabled(sharing.generating || !sharing.restored || !auth.isSignedIn || (model.records.isEmpty && sharing.operationID == nil))
             }
             ToolbarItem(placement:.topBarTrailing) {
                 Button("Share care plan",systemImage:"square.and.arrow.up") { shareCarePlan() }
@@ -1357,7 +1357,17 @@ private struct StoryTemplateShareView:View {
                         }
                     } else if !job.restored && auth.isSignedIn {
                         StoryLoadingPlaceholder(label:"Loading saved summary", rows: 3, layout: .summary)
+                    } else if !job.generating && records.isEmpty && job.operationID == nil {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Add your first record")
+                                .font(StoryDesignTokens.sectionHeading)
+                            Text("Your practitioner summary brings together your records. Add a visit, note, photo or file from your health story to get started.")
+                                .foregroundStyle(StoryDesignTokens.secondaryInk)
+                            Button("Back to summaries") { dismiss() }
+                        }
                     } else if !job.generating {
+                        Text("Bring your records together into a summary you can preview and share with your care team.")
+                            .foregroundStyle(StoryDesignTokens.secondaryInk)
                         Button { job.start(auth: auth, retryUnfinished: true) } label: {
                             Text("Generate summary").foregroundStyle(StoryDesignTokens.onAction)
                         }
@@ -1379,7 +1389,7 @@ private struct StoryTemplateShareView:View {
                     Button(job.operationID == nil ? "Regenerate summary" : "Retry unfinished summary",systemImage:"arrow.clockwise") {
                         job.start(auth:auth,retryUnfinished:true)
                     }.labelStyle(.iconOnly)
-                        .disabled(job.generating || !auth.isSignedIn || !job.restored)
+                        .disabled(job.generating || !auth.isSignedIn || !job.restored || (records.isEmpty && job.operationID == nil))
                 }
                 ToolbarItem(placement:.topBarTrailing){
                     if let summary=job.summary {
