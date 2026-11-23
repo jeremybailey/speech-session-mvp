@@ -103,7 +103,7 @@ struct HomeView: View {
         .background(BrandPalette.canvas)
         .toolbar {
             if storyRecords {
-                ToolbarItem(placement:.topBarLeading) {
+                ToolbarItem(placement:.topBarTrailing) {
                     NavigationLink(value: StoryRoute.folders) { Image(systemName: "folder") }
                         .tint(StoryDesignTokens.ink)
                         .accessibilityLabel("Conditions")
@@ -135,7 +135,7 @@ struct HomeView: View {
             summaryDrawer?().presentationDetents([.large]).presentationDragIndicator(.visible)
         }
         .navigationTitle("My health story")
-        .navigationBarTitleDisplayMode(.large)
+        .toolbarTitleDisplayMode(storyRecords ? .inlineLarge : .large)
         .sheet(isPresented: $showAddEntrySheet) {
             AddEntryFlowSheet(
                 isPresented: $showAddEntrySheet,
