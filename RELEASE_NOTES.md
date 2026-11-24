@@ -2,6 +2,17 @@
 
 Before uploading a pilot build, open the launch update on a returning test account and the agreement on a fresh test account. Check both in Light and Dark appearance: each enabled primary button must have a white label on the brand-red fill, including the confirmation label while accepting. Record the results as `launchCTALightModePassed` and `launchCTADarkModePassed` in the release evidence. A previously dismissed update screen does not count as a check.
 
+## Local V1 trial — build 242
+
+- Apply the accepted founder feedback behind the `founder-v1` practitioner-summary request flag; older clients retain their existing generation rules.
+- Group clinical context, historical milestones and interventions by condition. Present history within Condition-Specific Summary, with When/Detail rows; omit Appointment Preparation.
+- Keep relative periods as written. Use documented event/observation dates without converting record dates into historical event dates or assuming an elapsed appointment occurred.
+- Include source-supported care-team identity, credentials and contacts; exclude unseen recommendations, licence numbers and relationship/biographical commentary.
+- Show intervention status and response in the care-plan table, preserving uncertainty and reasons for discontinuation.
+- Retain source links in the app and apply the approved sensitive-detail toggle to the organized PDF. Older prose/table summaries remain intact until regeneration.
+
+Validation: Swift presentation, privacy and care-plan regression tests; TypeScript checks and summary/date workflow tests; iPhone build; synthetic provider workflow and rendered PDF review. Local testing only; no TestFlight distribution in this trial. V2 is unchanged. Clinical/source fidelity still requires review on the user's own regenerated example.
+
 ## Version 1.0993 (18)
 
 - Refreshed pilot agreement presentation with release highlights, an app preview graphic, and clearer typography. Agreement wording and acceptance auditing are unchanged.

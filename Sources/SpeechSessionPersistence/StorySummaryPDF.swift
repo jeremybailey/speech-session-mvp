@@ -22,7 +22,7 @@ public enum StorySummaryPDF {
     }
 
     @MainActor public static func renderSummary(_ summary: StorySharedSummary, title: String, patientName: String?, typography: Typography? = nil, excludeSensitiveDetails: Bool = false) throws -> Data {
-        try render(text: summary.text, title: title, generatedAt: summary.generatedAt, patientName: patientName, labs: summary.labReadings ?? [], bulletDates:summary.bulletDates ?? [], providerContacts:summary.providerContacts ?? [], typography: typography, excludeSensitiveDetails: excludeSensitiveDetails) { series, context, rect in
+        try render(text: summary.text, title: title, generatedAt: summary.generatedAt, patientName: patientName, labs: summary.labReadings ?? [], bulletDates:summary.bulletDates ?? [], providerContacts:summary.providerContacts ?? [], typography: typography, excludeSensitiveDetails: excludeSensitiveDetails, summary: summary) { series, context, rect in
             let renderer = ImageRenderer(content: StoryLabSparkline(series).frame(width: rect.width, height: rect.height).environment(\.colorScheme, .light))
             renderer.render { _, paint in
                 context.saveGState()
@@ -32,7 +32,7 @@ public enum StorySummaryPDF {
             }
         }
     }
-    public static func render(text:String,title:String,generatedAt:Date,patientName:String?=nil,labs:[StoryLabReading]=[],bulletDates:[StorySummaryBulletDate]=[],providerContacts:[CareTeamMember]=[],typography:Typography?=nil,excludeSensitiveDetails:Bool=false,drawChart:((StoryLabSeries,CGContext,CGRect)->Void)?=nil) throws -> Data {
+    public static func render(text:String,title:String,generatedAt:Date,patientName:String?=nil,labs:[StoryLabReading]=[],bulletDates:[StorySummaryBulletDate]=[],providerContacts:[CareTeamMember]=[],typography:Typography?=nil,excludeSensitiveDetails:Bool=false,summary:StorySharedSummary?=nil,drawChart:((StoryLabSeries,CGContext,CGRect)->Void)?=nil) throws -> Data {
         let output=NSMutableData();var page=CGRect(x:0,y:0,width:612,height:792)
         guard let consumer=CGDataConsumer(data:output as CFMutableData),let context=CGContext(consumer:consumer,mediaBox:&page,nil) else {throw StoryEditError.invalidMutation}
         let ink=typography?.ink ?? CGColor(red:0.282,green:0.239,blue:0.247,alpha:1)
@@ -137,7 +137,7 @@ public enum StorySummaryPDF {
             y -= highlighted ? 8 : bullet ? 4 : 7
         }
         func table(headers:[String],rows:[[String]],series:[StoryLabSeries]=[],rowDates:[String?]=[],accentStripe:Bool=false) throws {
-            let fractions:[CGFloat] = !series.isEmpty ? [0.24,0.24,0.34,0.18] : headers.count==2 ? [0.24,0.76] : headers.count==3 ? [0.22,0.60,0.18] : [0.25,0.25,0.23,0.27]
+            let fractions:[CGFloat] = !series.isEmpty ? [0.24,0.24,0.34,0.18] : headers.count==2 ? [0.20,0.80] : headers.count==3 ? [0.24,0.60,0.16] : [0.20,0.43,0.22,0.15]
             let widths=fractions.map{$0*512}
             let headerValues=headers.map{attributed($0,size:10,bold:true,color:ink)}
             let showHeader = !(headers.count == 3 && headers.last == "Date")
@@ -157,7 +157,7 @@ public enum StorySummaryPDF {
                 let trend = series.indices.contains(index) ? series[index] : nil
                 var chartHeight: CGFloat = trend?.points.isEmpty == false && drawChart != nil ? 16 : 0
                 let values=row.enumerated().map { column, text -> NSAttributedString in
-                    let isDateColumn = headers.count == 3 && headers.last == "Date" && column == 2
+                    let isDateColumn = (headers.last == "Date" || headers.last == "When") && column == headers.count-1 || headers.first == "When" && column == 0
                     let value=NSMutableAttributedString(attributedString:attributed(text,size:isDateColumn ? 7.5 : 10,bold:column == 0,color:isDateColumn ? secondary : ink))
                     if column == 1, rowDates.indices.contains(index), let date = rowDates[index] {
                         value.append(attributed("  " + date.replacingOccurrences(of:" ",with:"\u{00a0}"),size:7.5,color:secondary))
@@ -221,7 +221,10 @@ public enum StorySummaryPDF {
         let labs = excludeSensitiveDetails ? labs.filter { !StorySummarySharing.isSensitive([$0.name,$0.result,$0.specimen,$0.context,$0.interpretation].joined(separator:" ")) } : labs
         let abnormalLabs = labs.filter { $0.abnormalLabel != nil }
         let presentation = StorySummaryDocument.practitionerPresentation(text, hasAbnormalLabs: !abnormalLabs.isEmpty, bulletDates: bulletDates, providerContacts:providerContacts, patientName:patientName)
-        let blocks = excludeSensitiveDetails ? StorySummarySharing.excludingSensitiveDetails(presentation.blocks) : presentation.blocks
+        let founder = summary.map { FounderSummaryPresentation(summary:$0,hasAbnormalLabs:!abnormalLabs.isEmpty,patientName:patientName) }
+        let organized = founder?.blocks ?? presentation.blocks
+        let displayDates = founder?.dates ?? presentation.dates
+        let blocks = excludeSensitiveDetails ? StorySummarySharing.excludingSensitiveDetails(organized) : organized
         var section=""
         var renderedRows=Set<Int>()
         for (index,block) in blocks.enumerated() {
@@ -229,7 +232,7 @@ public enum StorySummaryPDF {
             switch block {
             case let .heading(value,level):
                 if level == 2 {section=value}
-                y-=level==2 ? 11:4
+                y-=level==2 ? 7:3
                 var following:CGFloat=24
                 if index+1<blocks.count {
                     switch blocks[index+1] {
@@ -240,7 +243,7 @@ public enum StorySummaryPDF {
                         following=(headers.map{height(attributed($0,size:10,bold:true),width:width)}.max() ?? 16)+66
                     }
                 }
-                if level == 2, ["Comprehensive Health History","Care Plan & Interventions","Labs & Investigations"].contains(value) {following=max(following,130)}
+                if level == 2, value == "Labs & Investigations" {following=max(following,90)}
                 try paragraph(value,size:level==2 ? 13:11,bold:true,color:accent,keepNext:following)
                 if level == 2, value != "Labs & Investigations" {
                     var rows:[[String]]=[]
@@ -249,7 +252,7 @@ public enum StorySummaryPDF {
                         if case .heading=blocks[nextIndex] {break}
                         guard case let .bullet(point)=blocks[nextIndex] else {break}
                         guard !StorySummaryDocument.topicAndNote(point).topic.isEmpty else {break}
-                        let date=presentation.dates.first{StorySummaryDocument.shareShorthand($0.text)==point}?.displayLabel(history:value == "Comprehensive Health History") ?? "—"
+                        let date=displayDates.first{StorySummaryDocument.shareShorthand($0.text)==point}?.displayLabel(history:value == "Comprehensive Health History") ?? "—"
                         let fields=StorySummaryDocument.topicAndNote(point)
                         let repeated = !fields.topic.isEmpty && fields.topic.caseInsensitiveCompare(precedingTopic) == .orderedSame
                         if value == "Comprehensive Health History" {
@@ -276,7 +279,7 @@ public enum StorySummaryPDF {
                     try table(headers:["Marker","Latest abnormal","Earlier results","Lab interval"],rows:rows,series:groups)
                 }
             case let .bullet(value):
-                let date=presentation.dates.first{StorySummaryDocument.shareShorthand($0.text)==value}?.displayLabel()
+                let date=displayDates.first{StorySummaryDocument.shareShorthand($0.text)==value}?.displayLabel()
                 try paragraph(value, bullet: true, dateTag: date, highlighted: section == "Clinical Snapshot")
             case let .paragraph(value):try paragraph(value, highlighted: section == "Clinical Snapshot")
             case let .table(headers,rows):try table(headers:headers,rows:rows)

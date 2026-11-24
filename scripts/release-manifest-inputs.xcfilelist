@@ -58,6 +58,7 @@ $(SRCROOT)/Sources/SpeechSessionPersistence/StoryOverview.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StoryOverviewRefresh.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StorySummaryPDF.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StorySummarySharing.swift
+$(SRCROOT)/Sources/SpeechSessionPersistence/FounderSummaryPresentation.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StorySummaryTemplate.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StoryWorkspace.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StructuredArtifact.swift
@@ -172,6 +173,7 @@ $(SRCROOT)/vercel-openai-proxy/api/_lib/summary-punctuation.ts
 $(SRCROOT)/vercel-openai-proxy/api/_lib/summary-retry-policy.ts
 $(SRCROOT)/vercel-openai-proxy/api/_lib/summary-temporal.ts
 $(SRCROOT)/vercel-openai-proxy/api/_lib/summary-workflow-store.ts
+$(SRCROOT)/vercel-openai-proxy/api/_lib/summary-founder-policy.ts
 $(SRCROOT)/vercel-openai-proxy/api/_lib/summary-workflow.ts
 $(SRCROOT)/vercel-openai-proxy/api/_lib/verifyKinde.ts
 $(SRCROOT)/vercel-openai-proxy/api/_lib/whole-history-artifacts.ts

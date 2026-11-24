@@ -74,6 +74,8 @@ public struct ServiceSummaryRequest: Codable, Sendable {
     public var template:String
     public var evidence:[StoryEvidence]
     public var structuredLabs:Bool
+    public var practitionerPolicy:String? = nil
+    public var preparedDate:String? = nil
     public var patientName:String? = nil
     public init(id:UUID,kind:String,target:String,sourceRevision:String,publicationRevision:String,template:String,evidence:[StoryEvidence],structuredLabs:Bool=false,patientName:String?=nil) {
         self.id=id.uuidString.lowercased();self.kind=kind;self.target=target;self.sourceRevision=sourceRevision

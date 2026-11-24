@@ -1325,7 +1325,7 @@ private struct StoryTemplateShareView:View {
                             Text("Previously saved summary").font(StoryDesignTokens.section)
                         }
                         let abnormalLabs = (summary.labReadings ?? []).filter { $0.abnormalLabel != nil }
-                        let presentation = StorySummaryDocument.practitionerPresentation(summary.text, hasAbnormalLabs: !abnormalLabs.isEmpty, bulletDates: summary.bulletDates ?? [], providerContacts: summary.providerContacts ?? [], patientName: job.patientName)
+                        let presentation = FounderSummaryPresentation(summary: summary, hasAbnormalLabs: !abnormalLabs.isEmpty, patientName: job.patientName)
                         let blocks = presentation.blocks
                         ForEach(Array(blocks.enumerated()),id:\.offset) {index,block in
                             switch block {
@@ -1374,29 +1374,32 @@ private struct StoryTemplateShareView:View {
                                         }.first
                                         let dates=summary.dates(for:text,section:section,displayDates:presentation.dates)
                                         if !dates.isEmpty { Label(dates.joined(separator:" · "),systemImage:"calendar").font(StoryDesignTokens.caption).foregroundStyle(.secondary) }
+                                        sourceLinks(for: text, presentation: presentation, summary: summary)
                                     }
                                 }.font(StoryDesignTokens.body)
                             case let .paragraph(text):
                                 Text(text).font(StoryDesignTokens.body).textSelection(.enabled)
                             case let .table(headers,rows):
-                                ScrollView(.horizontal) {
-                                    VStack(alignment:.leading,spacing:0) {
-                                        HStack(alignment:.top,spacing:0) {
-                                            ForEach(headers.indices,id:\.self){column in
-                                                Text(headers[column]).font(StoryDesignTokens.font(.subheadline, weight: .bold)).frame(width:160,alignment:.leading).padding(10)
+                                VStack(alignment: .leading, spacing: 12) {
+                                    ForEach(rows.indices, id: \.self) { row in
+                                        let cells = rows[row]
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            if headers.first == "When", cells.count == 2 {
+                                                Text(cells[0]).font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
+                                                Text(cells[1]).font(StoryDesignTokens.body)
+                                                sourceLinks(for: cells[1], presentation: presentation, summary: summary)
+                                            } else if cells.count >= 2 {
+                                                Text(cells[0]).font(StoryDesignTokens.label)
+                                                Text(cells[1]).font(StoryDesignTokens.body)
+                                                Text(cells.dropFirst(2).filter { $0 != "—" }.joined(separator: " · "))
+                                                    .font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
+                                                sourceLinks(for: cells[0] + " — " + cells[1], presentation: presentation, summary: summary)
                                             }
-                                        }.background(StoryDesignTokens.softSurface)
-                                        ForEach(rows.indices,id:\.self) {row in
-                                            HStack(alignment:.top,spacing:0) {
-                                                ForEach(headers.indices,id:\.self){column in
-                                                    Text(rows[row][column]).font(StoryDesignTokens.body).frame(width:160,alignment:.leading).padding(10)
-                                                        .accessibilityLabel(headers[column]+": "+rows[row][column])
-                                                }
-                                            }
-                                            Divider()
-                                        }
-                                    }.textSelection(.enabled)
-                                }.accessibilityLabel("Summary table. Scroll horizontally to see all columns.")
+                                        }.frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+                                        Divider()
+                                    }
+                                }
+
                             }
                         }
                     } else if !job.restored && auth.isSignedIn {
@@ -1472,6 +1475,21 @@ private struct StoryTemplateShareView:View {
             .task {await job.resumeWhenActive(auth: auth)}
             .onDisappear {job.savePatientName()}
     }
+    @ViewBuilder private func sourceLinks(for text: String, presentation: FounderSummaryPresentation, summary: StorySharedSummary) -> some View {
+        let ids = Set(presentation.sources[text] ?? [])
+        let recordIDs = Set(summary.evidence.filter { ids.contains($0.id) }.compactMap(\.recordID))
+        let sources = records.filter { recordIDs.contains($0.id) }
+        if !sources.isEmpty {
+            DisclosureGroup("Sources (\(sources.count))") {
+                ForEach(sources) { record in
+                    NavigationLink {
+                        SessionDetailView(session: record, store: store, home: home, initialTab: .source)
+                    } label: { Text(record.title?.isEmpty == false ? record.title! : "Original record") }
+                }
+            }.font(StoryDesignTokens.caption).tint(StoryDesignTokens.secondaryInk)
+        }
+    }
+
     private func labValue(_ reading: StoryLabReading, history: [StoryLabReading]) -> some View {
         let improving = reading.isImproving(in: history)
         return VStack(alignment: .leading, spacing: 4) {
@@ -1667,7 +1685,11 @@ private struct SummaryStageFailure:Error {
                 stageID=serviceID
                 let encoder=JSONEncoder();encoder.outputFormatting=[.sortedKeys]
                 let sourceKey=SHA256.hash(data:try encoder.encode(frozen)).map{String(format:"%02x",$0)}.joined()
-                let request=try await store.prepareServiceSummary(ServiceSummaryRequest(id:serviceID,kind:"practitioner",target:"practitioner",sourceRevision:sourceKey,publicationRevision:id.uuidString,template:"practitioner",evidence:frozen.evidence,structuredLabs:!frozen.labs.isEmpty,patientName:frozen.patientName))
+                var proposed = ServiceSummaryRequest(id:serviceID,kind:"practitioner",target:"practitioner",sourceRevision:sourceKey,publicationRevision:id.uuidString,template:"practitioner",evidence:frozen.evidence,structuredLabs:!frozen.labs.isEmpty,patientName:frozen.patientName)
+                proposed.practitionerPolicy = "founder-v1"
+                let preparedFormatter = DateFormatter(); preparedFormatter.locale = Locale(identifier:"en_US_POSIX"); preparedFormatter.dateFormat = "yyyy-MM-dd"
+                proposed.preparedDate = preparedFormatter.string(from: Date())
+                let request = try await store.prepareServiceSummary(proposed)
                 let value=try JSONSerialization.jsonObject(with:encoder.encode(request)) as! [String:Any]
                 generationStatus=Self.preparingLabel
                 let output=try await serviceTransport.summaryWorkflow(value, retryUnfinished: retryUnfinished) { [weak self] completed,total,activity in
@@ -1682,6 +1704,10 @@ private struct SummaryStageFailure:Error {
                     throw NSError(domain:"SummaryPublication",code:2,userInfo:[NSLocalizedDescriptionKey:"The completed summary’s source references couldn’t be verified. Your previous summary is unchanged."])
                 }
                 var document=StorySharedSummary(templateID:template.rawValue,text:valid,evidence:request.evidence.filter{citations.contains($0.id)},patientName:patientName)
+                document.practitionerPolicy = output["practitionerPolicy"] as? String
+                if request.practitionerPolicy == "founder-v1", document.practitionerPolicy != "founder-v1" {
+                    throw NSError(domain:"SummaryPublication",code:3,userInfo:[NSLocalizedDescriptionKey:"The summary service needs the matching update. Your saved summary is unchanged."])
+                }
                 if let raw=output["points"],JSONSerialization.isValidJSONObject(raw) {
                     let references=try JSONDecoder().decode([StorySummaryPointReference].self,from:JSONSerialization.data(withJSONObject:raw))
                     guard references.allSatisfy({!$0.citationIDs.isEmpty && Set($0.citationIDs).isSubset(of:Set(citations))}) else {

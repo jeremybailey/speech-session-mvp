@@ -44,6 +44,9 @@ public struct PractitionerCarePlan: Equatable, Sendable {
 }
 
 public struct StorySummaryPointReference: Codable, Equatable, Sendable {
+    public var conditionGroup: String? = nil
+    public var careStatus: String? = nil
+    public var timeLabel: String? = nil
     public let heading: String
     public let text: String
     public let citationIDs: [String]

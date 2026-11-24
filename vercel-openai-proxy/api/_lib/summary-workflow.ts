@@ -1,3 +1,4 @@
+import {founderPolicy,founderInstructions,careStatuses} from './summary-founder-policy';
 import {SummaryTemporal,supportedSummaryTemporal} from './summary-temporal';
 import {splitHandoffItems} from './summary-punctuation';
 import {createHash} from 'node:crypto';
@@ -6,13 +7,14 @@ export const summaryContract='summary-workflow-v1';
 export const recordHeadings=['Chief Complaint','Symptoms','Findings','Medications','Care Plans','Care team & contacts','Vaccinations','Allergies','Tests & Labs','Biopsychosocial Context','Other Notes'];
 export const practitionerHeadings=['Clinical Snapshot','Care Coordination Summary','Appointment Preparation Brief','Comprehensive Health History','Condition-Specific Summary','Care Plan & Interventions','Labs & Investigations'];
 export type Evidence={id:string;text:string;title?:string;timelineLabel?:string};
-export type SummaryInput={id:string;contract:typeof summaryContract;kind:'record'|'practitioner'|'overview';target:string;sourceRevision:string;publicationRevision:string;template:'visit'|'detailed'|'practitioner'|'overview';evidence:Evidence[];structuredLabs?:boolean;pipeline?:'compact-v2';patientName?:string};
-export type Point={temporal?:SummaryTemporal;coordinationIDs?:string[];historyIDs?:string[];heading:string;text:string;citationIDs:string[];topic:string|null;recipient:string|null;stance:string|null;subjectCitation:string|null;responseCitation:string|null;visitSection:string|null};
+export type SummaryInput={practitionerPolicy?:typeof founderPolicy;preparedDate?:string;id:string;contract:typeof summaryContract;kind:'record'|'practitioner'|'overview';target:string;sourceRevision:string;publicationRevision:string;template:'visit'|'detailed'|'practitioner'|'overview';evidence:Evidence[];structuredLabs?:boolean;pipeline?:'compact-v2';patientName?:string};
+export type Point={conditionGroup?:string|null;careStatus?:string|null;timeLabel?:string|null;temporal?:SummaryTemporal;coordinationIDs?:string[];historyIDs?:string[];heading:string;text:string;citationIDs:string[];topic:string|null;recipient:string|null;stance:string|null;subjectCitation:string|null;responseCitation:string|null;visitSection:string|null};
 export type Step={key:string;phase:'draft'|'check'|'merge'|'audit';dependencies:string[];evidenceIDs:string[]};
 export const uuid=(s:unknown):s is string=>typeof s==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 export function canonical(v:any):string {return Array.isArray(v)?'['+v.map(canonical).join(',')+']':v&&typeof v==='object'?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}':JSON.stringify(v);}
 export const digest=(s:string)=>createHash('sha256').update(s).digest('hex');
 export function validateSummaryInput(v:any):SummaryInput {
+ if(v?.practitionerPolicy!==undefined && (v.practitionerPolicy!==founderPolicy || v.kind!=='practitioner' || typeof v.preparedDate!=='string' || !/^\d{4}-\d{2}-\d{2}$/.test(v.preparedDate)))throw Error('invalid_summary_input');
  if(!v||(v.patientName!==undefined&&(typeof v.patientName!=='string'||!v.patientName.trim()||v.patientName.length>200))||!uuid(v.id)||v.contract!==summaryContract||!['record','practitioner','overview'].includes(v.kind)||
  !['target','sourceRevision','publicationRevision'].every(k=>typeof v[k]==='string'&&v[k].length>0&&v[k].length<=256)||
  !(v.kind==='record'?['visit','detailed']: [v.kind]).includes(v.template)||
@@ -23,7 +25,7 @@ export function validateSummaryInput(v:any):SummaryInput {
  // Discard only empty evidence, preserving all meaningful text and citation IDs.
  const evidence=v.evidence.filter((e:any)=>e.text.trim().length>0);
  if(!evidence.length)throw Error('invalid_summary_input');
- return {...(typeof v.patientName==='string'?{patientName:v.patientName.trim()}:{}),id:v.id.toLowerCase(),contract:summaryContract,kind:v.kind,target:v.target,sourceRevision:v.sourceRevision,publicationRevision:v.publicationRevision,template:v.template,evidence:evidence.map((e:any)=>({id:e.id,text:e.text,...(typeof e.title==='string'?{title:e.title.slice(0,160)}:{}),...(typeof e.timelineLabel==='string'&&e.timelineLabel.length<=100?{timelineLabel:e.timelineLabel}:{})})),structuredLabs:v.structuredLabs===true,...(v.pipeline==='compact-v2'?{pipeline:'compact-v2' as const}:{})};
+ return {...(v.practitionerPolicy===founderPolicy?{practitionerPolicy:founderPolicy,preparedDate:v.preparedDate}:{}),...(typeof v.patientName==='string'?{patientName:v.patientName.trim()}:{}),id:v.id.toLowerCase(),contract:summaryContract,kind:v.kind,target:v.target,sourceRevision:v.sourceRevision,publicationRevision:v.publicationRevision,template:v.template,evidence:evidence.map((e:any)=>({id:e.id,text:e.text,...(typeof e.title==='string'?{title:e.title.slice(0,160)}:{}),...(typeof e.timelineLabel==='string'&&e.timelineLabel.length<=100?{timelineLabel:e.timelineLabel}:{})})),structuredLabs:v.structuredLabs===true,...(v.pipeline==='compact-v2'?{pipeline:'compact-v2' as const}:{})};
 }
 export function summaryPlan(input:SummaryInput):Step[] {
  if(input.kind==='practitioner'&&input.pipeline==='compact-v2')return compactSummaryPlan(input);
@@ -120,7 +122,7 @@ export function summaryPayload(p:SummaryInput,s:Step,outputs:Record<string,Point
  const temporalEnabled=p.kind==='practitioner'&&dependencies.every(d=>d.points.every(point=>point.temporal!==undefined));
  const requiredCoordination=coordination.map((point,index)=>({id:`coordination:${index}`,point:sourcePoint(point)}));
  const temporal=object({role:{type:'string',enum:['event','ongoing','documented','unknown']},start:nullable(string),end:nullable(string),approximate:{type:'boolean'},sourceQuote:nullable(string),citationIDs:{type:'array',items:ref}});
- const point=object({...temporalEnabled?{temporal}:{},...coverage?{coordinationIDs:{type:'array',items:{type:'string',...(requiredCoordination.length?{enum:requiredCoordination.map(h=>h.id)}:{})}}}:{},...coverage?{historyIDs:{type:'array',items:{type:'string',...(requiredHistory.length?{enum:requiredHistory.map(h=>h.id)}:{})}}}:{},heading:{type:'string',enum:headings(p)},text:string,citationIDs:{type:'array',items:ref},topic:nullable(string),recipient:nullable(string),stance:nullable({type:'string',enum:['question','tentative preference','declined','deferred','agreed','booked']}),subjectCitation:nullable(ref),responseCitation:nullable(ref),visitSection:nullable({type:'string',enum:['Discussed','Decided','Next steps']})});
+ const point=object({...p.practitionerPolicy===founderPolicy?{conditionGroup:nullable(string),careStatus:nullable({type:'string',enum:careStatuses}),timeLabel:nullable(string)}:{},...temporalEnabled?{temporal}:{},...coverage?{coordinationIDs:{type:'array',items:{type:'string',...(requiredCoordination.length?{enum:requiredCoordination.map(h=>h.id)}:{})}}}:{},...coverage?{historyIDs:{type:'array',items:{type:'string',...(requiredHistory.length?{enum:requiredHistory.map(h=>h.id)}:{})}}}:{},heading:{type:'string',enum:headings(p)},text:string,citationIDs:{type:'array',items:ref},topic:nullable(string),recipient:nullable(string),stance:nullable({type:'string',enum:['question','tentative preference','declined','deferred','agreed','booked']}),subjectCitation:nullable(ref),responseCitation:nullable(ref),visitSection:nullable({type:'string',enum:['Discussed','Decided','Next steps']})});
  const instruction=s.phase==='draft'?'Extract a complete concise summary of this source passage.':s.phase==='merge'?'Consolidate the independently checked partial summaries. Merge repeated topics without losing distinctions, dates, disagreements, decisions, questions or actions. Preserve original citations.':s.phase==='audit'?(p.kind==='overview'?'Audit only the supplied overview candidate against this original passage. Correct or remove unsupported sentences; do not add omitted topics.':'Audit the candidate against this ORIGINAL passage. Return the corrected candidate points supported by this passage and restore omitted decisions, open questions and actions. Do not introduce points supported only by other passages.'): 'Independently check the candidate against the supplied source or checked inputs. Correct unsupported claims and omissions. Return the full checked points, not just changes.';
  const publication=isConcisePublicationStep(p,s);
  const retry=attempt?'The prior response failed validation. Rewrite to meet all limits: at most 18 words per final summary bullet'+(p.kind==='practitioner'?'. No total-word cap; retain all distinct clinically relevant points.':' and 200 total words.')+' Preserve citations and decision qualifications. Count the words before returning.':'';
@@ -133,8 +135,9 @@ export function summaryPayload(p:SummaryInput,s:Step,outputs:Record<string,Point
  ].join('\n'):[common,p.kind==='record'?recordStyle:p.kind==='practitioner'?practitionerStyle:'Write a brief connected patient-friendly overview, up to five sentences. Each point is one sentence. Select the main concerns and care, never new advice.',p.template==='visit'?visitStyle:'',p.structuredLabs?'Structured lab results are rendered separately by the app. Do not repeat them.':'',instruction,attempt?'The previous response failed structural validation. Repair format and citations without adding claims.':''].join('\n');
  if(coverage&&s.phase==='audit')instructions+=' CHECKLIST REFERENCE MAP (each ID must occur in its named section and cite at least one listed source; never renumber IDs): '+JSON.stringify([...requiredHistory.map(x=>({id:x.id,section:'Comprehensive Health History',sourceIDs:x.point.citationIDs})),...requiredCoordination.map(x=>({id:x.id,section:'Care Coordination Summary',sourceIDs:x.point.citationIDs}))])+'. ';
  if(coverage&&s.phase==='audit')instructions+=' REQUIRED SOURCE COVERAGE: requiredHistory and requiredCoordination contain independently source-checked facts that may have disappeared during consolidation. Recheck them against the original source and return every supported milestone/provider in its own section, including dates and meaningful qualifications. Include the checklist IDs represented by each point in historyIDs/coordinationIDs; use empty arrays otherwise. Merge duplicates only, accounting for all their IDs. Do not drop historical milestones because they are resolved, undated, or unrelated to the current visit.';
+ if(p.practitionerPolicy===founderPolicy)instructions+='\n'+founderInstructions;
  const content=publication?{patientIdentity:p.patientName??null,workflow:p.id,step:s.key,attempt,records:originals,mainDraft:dependencies[0]?.points??[],supportingEvidence:dependencies.slice(1),...(p.kind==='practitioner'?{requiredHistory,requiredCoordination}:{})}:{patientIdentity:p.patientName??null,workflow:p.id,step:s.key,attempt,records:originals,candidates:dependencies,...(coverage?{requiredHistory,requiredCoordination}:{})};
- return validatePayload({stage:'whole-history-overview',workload_type:'incremental',instructions:temporalEnabled?instructions:instructions.replace(practitionerTemporal,''),input:JSON.stringify(content),response_format:{type:'json_schema',json_schema:{name:'durable_summary_points_v1',strict:true,schema:object({points:{type:'array',items:point,maxItems:pointLimit(p,s)}})}}});
+ return validatePayload({stage:'whole-history-overview',workload_type:'incremental',instructions:temporalEnabled?instructions:instructions.replace(practitionerTemporal,''),input:JSON.stringify({...content,...p.practitionerPolicy===founderPolicy?{preparedDate:p.preparedDate}:{}}),response_format:{type:'json_schema',json_schema:{name:'durable_summary_points_v1',strict:true,schema:object({points:{type:'array',items:point,maxItems:pointLimit(p,s)}})}}});
 }
 // Splitting is presentation-only. Never reject or truncate a valid model response
 // because duplicating its metadata for display would exceed the response budget.
@@ -169,6 +172,12 @@ export function validatePoints(raw:string,p:SummaryInput,s:Step,outputs:Record<s
  }
 
  if(!Array.isArray(points)||points.length>pointLimit(p,s)||points.some((b:any)=>!b||!headings(p).includes(b.heading)||typeof b.text!=='string'||!b.text.trim()||b.text.length>1500||!Array.isArray(b.citationIDs)||!b.citationIDs.length||!b.citationIDs.every((id:any)=>allowed.has(id))||[b.subjectCitation,b.responseCitation].some(id=>id!==null&&!b.citationIDs.includes(id))||p.template==='visit'&&!['Discussed','Decided','Next steps'].includes(b.visitSection)||p.kind==='practitioner'&&isConcisePublicationStep(p,s)&&!allowEditorialRepair&&!practitionerPointStyleValid(b)))throw Error('invalid_summary_output');
+ if(p.practitionerPolicy===founderPolicy)for(const point of points as Point[]){
+  if(point.conditionGroup!==null && (typeof point.conditionGroup!=='string'||!point.conditionGroup.trim()||point.conditionGroup.length>100))throw Error('invalid_summary_output');
+  if(point.careStatus!==null && !careStatuses.includes(point.careStatus??''))throw Error('invalid_summary_output');
+  if(point.heading!=='Care Plan & Interventions')point.careStatus=null;
+  if(typeof point.timeLabel!=='string'||!point.timeLabel.trim()||point.timeLabel.length>100||!p.evidence.some(e=>point.citationIDs.includes(e.id)&&e.text.toLowerCase().includes(point.timeLabel!.toLowerCase())))point.timeLabel=null;
+ }
  if(p.kind==='practitioner'&&p.patientName&&points.some((point:Point)=>point.heading==='Care Coordination Summary'&&providerIsPatient(point,p.patientName!)))throw Error('invalid_summary_output');
  // A model may repeat a coverage ID on an additional point in another section.
  // Remove that redundant annotation only after finding a correctly classified,
@@ -196,7 +205,7 @@ export function validatePoints(raw:string,p:SummaryInput,s:Step,outputs:Record<s
   }
   if(covered.size!==history.length)throw Error('invalid_summary_output');
  }
- if(p.kind==='practitioner')for(const point of points as Point[])if(point.temporal!==undefined)point.temporal=supportedSummaryTemporal(point.temporal,point.citationIDs,p.evidence);
+ if(p.kind==='practitioner')for(const point of points as Point[])if(point.temporal!==undefined)point.temporal=supportedSummaryTemporal(point.temporal,point.citationIDs,p.evidence,p.practitionerPolicy!==founderPolicy);
  if(coverage&&(points.some((point:Point)=>point.coordinationIDs!==undefined)||!points.length&&coveragePoints(p,s,outputs,'Care Coordination Summary').length>0)){
   const required=coveragePoints(p,s,outputs,'Care Coordination Summary');const covered=new Set<string>();
   for(const point of points as Point[]){
@@ -210,6 +219,9 @@ export function validatePoints(raw:string,p:SummaryInput,s:Step,outputs:Record<s
  }
  if(isConcisePublicationStep(p,s)&&!(allowEditorialRepair&&p.kind==='practitioner'))validateRecordRecap(points,p.kind==='record');
  if(Buffer.byteLength(JSON.stringify(points))>(p.kind==='practitioner'?80000:40000))throw Error('invalid_summary_output');
+ if(p.practitionerPolicy===founderPolicy)for(const point of points as Point[]){
+  if(point.temporal && /\b(?:years?|months?|weeks?)\s+(?:before|after|ago|prior to)\b/i.test(point.text))point.temporal={role:'unknown',start:null,end:null,approximate:false,sourceQuote:null,citationIDs:[]};
+ }
  return points;
 }
 export function auditCoverageReferenceFailure(raw:string,p:SummaryInput,s:Step,outputs:Record<string,Point[]>):boolean {
@@ -289,7 +301,7 @@ export function summaryResult(p:SummaryInput,plan:Step[],outputs:Record<string,P
  let points=[...seen.values()];if(p.kind==='overview')points=points.slice(0,5);
  if(!points.length)throw Error('unsupported_summary');
  const text=p.kind==='overview'?points.map(b=>b.text).join(' '):headings(p).map(h=>'## '+h+'\n'+points.filter(b=>b.heading===h).map(b=>'- '+b.text).join('\n')).join('\n\n');
- return {...(p.kind==='practitioner'&&points.some(point=>!practitionerPointStyleValid(point))?{preservedCheckedWording:true}:{}),contract:p.contract,kind:p.kind,sourceRevision:p.sourceRevision,publicationRevision:p.publicationRevision,template:p.template,text,points,bulletDates:points.map(b=>({text:b.text,labels:b.temporal&&b.temporal.role!=='unknown'?[`${b.temporal.role==='documented'?'Record':'Date'}: ${b.temporal.start}`]:b.temporal?[...new Set(b.citationIDs.map(id=>p.evidence.find(e=>e.id===id)?.timelineLabel).filter((label):label is string=>!!label&&label.startsWith("Record: ")))]:[...new Set(b.citationIDs.map(id=>p.evidence.find(e=>e.id===id)?.timelineLabel).filter((label):label is string=>!!label))],...(b.temporal?{temporal:b.temporal}:{})})),citationIDs:[...new Set(points.flatMap(b=>b.citationIDs))]};
+ return {...p.practitionerPolicy===founderPolicy?{practitionerPolicy:founderPolicy,preparedDate:p.preparedDate}:{},...(p.kind==='practitioner'&&points.some(point=>!practitionerPointStyleValid(point))?{preservedCheckedWording:true}:{}),contract:p.contract,kind:p.kind,sourceRevision:p.sourceRevision,publicationRevision:p.publicationRevision,template:p.template,text,points,bulletDates:points.map(b=>({text:b.text,labels:b.temporal&&b.temporal.role!=='unknown'?[`${b.temporal.role==='documented'?'Record':'Date'}: ${b.temporal.start}`]:b.temporal?[...new Set(b.citationIDs.map(id=>p.evidence.find(e=>e.id===id)?.timelineLabel).filter((label):label is string=>!!label&&label.startsWith("Record: ")))]:[...new Set(b.citationIDs.map(id=>p.evidence.find(e=>e.id===id)?.timelineLabel).filter((label):label is string=>!!label))],...(b.temporal?{temporal:b.temporal}:{})})),citationIDs:[...new Set(points.flatMap(b=>b.citationIDs))]};
 }
 
 // Generation failure and unknown billing are different states. A confirmed

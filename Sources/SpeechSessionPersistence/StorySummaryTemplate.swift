@@ -87,10 +87,12 @@ public struct StorySummaryTemporal: Codable, Equatable, Sendable {
     public var approximate: Bool
 }
 public struct StorySummaryBulletDate:Codable,Equatable,Sendable {
+    public var displayOverride:String? = nil
     public var text:String
     public var labels:[String]
     public var temporal: StorySummaryTemporal? = nil
     public func displayLabel(history: Bool = false) -> String? {
+        if let displayOverride { return displayOverride }
         guard let temporal else { return history ? Self.historyDisplayDate(text:text,labels:labels) : Self.displayDate(labels) }
         guard ["event", "ongoing"].contains(temporal.role), let start=temporal.start else {
             return history ? Self.historyDisplayDate(text:text,labels:[]) : Self.displayDate(labels.filter{$0.hasPrefix("Record: ")})
@@ -184,6 +186,7 @@ public struct StorySummaryBulletDate:Codable,Equatable,Sendable {
     }
 }
 public struct StorySharedSummary:Codable,Equatable,Sendable {
+    public var practitionerPolicy:String? = nil
     public var pointReferences:[StorySummaryPointReference]? = nil
     public var bulletDates:[StorySummaryBulletDate]? = nil
     public var providerContacts:[CareTeamMember]? = nil

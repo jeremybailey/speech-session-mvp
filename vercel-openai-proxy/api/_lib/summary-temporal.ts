@@ -30,7 +30,7 @@ function supportsPrecision(value:string,quote:string):boolean {
  }
  return dates.some(date=>date===value||value.length===7&&date.startsWith(value+'-'));
 }
-export function validateSummaryTemporal(value:any,pointCitations:string[],evidence:{id:string;text:string}[]):void {
+export function validateSummaryTemporal(value:any,pointCitations:string[],evidence:{id:string;text:string}[],allowRelativeArithmetic=true):void {
  if(!value||!['event','ongoing','documented','unknown'].includes(value.role)||typeof value.approximate!=='boolean'||!Array.isArray(value.citationIDs)||!value.citationIDs.every((id:any)=>typeof id==='string'&&pointCitations.includes(id)))throw Error('invalid_summary_temporal');
  if(value.role==='unknown'){
   if(value.start!==null||value.end!==null||value.sourceQuote!==null||value.citationIDs.length||value.approximate)throw Error('invalid_summary_temporal');return;
@@ -41,7 +41,7 @@ export function validateSummaryTemporal(value:any,pointCitations:string[],eviden
  // A quoted date or an explicit anchored arithmetic expression must support each year.
  const supported=new Set(quote.match(/\b(?:19|20)\d{2}\b/g)??[]);
  const relative=quote.match(/\b(?:(about|approximately|around|roughly)\s+)?(\d{1,3})(?:\s*[-–—]\s*(\d{1,3}))?\s+years?\s+(before|prior to|after)\s+(?:[a-z]+\s+)?((?:19|20)\d{2})\b/);
- if(relative&&value.role!=='documented'){
+ if(relative&&allowRelativeArithmetic&&value.role!=='documented'){
   supported.clear();
   if(value.start.length!==4||value.end&&value.end.length!==4)throw Error('invalid_summary_temporal');
   const direction=relative[4]==='after'?1:-1;const anchor=Number(relative[5]);
@@ -54,7 +54,7 @@ export function validateSummaryTemporal(value:any,pointCitations:string[],eviden
 // Date labels are optional presentation metadata. An unsupported label must not
 // invalidate otherwise valid clinical points or spend another provider call.
 // Keep all source/citation/content validation in the caller; fail closed on time.
-export function supportedSummaryTemporal(value:unknown,pointCitations:string[],evidence:{id:string;text:string}[]):SummaryTemporal {
- try {validateSummaryTemporal(value,pointCitations,evidence);return value as SummaryTemporal;}
+export function supportedSummaryTemporal(value:unknown,pointCitations:string[],evidence:{id:string;text:string}[],allowRelativeArithmetic=true):SummaryTemporal {
+ try {validateSummaryTemporal(value,pointCitations,evidence,allowRelativeArithmetic);return value as SummaryTemporal;}
  catch {return {role:'unknown',start:null,end:null,approximate:false,sourceQuote:null,citationIDs:[]};}
 }
