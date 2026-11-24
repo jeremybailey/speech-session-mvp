@@ -57,6 +57,7 @@ $(SRCROOT)/Sources/SpeechSessionPersistence/StoryLabResults.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StoryOverview.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StoryOverviewRefresh.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StorySummaryPDF.swift
+$(SRCROOT)/Sources/SpeechSessionPersistence/StorySummarySharing.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StorySummaryTemplate.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StoryWorkspace.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StructuredArtifact.swift
