@@ -59,8 +59,23 @@ public enum StorySummaryPDF {
             let frame=CTFramesetterCreateFrame(CTFramesetterCreateWithAttributedString(value),CFRange(location:offset,length:0),CGPath(rect:rect,transform:nil),nil)
             CTFrameDraw(frame,context);return CTFrameGetVisibleStringRange(frame).length
         }
+        var snapshotActive = false
+        var snapshotTop: CGFloat?
+        var snapshotBottom: CGFloat?
+        func extendSnapshot(top: CGFloat, bottom: CGFloat) {
+            guard snapshotActive else { return }
+            if snapshotTop == nil { snapshotTop = top }
+            snapshotBottom = bottom
+        }
+        func finishSnapshotRail() {
+            if let top = snapshotTop, let bottom = snapshotBottom, top > bottom {
+                context.setFillColor(accent)
+                context.fill(CGRect(x:50,y:bottom,width:2.5,height:top-bottom))
+            }
+            snapshotTop = nil; snapshotBottom = nil
+        }
         func newPage() throws {
-            if pageNumber>0 {context.endPDFPage()}
+            if pageNumber>0 {finishSnapshotRail();context.endPDFPage()}
             guard pageNumber<100 else {throw StoryEditError.invalidMutation}
             context.beginPDFPage(nil);pageNumber+=1;y=740
             context.setFillColor(CGColor(gray:1,alpha:1));context.fill(page);context.textMatrix = .identity
@@ -80,7 +95,7 @@ public enum StorySummaryPDF {
                 y=718
             }
         }
-        func paragraph(_ string:String,size:CGFloat=10.5,bold:Bool=false,color:CGColor?=nil,keepNext:CGFloat=0,bullet:Bool=false,displayTitle:Bool=false, accentRange: NSRange? = nil, accentColor: CGColor? = nil, dateTag: String? = nil, highlighted: Bool = false) throws {
+        func paragraph(_ string:String,size:CGFloat=10.5,bold:Bool=false,color:CGColor?=nil,keepNext:CGFloat=0,bullet:Bool=false,displayTitle:Bool=false, accentRange: NSRange? = nil, accentColor: CGColor? = nil, dateTag: String? = nil, highlighted: Bool = false, band: Bool = false) throws {
             let value=NSMutableAttributedString(attributedString: attributed(string,size:size,bold:bold,color:color,displayTitle:displayTitle))
             if bullet, let separator=string.range(of:" — "), separator.lowerBound > string.startIndex {
                 let topic=NSRange(string.startIndex..<separator.lowerBound,in:string)
@@ -121,10 +136,10 @@ public enum StorySummaryPDF {
             while offset<value.length {
                 let remaining=value.attributedSubstring(from:NSRange(location:offset,length:value.length-offset))
                 let h=min(height(remaining,width:width),y-58)
-                if highlighted {
+                extendSnapshot(top: y+5, bottom: y-h-5)
+                if band {
                     context.setFillColor(CGColor(red:0.985,green:0.965,blue:0.93,alpha:1))
                     context.fill(CGRect(x:50,y:y-h-5,width:512,height:h+10))
-                    context.setFillColor(accent);context.fill(CGRect(x:50,y:y-h-5,width:2.5,height:h+10))
                 }
                 if bullet && offset == 0 {
                     draw(attributed("•",size:size),rect:CGRect(x:50+inset,y:y-h,width:indent,height:h))
@@ -145,6 +160,7 @@ public enum StorySummaryPDF {
             guard headerHeight<220 else {throw StoryEditError.invalidMutation}
             func header() {
                 guard showHeader else { return }
+                extendSnapshot(top:y,bottom:y-headerHeight)
                 context.setFillColor(wash);context.fill(CGRect(x:50,y:y-headerHeight,width:512,height:headerHeight))
                 var x:CGFloat=50
                 for column in headers.indices {
@@ -181,7 +197,8 @@ public enum StorySummaryPDF {
                     let wanted=(heights.max() ?? 0)+10
                     if y-58<min(wanted,682-headerHeight) {try newPage();header()}
                     let rowHeight=min(wanted,y-58)
-                    if accentStripe {
+                    extendSnapshot(top:y,bottom:y-rowHeight)
+                    if accentStripe && !snapshotActive {
                         context.setFillColor(accent)
                         context.fill(CGRect(x:46,y:y-rowHeight,width:2.5,height:rowHeight))
                     }
@@ -231,7 +248,7 @@ public enum StorySummaryPDF {
             if renderedRows.contains(index) {continue}
             switch block {
             case let .heading(value,level):
-                if level == 2 {section=value}
+                if level == 2 {finishSnapshotRail(); snapshotActive=false; section=value}
                 y-=level==2 ? 7:3
                 var following:CGFloat=24
                 if index+1<blocks.count {
@@ -244,7 +261,9 @@ public enum StorySummaryPDF {
                     }
                 }
                 if level == 2, value == "Labs & Investigations" {following=max(following,90)}
-                try paragraph(value,size:level==2 ? 13:11,bold:true,color:accent,keepNext:following)
+                let snapshotGroup = level > 2 && section == "Clinical Snapshot"
+                try paragraph(value,size:level==2 ? 13:11,bold:true,color:snapshotGroup ? ink : accent,keepNext:following,highlighted:snapshotGroup,band:snapshotGroup)
+                if level == 2 { snapshotActive = value == "Clinical Snapshot" }
                 if level == 2, value != "Labs & Investigations" {
                     var rows:[[String]]=[]
                     var precedingTopic = ""
@@ -285,6 +304,6 @@ public enum StorySummaryPDF {
             case let .table(headers,rows):try table(headers:headers,rows:rows)
             }
         }
-        context.endPDFPage();context.closePDF();return output as Data
+        finishSnapshotRail();context.endPDFPage();context.closePDF();return output as Data
     }
 }
