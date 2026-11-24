@@ -178,6 +178,15 @@ export function validatePoints(raw:string,p:SummaryInput,s:Step,outputs:Record<s
   if(point.heading!=='Care Plan & Interventions')point.careStatus=null;
   if(typeof point.timeLabel!=='string'||!point.timeLabel.trim()||point.timeLabel.length>100||!p.evidence.some(e=>point.citationIDs.includes(e.id)&&e.text.toLowerCase().includes(point.timeLabel!.toLowerCase())))point.timeLabel=null;
  }
+ if(p.practitionerPolicy===founderPolicy && (s.phase==='audit'||isConcisePublicationStep(p,s))) {
+  // The history/provider checklists are not the complete clinical handoff.
+  // Never publish an audit that silently drops an entire checked source passage.
+  const requiredSources=new Set(s.dependencies.flatMap(key=>outputs[key]??[])
+   .filter(point=>!['Appointment Preparation Brief','Care Coordination Summary'].includes(point.heading))
+   .flatMap(point=>point.citationIDs).filter(id=>s.phase!=='audit'||s.evidenceIDs.includes(id)));
+  const representedSources=new Set((points as Point[]).flatMap(point=>point.citationIDs));
+  if([...requiredSources].some(id=>!representedSources.has(id)))throw Error('invalid_summary_output');
+ }
  if(p.kind==='practitioner'&&p.patientName&&points.some((point:Point)=>point.heading==='Care Coordination Summary'&&providerIsPatient(point,p.patientName!)))throw Error('invalid_summary_output');
  // A model may repeat a coverage ID on an additional point in another section.
  // Remove that redundant annotation only after finding a correctly classified,

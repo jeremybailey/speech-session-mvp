@@ -38,3 +38,10 @@ test('a dated observation survives unrelated relative history in the same quote'
  const [result]=validatePoints(JSON.stringify({points:[point]}),p,summaryPlan(p)[0],{});
  assert.equal(result.temporal?.start,'2024-09-06');
 });
+
+test('an audit cannot silently discard a checked clinical source passage',()=>{
+ const p=input();p.evidence.push({id:'e2',text:'Iron discussed, not started.'});
+ const step=summaryPlan(p).find(s=>s.phase==='audit')!;
+ const outputs={ [step.dependencies[0]]:[{...base,heading:'Care Plan & Interventions',text:'Iron — discussed, not started',citationIDs:['e2'],careStatus:'Discussed, not started'}] };
+ assert.throws(()=>validatePoints(JSON.stringify({points:[{...base,historyIDs:[],coordinationIDs:[]}]}),p,step,outputs));
+});
