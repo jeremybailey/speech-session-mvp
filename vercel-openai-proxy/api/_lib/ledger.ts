@@ -69,7 +69,8 @@ export async function retryExpiredResult(owner:string,payload:Payload,expiredID:
 }
 
 // Allows a workflow checkpoint and its budgeted step to be committed together.
-export async function submitWithinTransaction(db: PoolClient, owner: string, payload: Payload, budgetID = process.env.AI_BUDGET_ID, model: ProcessingModel = 'gpt-4o-mini', effort = 'low', reuseScope?: string) {
+export async function submitWithinTransaction(db: PoolClient, owner: string, payload: Payload, budgetID = process.env.AI_BUDGET_ID, model: ProcessingModel = 'gpt-4o-mini', effort = 'low', reuseScope?: string, retryAttempt?: string) {
+  if (retryAttempt !== undefined && (!reuseScope || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(retryAttempt))) throw new Error('invalid_request');
   let hash = requestHash(owner, payload, model, effort);
   if (!budgetID) throw new Error("budget_unavailable");
     // Lock global budget before checking dedupe: submissions across all users serialize safely.
@@ -77,12 +78,21 @@ export async function submitWithinTransaction(db: PoolClient, owner: string, pay
     if (!budget) throw new Error("budget_unavailable");
     let prior = (await db.query("SELECT id,state FROM ai_jobs WHERE owner=$1 AND request_hash=$2", [owner, hash])).rows[0];
     // Completed job metadata outlives its clinical result. A parent may replace
-    // an unavailable result, but never repeat an uncertain/running provider call.
+    // an unavailable result. Uncertain calls need a separate, explicit attempt;
+    // running calls always retain their existing identity.
     // Chain from the expired job identity: concurrent retries select one replacement,
     // including when an earlier replacement has itself expired.
-    while (prior?.state === 'completed' && reuseScope &&
-      !(await db.query("SELECT 1 FROM ai_payloads WHERE job_id=$1 AND expires_at>now() AND jsonb_typeof(result->'output')='string'", [prior.id])).rows.length) {
-      hash += ':' + reuseScope + ':' + prior.id;
+    let retriedUncertain = false;
+    while (prior && reuseScope) {
+      if (prior.state === 'uncertain' && retryAttempt && !retriedUncertain) {
+        // One explicitly approved attempt gets one replacement. Repeated uploads,
+        // polling, and a second uncertain outcome reuse that same replacement.
+        hash += ':explicit-uncertain:' + retryAttempt + ':' + prior.id;
+        retriedUncertain = true;
+      } else if (prior.state === 'completed' &&
+        !(await db.query("SELECT 1 FROM ai_payloads WHERE job_id=$1 AND expires_at>now() AND jsonb_typeof(result->'output')='string'", [prior.id])).rows.length) {
+        hash += ':' + reuseScope + ':' + prior.id;
+      } else break;
       prior = (await db.query('SELECT id,state FROM ai_jobs WHERE owner=$1 AND request_hash=$2', [owner, hash])).rows[0];
     }
     if (prior) return {...prior,reused:true};

@@ -38,6 +38,9 @@ struct HealthSummaryView: View {
     @State private var pendingDeletion: Session?
     @State private var taskSheet: HealthSheet?
     @State private var showProcessingConsent = false
+    @State private var showConditionRetryConsent = false
+    @AppStorage("collectivecare.conditionRetryAttempt") private var conditionRetryAttempt = ""
+    @AppStorage("collectivecare.conditionRetryInput") private var conditionRetryInput = ""
     @State private var reprocessAllRecordsRequest = false
     @State private var resumeAfterConsent = false
     @State private var preparationTask: Task<Void, Never>?
@@ -198,8 +201,7 @@ struct HealthSummaryView: View {
                         prepare()
                     }.disabled(model.isProcessing || model.facts.isEmpty)
                     Button("Regenerate conditions", systemImage: "square.grid.2x2") {
-                        conditionsOnlyRequest = true
-                        prepare()
+                        showConditionRetryConsent = true
                     }.disabled(model.isProcessing || model.facts.isEmpty || backend == "onDevice")
                     Button("Reprocess health details", systemImage: "doc.text.magnifyingglass") {
                         reprocessAllRecordsRequest = true
@@ -386,7 +388,7 @@ struct HealthSummaryView: View {
             case .add(let category):
                 HealthManualEntryView(model: model, home: home, store: store, topicID: nil, initialCategory: category)
             case .contact(let member): CareTeamEditor(member: member, model: model)
-            case .progress: SummaryUpdateProgressSheet(model: model, progress: model.processingProgress, supportsConditions: backend != "onDevice", onStop: stopPreparation)
+            case .progress: SummaryUpdateProgressSheet(model: model, progress: model.processingProgress, supportsConditions: backend != "onDevice", onRetry: { prepare(retryUnfinished: true) }, onNewConditionAttempt: startNewConditionAttempt, onStop: stopPreparation)
             case .share: HealthShareView(model: model)
             case .condition(let id): ConditionAssignmentSheet(factID: id, model: model)
             case .combine(let id): FactDuplicateSheet(factID: id, model: model)
@@ -409,6 +411,12 @@ struct HealthSummaryView: View {
         } message: {
             Text("Text from your records and accepted health-summary history will be sent through CollectiveCare’s service to OpenAI to prepare summaries and organize conditions. Original files stay on this iPhone. Temporary processing content has a seven-day expiry and cleanup policy; usage metadata is retained separately. You can change processing options in Settings.")
         }
+        .confirmationDialog("Try condition organization again?", isPresented: $showConditionRetryConsent, titleVisibility: .visible) {
+            Button("Start a new condition attempt", action: startNewConditionAttempt)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("A stopped request may already have incurred a charge. This starts a new attempt using your remaining AI allowance. Completed processing results will be reused where available. Your saved health details stay available.")
+        }
         }
     }
 
@@ -421,6 +429,13 @@ struct HealthSummaryView: View {
             do { try await stop?.stop() }
             catch { stopError = "Could not confirm the server stopped. Processing may continue. Check AI usage in Settings before retrying." }
         }
+    }
+
+    private func startNewConditionAttempt() {
+        conditionRetryAttempt = UUID().uuidString
+        conditionRetryInput = model.updateInputKey
+        conditionsOnlyRequest = true
+        prepare()
     }
 
     private func regionHeader(_ title: String, region: SummaryUpdateRegion) -> some View {
@@ -698,6 +713,9 @@ struct HealthSummaryView: View {
             var transport = backend == "onDevice" ? nil : await auth.openAIChatTransport(byokFallback: apiKey)
             transport?.explicitStop = stop
             transport?.allowsExpiredResultRetry = !automatic && !automaticResume
+            if conditionRetryInput == model.updateInputKey, !conditionRetryAttempt.isEmpty {
+                transport?.conditionRetryAttempt = conditionRetryAttempt
+            }
             if conditionsOnly {
                 await model.updateHealthStory(transport: transport, onDevice: backend == "onDevice",
                                              explicitlyRequested: true, forceConditionRefresh: forceConditions)
@@ -1222,12 +1240,45 @@ private struct SummaryUpdateProgressSheet: View {
     @ObservedObject var model: HealthSummaryModel
     @ObservedObject var progress: HealthSummaryProgress
     let supportsConditions: Bool
+    let onRetry: () -> Void
+    let onNewConditionAttempt: () -> Void
     let onStop: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var showNewAttemptConsent = false
+
+    private var isActive: Bool { model.isUpdatingStory || model.isProcessing }
+    private var needsAttention: Bool {
+        model.processingIssue != nil || model.updateError != nil || model.error != nil
+            || model.conditionNotice != nil || model.overviewNotice != nil
+    }
+    private var isPaused: Bool {
+        SummaryUpdateRegion.allCases.contains { model.state(for: $0) == .interrupted }
+    }
+    private var title: String {
+        if isActive { return "Updating your health story" }
+        if needsAttention { return "Update needs attention" }
+        if isPaused { return "Update paused" }
+        return "Health story update"
+    }
 
     var body: some View {
         NavigationStack {
             List {
+                if !isActive {
+                    Section {
+                        if needsAttention || isPaused {
+                            Text("Your saved details are available. You can leave this screen and continue using the app.")
+                            Button(isPaused && !needsAttention ? "Resume update" : "Retry unfinished update", action: onRetry)
+                                .frame(minHeight: 44)
+                            if supportsConditions && model.conditionNotice != nil {
+                                Button("Start a new condition attempt…") { showNewAttemptConsent = true }
+                                    .frame(minHeight: 44)
+                            }
+                        }
+                        Button("Return to saved details") { dismiss() }
+                            .frame(minHeight: 44)
+                    }
+                }
                 Section {
                     ForEach(SummaryUpdateRegion.allCases.filter { supportsConditions || $0 != .conditions }) { region in
                         HStack(alignment: .top, spacing: 12) {
@@ -1266,16 +1317,23 @@ private struct SummaryUpdateProgressSheet: View {
                     }
                 }
                 if let error = model.updateError ?? model.error { Section("Update") { Text(error).textSelection(.enabled) } }
-                Section {
-                    Button("Stop updating", role: .destructive) { onStop(); dismiss() }
-                        .disabled(!model.isUpdatingStory && !model.isProcessing)
-                } footer: {
-                    Text("Your saved details remain available. If the app is interrupted, unfinished work can resume when you return.")
+                if isActive {
+                    Section {
+                        Button("Stop updating", role: .destructive) { onStop(); dismiss() }
+                    } footer: {
+                        Text("Your saved details remain available. If the app is interrupted, unfinished work can resume when you return.")
+                    }
                 }
             }
-            .navigationTitle("Updating your health story")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .confirmationDialog("Try condition organization again?", isPresented: $showNewAttemptConsent, titleVisibility: .visible) {
+                Button("Start a new condition attempt", action: onNewConditionAttempt)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("A stopped request may already have incurred a charge. This starts a new attempt using your remaining AI allowance. Completed processing results will be reused where available. Your saved health details stay available.")
+            }
         }
     }
 

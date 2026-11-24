@@ -40,6 +40,7 @@ async function main() {
     await db.query(await readFile("migrations/005_workflow_model.sql","utf8"));
     await db.query(await readFile("migrations/006_workflow_reasoning.sql","utf8"));
     await db.query(await readFile("migrations/007_condition_uploads.sql","utf8"));
+    await db.query(await readFile("migrations/008_result_receipts.sql","utf8"));
     assert.equal(Number((await db.query("SELECT limit_nusd FROM ai_budgets WHERE id='evaluation-v1'")).rows[0].limit_nusd),1_000_000_000);
     if(process.env.AI_PREVIEW_MIGRATE_ONLY==='true') {
       console.log('PASS additive Preview migrations only; no inference or smoke jobs submitted.');

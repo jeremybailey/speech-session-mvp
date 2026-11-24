@@ -213,6 +213,11 @@ final class HealthSummaryModel: ObservableObject {
                 updateStates[.details] = .needsAttention
             }
             isUpdatingStory = false
+            // Downstream stages cannot keep waiting after their owner exits.
+            // A failed record leaves conditions and overview available to resume.
+            for region in SummaryUpdateRegion.allCases where updateStates[region] == .waiting {
+                updateStates[region] = .interrupted
+            }
             // Stop retains the version captured at the tap, so records added
             // during cancellation remain eligible for a new automatic run.
             if !explicitlyStopped && Task.isCancelled {

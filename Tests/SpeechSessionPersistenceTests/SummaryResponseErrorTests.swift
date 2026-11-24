@@ -2,6 +2,17 @@ import XCTest
 @testable import SpeechSessionPersistence
 
 final class SummaryResponseErrorTests: XCTestCase {
+    func testTemporaryServiceFailureOffersRecoveryAndExitWithoutLosingExplanation() {
+        for status in [429, 500, 502, 503, 504] {
+            let error = NSError(domain: "AIProcessing", code: status, userInfo: [
+                NSLocalizedDescriptionKey: "Service unavailable (HTTP \(status)). A submitted job may still finish."])
+            let shown = SummaryResponseError.presentation(for: error)
+            XCTAssertEqual(shown.message, error.localizedDescription)
+            XCTAssertTrue(shown.recovery.contains("Retry unfinished update"))
+            XCTAssertTrue(shown.recovery.contains("return to your saved details"))
+        }
+    }
+
     func testDurableBudgetErrorsPreserveExplanationAndDoNotRecommendBlindRetry() {
         let error = NSError(domain: "AIProcessing", code: 402, userInfo: [
             NSLocalizedDescriptionKey: "The processing budget has been reached."])

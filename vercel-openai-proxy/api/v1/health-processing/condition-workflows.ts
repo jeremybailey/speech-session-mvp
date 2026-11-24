@@ -1,3 +1,4 @@
+import {acknowledgeResult,receiptDigest} from '../../_lib/result-receipts';
 import { processingOwner, isFastRequest } from '../../_lib/fast-details-experiment';
 import type { VercelRequest,VercelResponse } from '@vercel/node';
 import { verifyKindeBearer } from '../../_lib/verifyKinde';
@@ -10,6 +11,12 @@ export default async function handler(req:VercelRequest,res:VercelResponse) {
   res.setHeader('Cache-Control','no-store');
   try {
     const owner=processingOwner(await verifyKindeBearer(req.headers.authorization), isFastRequest(req.headers));
+    // Receipt cleanup stays available even if paid inference is disabled.
+    if(req.method==='PATCH') {
+      const id=req.query.id;
+      if(typeof id!=='string'||!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({error:{code:'invalid_id'}});
+      return res.status(200).json(await acknowledgeResult(owner,id,receiptDigest(req.body),true));
+    }
     if(!conditionWorkflowsEnabled() || !durableEnabledForOwner(owner)) return res.status(503).json({error:{code:'pilot_disabled'}});
     await cleanupConditionWorkflows();
     await cleanupConditionUploads();

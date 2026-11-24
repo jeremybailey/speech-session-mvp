@@ -60,6 +60,8 @@ export async function conditionWorkflowStatus(owner:string,id:string,part?:numbe
 // Atomic checkpoint + reservation means no orphan paid step on process death.
 export async function prepareConditionStep(id:string):Promise<string|null> {
   return transaction(async db=>{
+    // Serialize attachment of shared children against receipt-driven deletion.
+    await db.query('SELECT pg_advisory_xact_lock(842127903)');
     const w=(await db.query('SELECT * FROM ai_condition_workflows WHERE id=$1 FOR UPDATE',[id])).rows[0];
     if(!w || !active(w.state)) return null;
     const p=(await db.query('SELECT * FROM ai_condition_workflow_payloads WHERE workflow_id=$1 AND expires_at>now()',[id])).rows[0];
@@ -67,7 +69,7 @@ export async function prepareConditionStep(id:string):Promise<string|null> {
     if(w.current_step) return w.current_step;
     const next=nextConditionRequest(p.plan,p.checkpoint);
     if(!next) {await db.query("UPDATE ai_condition_workflows SET state='completed',finished_at=now() WHERE id=$1",[id]);return null;}
-    const child=await submitWithinTransaction(db,w.owner,{...next.payload,workload_type:w.workload_type},w.budget_id,w.model,w.reasoning_effort,id);
+    const child=await submitWithinTransaction(db,w.owner,{...next.payload,workload_type:w.workload_type},w.budget_id,w.model,w.reasoning_effort,id,p.plan.retryAttempt);
     await db.query('INSERT INTO ai_condition_workflow_steps(workflow_id,revision,job_id,incurs_cost) VALUES($1,$2,$3,$4)',[id,w.revision,child.id,!child.reused]);
     await db.query("UPDATE ai_condition_workflows SET state='running',current_step=$2 WHERE id=$1",[id,child.id]);
     return child.id;

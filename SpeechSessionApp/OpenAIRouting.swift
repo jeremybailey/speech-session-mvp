@@ -149,6 +149,7 @@ struct OpenAIChatTransport: Sendable {
     var fastExperiment = false
     var explicitStop: DurableProcessingStop?
     var allowsExpiredResultRetry = false
+    var conditionRetryAttempt: String?
 
     init(chatCompletionsURL: URL, healthProcessingURL: URL? = nil,
          authorizationHeader: @escaping @Sendable () async throws -> String) {
@@ -220,6 +221,10 @@ struct OpenAIChatTransport: Sendable {
     func durableRequest(payload: [String: Any], conditionWorkflow: Bool = false,
                         transferProgress: (@Sendable (String) async -> Void)? = nil,
                         sessionConfiguration: URLSessionConfiguration? = nil) async throws -> String {
+        var payload = payload
+        if conditionWorkflow, let conditionRetryAttempt {
+            payload["retryAttempt"] = conditionRetryAttempt
+        }
         guard let url = conditionWorkflow ? durableConditionWorkflowsURL : durableJobsURL else { throw URLError(.unsupportedURL) }
         let waiting = DurableProcessingWait(conditionWorkflow: conditionWorkflow)
         let configuration = sessionConfiguration ?? URLSessionConfiguration.ephemeral
@@ -432,11 +437,12 @@ struct OpenAIChatTransport: Sendable {
         switch status {
         case 401, 403: message = "Please sign in again in Settings to continue secure processing. Your saved records are unchanged."
         case 402: message = "The processing budget has been reached. Check AI usage in Settings; retrying will not increase the allowance."
+        case 429: message = "The processing service is busy or temporarily rate limited (HTTP 429). Wait a few minutes before retrying. Your saved records are unchanged; a submitted job may still finish in the background."
         case 404, 405: message = "This app and the processing service need matching updates. Your saved records are unchanged; retrying will not fix this."
         case 400, 413: message = "The processing service could not accept this request. Your saved records are unchanged. Please contact support before retrying."
         default: message = code == "pilot_disabled"
             ? "Budgeted processing is not enabled on the server yet. Your saved records are unchanged."
-            : "Budgeted processing could not connect. Your saved records are unchanged; a submitted job may still finish in the background."
+            : "The processing service is temporarily unavailable (HTTP \(status)). Your saved records are unchanged; a submitted job may still finish in the background."
         }
         // Never surface raw provider errors, source excerpts, or credentials.
         throw NSError(domain: "AIProcessing", code: status, userInfo: [NSLocalizedDescriptionKey: message])
