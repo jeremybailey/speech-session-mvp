@@ -159,7 +159,8 @@ export function validatePoints(raw:string,p:SummaryInput,s:Step,outputs:Record<s
  const parsed=JSON.parse(raw);
  const bytes=p.kind==='practitioner'?80000:40000;
  if(!Array.isArray(parsed?.points)||parsed.points.length>pointLimit(p,s)||Buffer.byteLength(JSON.stringify(parsed.points))>bytes)throw Error('invalid_summary_output');
- const points=p.kind==='practitioner'&&isConcisePublicationStep(p,s)?presentationPoints(parsed.points,pointLimit(p,s),bytes):parsed.points;
+ const contentPoints=p.practitionerPolicy===founderPolicy?parsed.points.filter((b:any)=>!(b && b.text==='' && Array.isArray(b.citationIDs) && !b.citationIDs.length && b.subjectCitation===null && b.responseCitation===null && !(b.historyIDs?.length) && !(b.coordinationIDs?.length))):parsed.points;
+ const points=p.kind==='practitioner'&&isConcisePublicationStep(p,s)?presentationPoints(contentPoints,pointLimit(p,s),bytes):contentPoints;
  const coverage=coverageRequired(p,s);
  const allowed=new Set(s.phase==='audit'?s.evidenceIDs:[...s.evidenceIDs,...s.dependencies.flatMap(k=>(outputs[k]??[]).flatMap(b=>b.citationIDs)),...(coverage?[...coveragePoints(p,s,outputs,'Comprehensive Health History'),...coveragePoints(p,s,outputs,'Care Coordination Summary')].flatMap(b=>b.citationIDs):[])]);
  // Subject/response fields are explicit citations too. Providers sometimes omit

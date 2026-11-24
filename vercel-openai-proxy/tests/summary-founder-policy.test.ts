@@ -45,3 +45,10 @@ test('an audit cannot silently discard a checked clinical source passage',()=>{
  const outputs={ [step.dependencies[0]]:[{...base,heading:'Care Plan & Interventions',text:'Iron — discussed, not started',citationIDs:['e2'],careStatus:'Discussed, not started'}] };
  assert.throws(()=>validatePoints(JSON.stringify({points:[{...base,historyIDs:[],coordinationIDs:[]}]}),p,step,outputs));
 });
+
+test('empty uncited section placeholders do not cause another model call',()=>{
+ const p=input(),s=summaryPlan(p)[0];
+ const blank={...base,heading:'Appointment Preparation Brief',text:'',citationIDs:[],conditionGroup:null};
+ const result=validatePoints(JSON.stringify({points:[base,blank]}),p,s,{});
+ assert.equal(result.length,1);assert.equal(result[0].text,base.text);
+});
