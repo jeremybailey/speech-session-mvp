@@ -1484,18 +1484,31 @@ private struct StoryTemplateShareView:View {
         }
     }
 
-    private func preparePDF(_ summary:StorySharedSummary,share:Bool=false) {
+    private func preparePDF(_ summary:StorySharedSummary) {
         do {
-            let data=try StorySummaryPDF.renderSummary(summary, title: template.title, patientName: job.patientName.trimmingCharacters(in: .whitespacesAndNewlines), typography: StoryDesignTokens.summaryPDFTypography)
-            let folder=FileManager.default.temporaryDirectory.appendingPathComponent("story-summary-"+UUID().uuidString,isDirectory:true)
-            try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
-            let url=folder.appendingPathComponent("Practitioner Summary.pdf")
-            try data.write(to:url,options:[.atomic,.completeFileProtectionUntilFirstUserAuthentication])
-            guard let document=PDFDocument(data:data),document.pageCount>0 else {throw StoryEditError.invalidMutation}
+            let name = job.patientName.trimmingCharacters(in: .whitespacesAndNewlines)
+            let makePDF: (Bool) throws -> StorySummaryPreviewItem = { exclude in
+                let data = try StorySummaryPDF.renderSummary(summary, title: template.title, patientName: name, typography: StoryDesignTokens.summaryPDFTypography, excludeSensitiveDetails: exclude)
+                let folder = FileManager.default.temporaryDirectory.appendingPathComponent("story-summary-" + UUID().uuidString, isDirectory: true)
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                let url = folder.appendingPathComponent("Practitioner Summary.pdf")
+                try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                guard let document = PDFDocument(data: data), document.pageCount > 0 else { throw StoryEditError.invalidMutation }
+                return StorySummaryPreviewItem(url: url, document: document, share: false)
+            }
+            var item = try makePDF(job.excludeSensitiveDetails)
+            item.excludeSensitiveDetails = job.excludeSensitiveDetails
+            item.updateSharing = { exclude in
+                let updated = try makePDF(exclude)
+                try await store.setPractitionerExcludeSensitiveDetails(exclude)
+                job.excludeSensitiveDetails = exclude
+                return updated
+            }
             job.savePatientName()
-            pdfPreview=StorySummaryPreviewItem(url:url,document:document,share:share)
-        } catch {job.error="The PDF couldn’t be prepared. Your summary is still saved."}
+            pdfPreview = item
+        } catch { job.error = "The PDF couldn’t be prepared. Your summary is still saved." }
     }
+
 }
 
 private struct StoryRequestHTTPFailure:Error {
@@ -1517,6 +1530,7 @@ private struct SummaryStageFailure:Error {
     @Published var summary:StorySharedSummary?
     @Published var error:String?
     @Published var patientName=""
+    @Published var excludeSensitiveDetails=true
     var nameEdited=false
     @Published var generating=false
     static let preparingLabel = "Preparing summary…"
@@ -1546,6 +1560,7 @@ private struct SummaryStageFailure:Error {
     func restore(auth:KindeAuthManager) async {
         guard !restoring,!restored else{return}
         restoring=true;defer{restoring=false}
+        excludeSensitiveDetails = (try? await store.storyWorkspace().practitionerExcludeSensitiveDetails) ?? true
         summary=try? await store.recoveredStorySharedSummary()
         await loadName(for:summary)
         operationID = await unfinishedOperation(auth: auth)
@@ -1805,23 +1820,68 @@ private struct StorySummaryPreviewItem:Identifiable {
     let url:URL
     let document:PDFDocument
     let share:Bool
+    var excludeSensitiveDetails: Bool = true
+    var updateSharing: ((Bool) async throws -> StorySummaryPreviewItem)? = nil
 }
 private struct StorySummaryPDFPreview:View {
     let item:StorySummaryPreviewItem
     @Environment(\.dismiss) private var dismiss
     @State private var sharing=false
+    @State private var excludeSensitiveDetails: Bool
+    @State private var current: StorySummaryPreviewItem
+    @State private var updating=false
+    @State private var error: String?
+
+    init(item: StorySummaryPreviewItem) {
+        self.item = item
+        _current = State(initialValue: item)
+        _excludeSensitiveDetails = State(initialValue: item.excludeSensitiveDetails)
+    }
     var body:some View {
         NavigationStack {
-            StorySummaryPDFCanvas(document:item.document)
-                .storyLoadIn().navigationTitle("PDF preview").navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement:.topBarLeading){Button("Close"){dismiss()}}
-                    ToolbarItem(placement:.topBarTrailing){Button("Share PDF",systemImage:"square.and.arrow.up"){sharing=true}}
+            VStack(spacing: 0) {
+                if item.updateSharing != nil {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Exclude sensitive details", isOn: $excludeSensitiveDetails)
+                            .font(StoryDesignTokens.body).disabled(updating)
+                            .tint(StoryDesignTokens.action)
+                        Text("Leaves out safety screening, sexual function, and genital or perineal details. Your original records stay unchanged.")
+                            .font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
+                    }
+                    .padding().background(StoryDesignTokens.canvas)
                 }
-                .sheet(isPresented:$sharing){HealthActivitySheet(urls:[item.url])}
+                if updating {
+                    ProgressView("Updating preview…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error {
+                    VStack(spacing: 16) {
+                        Text(error)
+                        Button("Retry preview") { updatePreview() }
+                    }.padding().frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    StorySummaryPDFCanvas(document:current.document)
+                }
+            }
+            .navigationTitle("PDF preview").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement:.topBarLeading){Button("Close"){dismiss()}}
+                ToolbarItem(placement:.topBarTrailing){Button("Share PDF",systemImage:"square.and.arrow.up"){sharing=true}.disabled(updating || error != nil)}
+            }
+            .onChange(of: excludeSensitiveDetails) { _, _ in updatePreview() }
+            .sheet(isPresented:$sharing){HealthActivitySheet(urls:[current.url])}
+        }
+    }
+    private func updatePreview() {
+        guard let update = item.updateSharing, !updating else { return }
+        updating = true; error = nil
+        let exclude = excludeSensitiveDetails
+        Task { @MainActor in
+            defer { updating = false }
+            do { current = try await update(exclude) }
+            catch { self.error = "The PDF couldn’t be updated. Try again before sharing." }
         }
     }
 }
+
 private struct StorySummaryPDFCanvas:UIViewRepresentable {
     let document:PDFDocument
     func makeUIView(context:Context)->PDFView {

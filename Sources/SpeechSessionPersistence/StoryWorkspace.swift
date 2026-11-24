@@ -64,6 +64,7 @@ public struct StoryMessage: Codable, Equatable, Identifiable, Sendable {
     public var createdAt: Date = Date()
 }
 public struct StoryWorkspace: Codable, Equatable, Sendable {
+    public var practitionerExcludeSensitiveDetails: Bool? = nil
     public var sharedSummary:StorySharedSummary? = nil
     public var narrativeText: String? = nil
     public var narrativeRevision: Int? = nil
@@ -527,6 +528,11 @@ extension SessionStore {
         let revisions = Dictionary(env.story.sources.map { ($0.recordID, $0.text) }, uniquingKeysWith: { _, latest in latest })
         let documents = env.sessions.filter { ids?.contains($0.id) ?? true }.map { revisions[$0.id] ?? $0.transcript }
         return StorySummaryDocument.recordedPatientName(in: documents)
+    }
+    public func setPractitionerExcludeSensitiveDetails(_ exclude: Bool) throws {
+        var env = try loadEnvelope()
+        env.story.practitionerExcludeSensitiveDetails = exclude
+        try saveEnvelope(env)
     }
     public func setSharedSummaryPatientName(_ name:String) throws {
         var env=try loadEnvelope()
