@@ -1032,7 +1032,7 @@ private struct SettingsProfileView: View {
                 }
                 if loadingPhoto { ProgressView("Preparing photo…") }
             }
-            Section("Name") {
+            Section {
                 TextField("Your name", text: $name)
                     .textContentType(.name).textInputAutocapitalization(.words)
                     .submitLabel(.done)
@@ -1041,6 +1041,8 @@ private struct SettingsProfileView: View {
                     Text("Use a name of \(UserProfileStore.maximumNameLength) characters or fewer.")
                         .font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.action)
                 }
+            } header: {
+                Text("Name")
             } footer: {
                 Text(accountID == nil ? "Saved on this device while signed out." : "Saved on this device for this account.")
             }
