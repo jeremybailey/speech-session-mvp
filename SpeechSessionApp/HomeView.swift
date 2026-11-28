@@ -120,7 +120,9 @@ struct HomeView: View {
                         }
                     } label: {
                         UserProfileAvatar(photoData: kindeAuth.userProfile.photoData, size: 32)
-                            .frame(width: 44, height: 44).contentShape(Circle())
+                            .frame(width: 44, height: 44)
+                            .circularAvatarGlass()
+                            .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
                     .tint(StoryDesignTokens.ink)
@@ -898,6 +900,17 @@ private extension ToolbarContent {
             self.sharedBackgroundVisibility(.hidden)
         } else {
             self
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func circularAvatarGlass() -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular.interactive(), in: Circle())
+        } else {
+            self.background(.thinMaterial, in: Circle())
         }
     }
 }
