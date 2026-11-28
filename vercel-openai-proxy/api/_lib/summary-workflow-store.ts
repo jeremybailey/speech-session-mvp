@@ -6,7 +6,7 @@ import {database,transaction,submitWithinTransaction,jsonbPayload} from './ledge
 import {runJob} from './worker';
 import {mayReplaceUnconfirmedStep} from './summary-retry-policy';
 import {jobQueue} from './queue';
-import {canonical,digest,validateSummaryInput,summaryPlan,summaryPayload,validatePoints,repairAuditCoverage,auditCoverageReferenceFailure,editorialRepairCandidate,applyEditorialRepair,summaryResult,SummaryInput,Step,Point,confirmedSummaryProviderFailure,confirmedSummaryOutputLimit,isConcisePublicationStep} from './summary-workflow';
+import {canonical,digest,validateSummaryInput,summaryPlan,summaryPayload,validatePoints,repairAuditCoverage,auditCoverageReferenceFailure,auditSourceCoverageFailure,editorialRepairCandidate,applyEditorialRepair,summaryResult,SummaryInput,Step,Point,confirmedSummaryProviderFailure,confirmedSummaryOutputLimit,isConcisePublicationStep} from './summary-workflow';
 const active=['queued','running','retry_scheduled'];
 export const summaryTopic='summary-workflows';
 export function summariesEnabled(kind?:string){return process.env.AI_DURABLE_ENABLED==='true'&&process.env.AI_QUEUE_ENABLED==='true'&&process.env.AI_SUMMARY_WORKFLOWS_ENABLED==='true'&&(!kind||(process.env.AI_SUMMARY_WORKFLOW_KINDS??'practitioner').split(',').includes(kind));}
@@ -142,7 +142,7 @@ export async function resumeSummary(owner:string,id:string,expectedRevision?:num
    LEFT JOIN ai_jobs j ON j.id=s.job_id LEFT JOIN ai_payloads p ON p.job_id=j.id AND p.expires_at>now() WHERE s.workflow_id=$1`,[id])).rows;
   const outputs=Object.fromEntries(rows.filter((r:any)=>r.state==='completed').map((r:any)=>[r.key,r.output]));
   const unfinished=rows.filter((r:any)=>r.state!=='completed');
-  const referenceFailures=p?unfinished.filter((r:any)=>r.state==='running'&&r.job_state==='completed'&&r.attempt<2&&auditCoverageReferenceFailure(r.result?.output,p.input,p.plan.find((s:Step)=>s.key===r.key),outputs)):[];
+  const referenceFailures=p?unfinished.filter((r:any)=>r.state==='running'&&r.job_state==='completed'&&r.attempt<2&&(auditCoverageReferenceFailure(r.result?.output,p.input,p.plan.find((s:Step)=>s.key===r.key),outputs)||auditSourceCoverageFailure(r.result?.output,p.input,p.plan.find((s:Step)=>s.key===r.key),outputs))):[];
   if(expectedRevision!==undefined&&referenceFailures.length&&w.calls<w.max_calls){
    for(const r of referenceFailures)await db.query("UPDATE ai_summary_steps SET state='queued',attempt=attempt+1,job_id=NULL,error_code=NULL WHERE workflow_id=$1 AND key=$2",[id,r.key]);
    await db.query("UPDATE ai_summary_workflows SET state='queued',error_code=NULL,retry_at=NULL,revision=revision+1 WHERE id=$1",[id]);await wake(db,id);return {id,state:'queued'};
@@ -194,7 +194,7 @@ export async function advanceSummary(id:string):Promise<string[]>{return transac
   const providerFailed=confirmedSummaryProviderFailure(row);
   const outputLimited=confirmedSummaryOutputLimit(row);
   const transient=providerFailed || outputLimited || row.job_state==='incomplete'&&[429,502,503,504].includes(row.result?.diagnostics?.providerHTTPStatus);
-  const auditReferenceRetry=failure==='invalid_summary_output'&&row.attempt<2&&auditCoverageReferenceFailure(row.result?.output,input,plan.find(s=>s.key===row.key)!,outputs);
+  const auditReferenceRetry=failure==='invalid_summary_output'&&row.attempt<2&&(auditCoverageReferenceFailure(row.result?.output,input,plan.find(s=>s.key===row.key)!,outputs)||auditSourceCoverageFailure(row.result?.output,input,plan.find(s=>s.key===row.key)!,outputs));
   const repair=auditReferenceRetry||editorialRepair||failure==='invalid_summary_output'&&row.attempt<(isConcisePublicationStep(input,plan.find(s=>s.key===row.key)!)?3:1);
   if((repair||transient&&row.attempt<(providerFailed||outputLimited?2:5))&&w.calls<w.max_calls){
    row.state='queued';row.attempt++;row.job_id=null;

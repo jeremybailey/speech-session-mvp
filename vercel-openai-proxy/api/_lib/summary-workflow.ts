@@ -107,6 +107,7 @@ function coverageRequired(p:SummaryInput,s:Step):boolean{return p.kind==='practi
 // Coverage identifiers belong to one request only. Audit batches reuse local IDs;
 // never expose those stale IDs inside a later request's drafts or checklists.
 function sourcePoint({historyIDs,coordinationIDs,...point}:Point):Point{return point;}
+function requiredSourceIDs(s:Step,outputs:Record<string,Point[]>):string[]{return [...new Set(s.dependencies.flatMap(key=>outputs[key]??[]).filter(point=>!['Appointment Preparation Brief','Care Coordination Summary'].includes(point.heading)).flatMap(point=>point.citationIDs).filter(id=>s.phase!=='audit'||s.evidenceIDs.includes(id)))];}
 export function summaryPayload(p:SummaryInput,s:Step,outputs:Record<string,Point[]>,attempt:number,repairPoints?:Point[]):Payload {
  if(repairPoints)return editorialRepairPayload(p,s,outputs,repairPoints);
  const originals=p.evidence.filter(e=>s.evidenceIDs.includes(e.id));
@@ -135,9 +136,11 @@ export function summaryPayload(p:SummaryInput,s:Step,outputs:Record<string,Point
  ].join('\n'):[common,p.kind==='record'?recordStyle:p.kind==='practitioner'?practitionerStyle:'Write a brief connected patient-friendly overview, up to five sentences. Each point is one sentence. Select the main concerns and care, never new advice.',p.template==='visit'?visitStyle:'',p.structuredLabs?'Structured lab results are rendered separately by the app. Do not repeat them.':'',instruction,attempt?'The previous response failed structural validation. Repair format and citations without adding claims.':''].join('\n');
  if(coverage&&s.phase==='audit')instructions+=' CHECKLIST REFERENCE MAP (each ID must occur in its named section and cite at least one listed source; never renumber IDs): '+JSON.stringify([...requiredHistory.map(x=>({id:x.id,section:'Comprehensive Health History',sourceIDs:x.point.citationIDs})),...requiredCoordination.map(x=>({id:x.id,section:'Care Coordination Summary',sourceIDs:x.point.citationIDs}))])+'. ';
  if(coverage&&s.phase==='audit')instructions+=' REQUIRED SOURCE COVERAGE: requiredHistory and requiredCoordination contain independently source-checked facts that may have disappeared during consolidation. Recheck them against the original source and return every supported milestone/provider in its own section, including dates and meaningful qualifications. Include the checklist IDs represented by each point in historyIDs/coordinationIDs; use empty arrays otherwise. Merge duplicates only, accounting for all their IDs. Do not drop historical milestones because they are resolved, undated, or unrelated to the current visit.';
+ const sourceIDs=p.practitionerPolicy===founderPolicy&&coverage?requiredSourceIDs(s,outputs):[];
+ if(sourceIDs.length)instructions+=' REQUIRED CITATION COVERAGE: Every requiredSourceID must appear in citationIDs on a supported output point. When combining duplicate points, preserve all supporting original source IDs, even when the wording is shortened. Verify each citation against the supplied evidence; never attach a citation merely to satisfy coverage. If a source cannot support any point, do not invent a claim or citation.';
  if(p.practitionerPolicy===founderPolicy)instructions+='\n'+founderInstructions;
  const content=publication?{patientIdentity:p.patientName??null,workflow:p.id,step:s.key,attempt,records:originals,mainDraft:dependencies[0]?.points??[],supportingEvidence:dependencies.slice(1),...(p.kind==='practitioner'?{requiredHistory,requiredCoordination}:{})}:{patientIdentity:p.patientName??null,workflow:p.id,step:s.key,attempt,records:originals,candidates:dependencies,...(coverage?{requiredHistory,requiredCoordination}:{})};
- return validatePayload({stage:'whole-history-overview',workload_type:'incremental',instructions:temporalEnabled?instructions:instructions.replace(practitionerTemporal,''),input:JSON.stringify({...content,...p.practitionerPolicy===founderPolicy?{preparedDate:p.preparedDate}:{}}),response_format:{type:'json_schema',json_schema:{name:'durable_summary_points_v1',strict:true,schema:object({points:{type:'array',items:point,maxItems:pointLimit(p,s)}})}}});
+ return validatePayload({stage:'whole-history-overview',workload_type:'incremental',instructions:temporalEnabled?instructions:instructions.replace(practitionerTemporal,''),input:JSON.stringify({...content,...sourceIDs.length?{requiredSourceIDs:sourceIDs}:{},...p.practitionerPolicy===founderPolicy?{preparedDate:p.preparedDate}:{}}),response_format:{type:'json_schema',json_schema:{name:'durable_summary_points_v1',strict:true,schema:object({points:{type:'array',items:point,maxItems:pointLimit(p,s)}})}}});
 }
 // Splitting is presentation-only. Never reject or truncate a valid model response
 // because duplicating its metadata for display would exceed the response budget.
@@ -178,15 +181,6 @@ export function validatePoints(raw:string,p:SummaryInput,s:Step,outputs:Record<s
   if(point.careStatus!==null && !careStatuses.includes(point.careStatus??''))throw Error('invalid_summary_output');
   if(point.heading!=='Care Plan & Interventions')point.careStatus=null;
   if(typeof point.timeLabel!=='string'||!point.timeLabel.trim()||point.timeLabel.length>100||!p.evidence.some(e=>point.citationIDs.includes(e.id)&&e.text.toLowerCase().includes(point.timeLabel!.toLowerCase())))point.timeLabel=null;
- }
- if(p.practitionerPolicy===founderPolicy && (s.phase==='audit'||isConcisePublicationStep(p,s))) {
-  // The history/provider checklists are not the complete clinical handoff.
-  // Never publish an audit that silently drops an entire checked source passage.
-  const requiredSources=new Set(s.dependencies.flatMap(key=>outputs[key]??[])
-   .filter(point=>!['Appointment Preparation Brief','Care Coordination Summary'].includes(point.heading))
-   .flatMap(point=>point.citationIDs).filter(id=>s.phase!=='audit'||s.evidenceIDs.includes(id)));
-  const representedSources=new Set((points as Point[]).flatMap(point=>point.citationIDs));
-  if([...requiredSources].some(id=>!representedSources.has(id)))throw Error('invalid_summary_output');
  }
  if(p.kind==='practitioner'&&p.patientName&&points.some((point:Point)=>point.heading==='Care Coordination Summary'&&providerIsPatient(point,p.patientName!)))throw Error('invalid_summary_output');
  // A model may repeat a coverage ID on an additional point in another section.
@@ -232,7 +226,22 @@ export function validatePoints(raw:string,p:SummaryInput,s:Step,outputs:Record<s
  if(p.practitionerPolicy===founderPolicy)for(const point of points as Point[]){
   if(point.temporal && /\b(?:years?|months?|weeks?)\s+(?:before|after|ago|prior to)\b/i.test(point.text))point.temporal={role:'unknown',start:null,end:null,approximate:false,sourceQuote:null,citationIDs:[]};
  }
+ if(p.practitionerPolicy===founderPolicy && (s.phase==='audit'||isConcisePublicationStep(p,s))) {
+  // The history/provider checklists are not the complete clinical handoff.
+  // Never publish an audit that silently drops an entire checked source passage.
+  const requiredSources=requiredSourceIDs(s,outputs);
+  const representedSources=new Set((points as Point[]).flatMap(point=>point.citationIDs));
+  if(requiredSources.some(id=>!representedSources.has(id)))throw new MissingSourceCoverage();
+ }
  return points;
+}
+// Retry classification only: every other validation rule must pass first.
+// The rejected output is never published or patched with guessed citations.
+class MissingSourceCoverage extends Error {constructor(){super('invalid_summary_output');}}
+export function auditSourceCoverageFailure(raw:string,p:SummaryInput,s:Step,outputs:Record<string,Point[]>):boolean {
+ if(p.practitionerPolicy!==founderPolicy||s.phase!=='audit')return false;
+ try {validatePoints(raw,p,s,outputs);}catch(error){return error instanceof MissingSourceCoverage;}
+ return false;
 }
 export function auditCoverageReferenceFailure(raw:string,p:SummaryInput,s:Step,outputs:Record<string,Point[]>):boolean {
  if(p.kind!=='practitioner'||s.phase!=='audit')return false;

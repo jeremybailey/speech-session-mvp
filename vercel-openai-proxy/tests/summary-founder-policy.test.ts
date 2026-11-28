@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {validateSummaryInput,summaryPayload,summaryPlan,validatePoints,summaryResult,SummaryInput} from '../api/_lib/summary-workflow';
+import {validateSummaryInput,summaryPayload,summaryPlan,validatePoints,summaryResult,auditSourceCoverageFailure,SummaryInput} from '../api/_lib/summary-workflow';
 const input=():SummaryInput=>({id:randomUUID(),contract:'summary-workflow-v1',kind:'practitioner',template:'practitioner',target:'test',sourceRevision:'a',publicationRevision:'b',practitionerPolicy:'founder-v1',preparedDate:'2026-11-24',evidence:[{id:'e1',text:'About 10 years before September 2024, pelvic weakness. Physiotherapy helped partially.'}]});
 const base={heading:'Comprehensive Health History',text:'Pelvic weakness — about 10 years before September 2024',citationIDs:['e1'],topic:null,recipient:null,stance:null,subjectCitation:null,responseCitation:null,visitSection:null,conditionGroup:'Pelvic symptoms',careStatus:null,timeLabel:'10 years before September 2024'};
 test('founder trial opt-in is validated and legacy inputs stay unchanged',()=>{
@@ -51,4 +51,28 @@ test('empty uncited section placeholders do not cause another model call',()=>{
  const blank={...base,heading:'Appointment Preparation Brief',text:'',citationIDs:[],conditionGroup:null};
  const result=validatePoints(JSON.stringify({points:[base,blank]}),p,s,{});
  assert.equal(result.length,1);assert.equal(result[0].text,base.text);
+});
+
+// Synthetic duplicate-source case: shortening a point must not lose provenance.
+test('source-only audit failure gets the existing bounded retry; invalid content does not',()=>{
+ const p=input();p.evidence.push({id:'e2',text:p.evidence[0].text});
+ const step=summaryPlan(p).find(s=>s.phase==='audit')!;
+ const original={...base,heading:'Clinical Snapshot',citationIDs:['e1','e2']};
+ const outputs={[step.dependencies[0]]:[original]};
+ const candidate={...original,text:'Pelvic weakness — historical',citationIDs:['e1'],historyIDs:[],coordinationIDs:[]};
+ const raw=JSON.stringify({points:[candidate]});
+ assert.throws(()=>validatePoints(raw,p,step,outputs),/invalid_summary_output/);
+ assert.equal(auditSourceCoverageFailure(raw,p,step,outputs),true);
+ for(const change of [{citationIDs:['invented']},{careStatus:'Cured'},{historyIDs:['history:999']},{text:''}]){
+  assert.equal(auditSourceCoverageFailure(JSON.stringify({points:[{...candidate,...change}]}),p,step,outputs),false);
+ }
+ const repaired=JSON.stringify({points:[{...candidate,citationIDs:['e1','e2']}]});
+ assert.equal(validatePoints(repaired,p,step,outputs).length,1);
+ assert.equal(auditSourceCoverageFailure(repaired,p,step,outputs),false);
+ const payload=summaryPayload(p,step,outputs,2);
+ assert.deepEqual(JSON.parse(payload.input as string).requiredSourceIDs,['e1','e2']);
+ assert.match(payload.instructions,/preserve all supporting original source IDs/);
+ const legacy={...p,practitionerPolicy:undefined};
+ assert.equal(auditSourceCoverageFailure(raw,legacy,step,outputs),false);
+ assert.equal(JSON.parse(summaryPayload(legacy,step,outputs,2).input as string).requiredSourceIDs,undefined);
 });

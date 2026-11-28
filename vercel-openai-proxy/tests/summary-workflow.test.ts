@@ -124,6 +124,41 @@ test('durability, ownership, receipts, cancellation, expiry and uncertain calls 
   const [newCheck]=await advanceSummary(explicit.id);assert.notEqual(newCheck,check);assert.notEqual(newCheck,draft);
   for(let i=0;i<4;i++)await runSummary(explicit.id,execute);
   const explicitDone=await summaryStatus(owner,explicit.id);assert.equal(explicitDone.state,'completed');await acknowledgeSummary(owner,explicit.id,digest(explicitDone.output));
+  {
+  // Source coverage uses the existing audit attempt counter, never a new state.
+  const citationInput=()=>({...input('practitioner'),pipeline:'compact-v2' as const,practitionerPolicy:'founder-v1' as const,preparedDate:'2026-11-28',evidence:[{id:'1001',text:'Historical pelvic weakness.'},{id:'1002',text:'Historical pelvic weakness.'}]});
+  const complete={...point,heading:'Clinical Snapshot',text:'Pelvic weakness — historical',citationIDs:['1001','1002'],topic:null,stance:null,subjectCitation:null,responseCitation:null,conditionGroup:null,careStatus:null,timeLabel:null};
+  const omitted={...complete,citationIDs:['1001'],historyIDs:[],coordinationIDs:[]};
+  const prepareAudit=async(p:SummaryInput)=>{
+   await submitSummary(owner,p);
+   for(let i=0;i<2;i++){const [job]=await advanceSummary(p.id);assert.ok(job);await claim(job);await settle(job,'completed',{input_tokens:10,output_tokens:50},JSON.stringify({points:[complete]}));}
+   return (await advanceSummary(p.id))[0];
+  };
+  const bounded=citationInput();let auditJob=await prepareAudit(bounded);
+  for(let attempt=0;attempt<3;attempt++){
+   assert.ok(auditJob);await claim(auditJob);await settle(auditJob,'completed',{input_tokens:10,output_tokens:50},JSON.stringify({points:[omitted]}));
+   await advanceSummary(bounded.id);
+   if(attempt<2)auditJob=(await advanceSummary(bounded.id))[0];
+  }
+  const stopped=await summaryStatus(owner,bounded.id);assert.equal(stopped.state,'needs_attention');assert.equal(stopped.error_code,'invalid_summary_output');
+  assert.equal((await setup.query("SELECT attempt FROM ai_summary_steps WHERE workflow_id=$1 AND key='audit:0'",[bounded.id])).rows[0].attempt,2);
+  await resumeSummary(owner,bounded.id,stopped.revision);assert.deepEqual(await advanceSummary(bounded.id),[]);
+  assert.equal((await setup.query('SELECT count(*) FROM ai_summary_children WHERE workflow_id=$1',[bounded.id])).rows[0].count,'5');
+  const saved=citationInput(),savedJob=await prepareAudit(saved);
+  await claim(savedJob);await settle(savedJob,'completed',{input_tokens:10,output_tokens:50},JSON.stringify({points:[omitted]}));
+  // Reproduce a stopped pre-fix receipt at attempt 1, with checked work retained.
+  await setup.query("UPDATE ai_summary_steps SET attempt=1 WHERE workflow_id=$1 AND key='audit:0'",[saved.id]);
+  await transaction(async db=>{await db.query("SELECT set_config('collectivecare.summary_execution_policy','baseline-three-v2',true)");await db.query("UPDATE ai_summary_workflows SET state='needs_attention',error_code='invalid_summary_output' WHERE id=$1",[saved.id]);});
+  const savedStatus=await summaryStatus(owner,saved.id);
+  assert.equal((await resumeSummary(owner,saved.id)).state,'needs_attention');
+  await Promise.all([resumeSummary(owner,saved.id,savedStatus.revision),resumeSummary(owner,saved.id,savedStatus.revision)]);
+  assert.equal((await setup.query("SELECT attempt FROM ai_summary_steps WHERE workflow_id=$1 AND key='audit:0'",[saved.id])).rows[0].attempt,2);
+  const repairJob=(await advanceSummary(saved.id))[0];assert.ok(repairJob);assert.notEqual(repairJob,savedJob);
+  await claim(repairJob);await settle(repairJob,'completed',{input_tokens:10,output_tokens:50},JSON.stringify({points:[{...complete,historyIDs:[],coordinationIDs:[]}]}));
+  for(let i=0;i<3;i++)await runSummary(saved.id,async id=>{await claim(id);await settle(id,'completed',{input_tokens:10,output_tokens:50},JSON.stringify({points:[{...complete,historyIDs:[],coordinationIDs:[]}]}));return 1;});
+  assert.equal((await summaryStatus(owner,saved.id)).state,'completed');
+  assert.equal((await setup.query("SELECT count(*) FROM ai_summary_steps WHERE workflow_id=$1 AND key IN ('draft:0','check:0') AND state='completed'",[saved.id])).rows[0].count,'2');
+  }
   const expired=input();await submitSummary(owner,expired);await advanceSummary(expired.id);await setup.query("UPDATE ai_summary_workflows SET expires_at=now()-interval '1 second' WHERE id=$1",[expired.id]);await cleanupSummaries();assert.equal((await summaryStatus(owner,expired.id)).state,'expired');
   const attention=input();await submitSummary(owner,attention);const [bad]=await advanceSummary(attention.id);await claim(bad);await settle(bad,'completed',{input_tokens:10,output_tokens:20},'{}');await advanceSummary(attention.id);
   const [repair]=await advanceSummary(attention.id);assert.notEqual(repair,bad);await claim(repair);await settle(repair,'completed',{input_tokens:10,output_tokens:20},JSON.stringify({points:[point]}));
