@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Emit nonclinical release evidence; --check compares the complete source tree identity."""
 import argparse,hashlib,json,subprocess,os
+from lint_ui_sources import check as check_source_style
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 def manifest(build):
-    paths=[ROOT/p for p in ['Package.swift','SpeechSessionApp.xcodeproj/project.pbxproj','scripts/release_manifest.py','scripts/build_resilience_device.py','scripts/package_isolated_backend.py','scripts/isolated-router-smoke.ts','vercel-openai-proxy/package.json','vercel-openai-proxy/package-lock.json','vercel-openai-proxy/vercel.json']]
+    paths=[ROOT/p for p in ['Package.swift','SpeechSessionApp.xcodeproj/project.pbxproj','scripts/release_manifest.py','scripts/lint_ui_sources.py','scripts/build_resilience_device.py','scripts/package_isolated_backend.py','scripts/isolated-router-smoke.ts','vercel-openai-proxy/package.json','vercel-openai-proxy/package-lock.json','vercel-openai-proxy/vercel.json']]
     for folder in ['Sources','SpeechSessionApp','vercel-openai-proxy/api','vercel-openai-proxy/migrations']:
         paths += [p for p in (ROOT/folder).rglob('*') if p.is_file() and p.suffix in {'.swift','.ts','.sql','.json','.plist'} and not p.name.endswith('.local.json')]
     hashes={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(paths)}
@@ -19,6 +20,7 @@ def manifest(build):
       'sourceDigest':hashlib.sha256(json.dumps(hashes,sort_keys=True).encode()).hexdigest(),'files':hashes,
       'model':'gpt-6-luna','reasoning':'medium','contract':'incremental-records-v1','validator':'incremental-validator-v4','serverMigration':12,'localMigration':2,'storyContract':'story-v1'}
 def main():
+    check_source_style(ROOT)
     parser=argparse.ArgumentParser();parser.add_argument('--build',required=True);parser.add_argument('--check',type=Path);parser.add_argument('--compact',action='store_true');args=parser.parse_args();value=manifest(args.build)
     if args.compact:value.pop('files')
     if args.check:

@@ -694,7 +694,7 @@ struct StoryLabView: View {
                         VStack(alignment:.leading) {
                             TextEditor(text:Binding(get:{model.workspace.blocks.first(where:{$0.id == block.id})?.text ?? block.text},set:{model.edit(block,text:$0,auth:auth)})).frame(minHeight:90).scrollContentBackground(.hidden).accessibilityLabel("Edit story paragraph")
                             HStack {
-                                Button("Sources"){Task{sourceChoices=(try? await model.store.storySources(factIDs:block.factIDs,correctionRecordID:block.correctionRecordID)) ?? [];showSourceChoices=true}}.disabled(block.factIDs.isEmpty && block.correctionRecordID == nil)
+                                Button {Task{sourceChoices=(try? await model.store.storySources(factIDs:block.factIDs,correctionRecordID:block.correctionRecordID)) ?? [];showSourceChoices=true}} label: { StorySourceTag(title: "Sources") }.buttonStyle(.plain).disabled(block.factIDs.isEmpty && block.correctionRecordID == nil)
                                 if block.patientWritten {Text("Your words").font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)}
                                 if block.evidenceChanged {Text("Sources changed").font(StoryDesignTokens.font(.caption))}
                             }
@@ -905,10 +905,12 @@ struct StoryLabView: View {
                                     Text(date).font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.secondaryInk)
                                 }
                                 if !item.citationIDs.isEmpty {
-                                    Button("Sources",systemImage:"link") {
+                                    Button {
                                         sourceChoices=summary.evidence.filter{item.citationIDs.contains($0.id)}
                                         showSourceChoices=true
-                                    }.font(StoryDesignTokens.caption).buttonStyle(.borderless)
+                                    } label: {
+                                        StorySourceTag(title: "Sources")
+                                    }.buttonStyle(.plain)
                                         .accessibilityLabel("Sources for "+group.title)
                                 }
                             }.frame(maxWidth:.infinity,alignment:.leading)
@@ -1480,13 +1482,19 @@ private struct StoryTemplateShareView:View {
         let recordIDs = Set(summary.evidence.filter { ids.contains($0.id) }.compactMap(\.recordID))
         let sources = records.filter { recordIDs.contains($0.id) }
         if !sources.isEmpty {
-            DisclosureGroup("Sources (\(sources.count))") {
+            VStack(alignment: .leading, spacing: 0) {
                 ForEach(sources) { record in
+                    let title = record.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let label = title?.isEmpty == false ? title! : "Original record"
                     NavigationLink {
                         SessionDetailView(session: record, store: store, home: home, initialTab: .source)
-                    } label: { Text(record.title?.isEmpty == false ? record.title! : "Original record") }
+                    } label: {
+                        StorySourceTag(title: label)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open record: " + label)
                 }
-            }.font(StoryDesignTokens.caption).tint(StoryDesignTokens.secondaryInk)
+            }
         }
     }
 

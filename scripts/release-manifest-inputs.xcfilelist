@@ -223,3 +223,4 @@ $(SRCROOT)/vercel-openai-proxy/package.json
 $(SRCROOT)/vercel-openai-proxy/vercel.json
 $(SRCROOT)/Sources/TransferZip
 $(SRCROOT)/SpeechSessionApp/BrandFonts
+$(SRCROOT)/scripts/lint_ui_sources.py

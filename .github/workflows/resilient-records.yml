@@ -46,4 +46,6 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - run: python3 scripts/lint_ui_sources.py
+      - run: python3 -m unittest discover -s scripts -p test_lint_ui_sources.py
       - run: swift test
