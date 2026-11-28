@@ -122,10 +122,11 @@ struct HomeView: View {
                         UserProfileAvatar(photoData: kindeAuth.userProfile.photoData, size: 32)
                             .frame(width: 44, height: 44).contentShape(Circle())
                     }
-                    .buttonBorderShape(.circle)
+                    .buttonStyle(.plain)
                     .tint(StoryDesignTokens.ink)
                     .accessibilityLabel("Account menu")
                 }
+                .avatarBackgroundHidden()
             }
         }
         .sheet(isPresented:$showSummaryDrawer) {
@@ -885,5 +886,18 @@ struct HomeView: View {
 private extension Text {
     func italic(_ condition: Bool) -> Text {
         condition ? self.italic() : self
+    }
+}
+
+// An avatar supplies its own circular visual. Keep the 44-point hit area without
+// the navigation bar's additional capsule-shaped shared glass background.
+private extension ToolbarContent {
+    @ToolbarContentBuilder
+    func avatarBackgroundHidden() -> some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            self.sharedBackgroundVisibility(.hidden)
+        } else {
+            self
+        }
     }
 }
