@@ -11,6 +11,9 @@ final class KindeAuthManager: ObservableObject {
     @Published var sessionNotice: String?
     private var tokenRequest: Task<String, Error>?
     let profileStore: UserProfileStore?
+    @Published private(set) var userProfile = UserProfile()
+    private var profileScope: String?
+    private var profileRefreshID = UUID()
 
     private static var didConfigure = false
 
@@ -31,8 +34,13 @@ final class KindeAuthManager: ObservableObject {
         // Authorization includes a refreshable session even when its access token expires.
         let wasSignedIn = isSignedIn
         isSignedIn = KindeSDKAPI.auth.isAuthorized()
-        if isSignedIn, let accountID, let profileName, let profileStore {
-            Task { try? await profileStore.seedName(profileName, accountID: accountID) }
+        let scope = isSignedIn ? accountID.map { "account:" + $0 } ?? "awaiting-account" : "device:local"
+        if profileScope != scope {
+            profileScope = scope
+            userProfile = UserProfile()
+            let refreshID = UUID(); profileRefreshID = refreshID
+            let signedIn = isSignedIn, owner = signedIn ? accountID : nil
+            Task { await loadProfile(signedIn: signedIn, owner: owner, refreshID: refreshID) }
         }
         if wasSignedIn && !isSignedIn {
             sessionNotice = "You’re signed out. Sign in again to use cloud transcription and summaries. Your records are saved."
@@ -59,6 +67,29 @@ final class KindeAuthManager: ObservableObject {
         if !full.isEmpty { return full }
         let parts = [user.firstName, user.lastName].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
+    /// Clear on account changes and ignore an older account's delayed read.
+    func refreshProfile() async {
+        let refreshID = UUID(); profileRefreshID = refreshID
+        await loadProfile(signedIn: isSignedIn, owner: isSignedIn ? accountID : nil, refreshID: refreshID)
+    }
+
+    private func loadProfile(signedIn: Bool, owner: String?, refreshID: UUID) async {
+        guard refreshID == profileRefreshID, signedIn == isSignedIn,
+              owner == (isSignedIn ? accountID : nil) else { return }
+        guard let profileStore, !signedIn || owner != nil else { userProfile = UserProfile(); return }
+        do {
+            if let owner, let profileName { try await profileStore.seedName(profileName, accountID: owner) }
+            let profile = try await profileStore.load(accountID: owner)
+            guard refreshID == profileRefreshID, signedIn == isSignedIn,
+                  owner == (isSignedIn ? accountID : nil) else { return }
+            userProfile = profile
+        } catch {
+            guard refreshID == profileRefreshID, signedIn == isSignedIn,
+                  owner == (isSignedIn ? accountID : nil) else { return }
+            userProfile = UserProfile()
+        }
     }
 
     func login() async throws {

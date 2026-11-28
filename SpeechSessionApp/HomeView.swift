@@ -40,9 +40,7 @@ struct HomeView: View {
     @AppStorage("speechSession.whisperKitExperimentalUnlock") private var whisperKitExperimentalUnlock = false
 
     @State private var showSettings = false
-    @State private var accountActionPending = false
-    @State private var accountActionError:String?
-    @AppStorage("speechSession.skippedSignInGate") private var skippedSignInGate = false
+    @State private var showAccount = false
     @State private var pulseAnimation = false
     @State private var showDocumentScanner = false
     @State private var showCameraCapture = false
@@ -110,24 +108,23 @@ struct HomeView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        Section(kindeAuth.isSignedIn ? (kindeAuth.userPreview.map {"Signed in · "+$0} ?? "Signed in"):"Signed out") {
-                            Button("Settings",systemImage:"gearshape") {showSettings=true}.disabled(phase != .idle)
-                            Button("Refresh overview",systemImage:"arrow.clockwise",action:refreshStory).disabled(storyBusy)
-                            if kindeAuth.isSignedIn {
-                                Button("Sign out",systemImage:"rectangle.portrait.and.arrow.right") {
-                                    accountActionPending=true
-                                    Task {defer{accountActionPending=false};skippedSignInGate=false;await kindeAuth.logout()}
-                                }.disabled(accountActionPending || phase != .idle)
-                            } else {
-                                Button("Sign in",systemImage:"person.crop.circle.badge.checkmark") {
-                                    accountActionPending=true
-                                    Task {defer{accountActionPending=false};do{try await kindeAuth.login()}catch{accountActionError=error.localizedDescription}}
-                                }.disabled(accountActionPending || phase != .idle)
-                            }
+                        Section {
+                            Button("Account", systemImage: "person.crop.circle") { showAccount = true }
+                                .disabled(phase != .idle)
+                            Button("Settings", systemImage: "gearshape") { showSettings = true }
+                                .disabled(phase != .idle)
                         }
-                    } label:{Image(systemName:kindeAuth.isSignedIn ? "person.crop.circle.fill":"person.crop.circle")}
+                        Section {
+                            Button("Refresh overview", systemImage: "arrow.clockwise", action: refreshStory)
+                                .disabled(storyBusy)
+                        }
+                    } label: {
+                        UserProfileAvatar(photoData: kindeAuth.userProfile.photoData, size: 32)
+                            .frame(width: 44, height: 44).contentShape(Circle())
+                    }
+                    .buttonBorderShape(.circle)
                     .tint(StoryDesignTokens.ink)
-                    .accessibilityLabel("Profile")
+                    .accessibilityLabel("Account menu")
                 }
             }
         }
@@ -182,9 +179,9 @@ struct HomeView: View {
             scanErrorMessage = nil
             Task { await processPhotoPickerItems(newItems) }
         }
-        .alert("Could not sign in",isPresented:Binding(get:{accountActionError != nil},set:{if !$0 {accountActionError=nil}})) {
-            Button("OK",role:.cancel){accountActionError=nil}
-        } message:{Text(accountActionError ?? "Please try again.")}
+        .sheet(isPresented: $showAccount) {
+            AccountSettingsView(isPresented: $showAccount)
+        }
         .sheet(isPresented: $showSettings) {
             SettingsView(isPresented: $showSettings, store: store, home: home, health: health,
                          transferIsAvailable: phase == .idle && !isConsumingPendingSharedImport && pendingSharedImportURL == nil, allowsStoryReset: storyRecords && !storyBusy && summaryStatus?.hasPrefix("Preparing ") != true)
@@ -260,6 +257,9 @@ struct HomeView: View {
             Task { await consumePendingSharedImportIfNeeded() }
         }
         .onChange(of: showSettings) { _, shown in
+            if !shown { Task { await consumePendingSharedImportIfNeeded() } }
+        }
+        .onChange(of: showAccount) { _, shown in
             if !shown { Task { await consumePendingSharedImportIfNeeded() } }
         }
         .onChange(of: health.isTransferringData) { _, transferring in
@@ -621,7 +621,7 @@ struct HomeView: View {
     // MARK: - Shared handoff (App Group audio + photo share extensions)
 
     private func consumePendingSharedImportIfNeeded() async {
-        guard !isConsumingPendingSharedImport, !showSettings, !health.isTransferringData else { return }
+        guard !isConsumingPendingSharedImport, !showSettings, !showAccount, !health.isTransferringData else { return }
         guard let sourceURL = pendingSharedImportURL else { return }
 
         isConsumingPendingSharedImport = true

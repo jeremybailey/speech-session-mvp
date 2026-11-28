@@ -267,7 +267,7 @@ struct SettingsView: View {
                 await home.loadSessions()
                 isPresented = false
                 NotificationCenter.default.post(name: .storyHistoryCleared, object: nil)
-            } catch { accountActionError = error.localizedDescription }
+            } catch { settingsActionError = error.localizedDescription }
         }
     }
 
@@ -277,9 +277,8 @@ struct SettingsView: View {
     @AppStorage("speechSession.summaryBackend") private var summaryBackendRaw = "openai"
     /// On legacy tier, enables the Base WhisperKit model in addition to Tiny (always allowed).
     @AppStorage("speechSession.whisperKitExperimentalUnlock") private var whisperKitExperimentalUnlock = false
-    @AppStorage("speechSession.skippedSignInGate") private var skippedSignInGate = false
     @EnvironmentObject private var kindeAuth: KindeAuthManager
-    @State private var accountActionError: String?
+    @State private var settingsActionError: String?
     @State private var showOnDeviceSummaryOptIn = false
     @State private var aiUsage: AIUsageSnapshot?
     @State private var usageIsStale = false
@@ -326,21 +325,6 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Profile") {
-                    if let profileStore = kindeAuth.profileStore {
-                        NavigationLink {
-                            SettingsProfileView(store: profileStore,
-                                                accountID: kindeAuth.isSignedIn ? kindeAuth.accountID : nil,
-                                                providerName: kindeAuth.profileName)
-                                .id(kindeAuth.isSignedIn ? kindeAuth.accountID : nil)
-                        } label: {
-                            Label("Name and photo", systemImage: "person.crop.circle")
-                        }
-                        .disabled(kindeAuth.isSignedIn && kindeAuth.accountID == nil)
-                    } else {
-                        Text("Your profile is unavailable. Try reopening Settings.")
-                    }
-                }
 
                 Section {
                     Label {
@@ -354,36 +338,6 @@ struct SettingsView: View {
                     Text("Beta Notice")
                 }
 
-                Section {
-                    if kindeAuth.isSignedIn {
-                        if let email = kindeAuth.userPreview, !email.isEmpty {
-                            LabeledContent("Signed in", value: email)
-                        } else {
-                            Text("Signed in")
-                                .foregroundStyle(StoryDesignTokens.secondaryInk)
-                        }
-                        Button("Sign Out", role: .destructive) {
-                            Task {
-                                skippedSignInGate = false
-                                await kindeAuth.logout()
-                            }
-                        }
-                    } else {
-                        Button("Sign In") {
-                            Task {
-                                do {
-                                    try await kindeAuth.login()
-                                } catch {
-                                    accountActionError = error.localizedDescription
-                                }
-                            }
-                        }
-                    }
-                } header: {
-                    Text("Account")
-                } footer: {
-                    Text(accountFooterText)
-                }
 
                 Section {
                     NavigationLink("Export data") {
@@ -589,13 +543,13 @@ struct SettingsView: View {
                         .disabled(health.isTransferringData)
                 }
             }
-            .alert("Account", isPresented: Binding(
-                get: { accountActionError != nil },
-                set: { if !$0 { accountActionError = nil } }
+            .alert("Settings", isPresented: Binding(
+                get: { settingsActionError != nil },
+                set: { if !$0 { settingsActionError = nil } }
             )) {
-                Button("OK", role: .cancel) { accountActionError = nil }
+                Button("OK", role: .cancel) { settingsActionError = nil }
             } message: {
-                Text(accountActionError ?? "")
+                Text(settingsActionError ?? "")
             }
             .confirmationDialog("Use Apple Intelligence for summaries?", isPresented: $showOnDeviceSummaryOptIn, titleVisibility: .visible) {
                 Button("Use on-device summaries") { summaryBackendRaw = "onDevice" }
@@ -772,21 +726,6 @@ struct SettingsView: View {
             return OnDeviceSummaryService.isAvailable
         }
         return false
-    }
-
-    private var accountFooterText: String {
-        if kindeAuth.isSignedIn, CloudOpenAIConfiguration.hasProxy {
-            return "Cloud transcription and summaries use your CollectiveCare account. Visit content stays on this device; only what each feature needs is sent to your organization’s API."
-        }
-        if kindeAuth.isSignedIn, !cloudOpenAIBaseURLConfigured {
-            return "This app build is missing the proxy API URL (CloudOpenAIBaseURL). Cloud OpenAI features need that endpoint—see your organization’s setup guide."
-        }
-        return "Sign in to use OpenAI Whisper or cloud summaries. Your OpenAI API key is not used in release builds."
-    }
-
-    /// Non-empty `CloudOpenAIBaseURL` entry in Info.plist (see docs).
-    private var cloudOpenAIBaseURLConfigured: Bool {
-        CloudOpenAIConfiguration.hasProxy
     }
 
     private var cloudInferenceReady: Bool {
@@ -992,6 +931,7 @@ private struct WholeHistoryRecordReviewView: View {
 }
 
 private struct SettingsProfileView: View {
+    @EnvironmentObject private var kindeAuth: KindeAuthManager
     let store: UserProfileStore
     let accountID: String?
     let providerName: String?
@@ -1010,16 +950,7 @@ private struct SettingsProfileView: View {
             Section {
                 HStack {
                     Spacer()
-                    Group {
-                        if let photoData, let image = UIImage(data: photoData) {
-                            Image(uiImage: image).resizable().scaledToFill()
-                        } else {
-                            Image(systemName: "person.crop.circle.fill")
-                                .resizable().scaledToFit().foregroundStyle(StoryDesignTokens.secondaryInk)
-                        }
-                    }
-                    .frame(width: 104, height: 104).clipShape(Circle())
-                    .accessibilityLabel("Profile photo")
+                    UserProfileAvatar(photoData: photoData, size: 104)
                     Spacer()
                 }.padding(.vertical, 12)
                 PhotosPicker(selection: $selectedPhoto, matching: .images) {
@@ -1092,7 +1023,11 @@ private struct SettingsProfileView: View {
         let profile = UserProfile(name: name, photoData: photoData)
         Task { @MainActor in
             defer { saving = false }
-            do { try await store.save(profile, accountID: accountID); dismiss() }
+            do {
+                try await store.save(profile, accountID: accountID)
+                await kindeAuth.refreshProfile()
+                dismiss()
+            }
             catch { self.error = "Your profile couldn’t be saved. Try again." }
         }
     }
@@ -1109,5 +1044,104 @@ private struct SettingsProfileView: View {
               let result = UIImage(cgImage: thumbnail).jpegData(compressionQuality: 0.85),
               result.count <= UserProfileStore.maximumPhotoBytes else { throw UserProfileError.invalidProfile }
         return result
+    }
+}
+
+/// Shared by the native toolbar menu, account header and photo editor.
+struct UserProfileAvatar: View {
+    let photoData: Data?
+    let size: CGFloat
+
+    var body: some View {
+        Group {
+            if let photoData, let photo = UIImage(data: photoData) {
+                Image(uiImage: photo).renderingMode(.original).resizable().scaledToFill()
+            } else {
+                Image(systemName: "person.crop.circle.fill")
+                    .resizable().scaledToFit().foregroundStyle(StoryDesignTokens.secondaryInk)
+            }
+        }
+        .frame(width: size, height: size).clipShape(Circle())
+        .accessibilityLabel("Profile photo")
+    }
+}
+
+struct AccountSettingsView: View {
+    @Binding var isPresented: Bool
+    @EnvironmentObject private var kindeAuth: KindeAuthManager
+    @AppStorage("speechSession.skippedSignInGate") private var skippedSignInGate = false
+    @State private var accountActionPending = false
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    VStack(spacing: 12) {
+                        UserProfileAvatar(photoData: kindeAuth.userProfile.photoData, size: 88)
+                        Text(kindeAuth.userProfile.name.isEmpty ? "Your profile" : kindeAuth.userProfile.name)
+                            .font(StoryDesignTokens.sectionHeading).multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 12)
+                    if let profileStore = kindeAuth.profileStore {
+                        NavigationLink {
+                            SettingsProfileView(store: profileStore,
+                                                accountID: kindeAuth.isSignedIn ? kindeAuth.accountID : nil,
+                                                providerName: kindeAuth.profileName)
+                                .id(kindeAuth.isSignedIn ? kindeAuth.accountID : nil)
+                        } label: {
+                            Label("Name and photo", systemImage: "person.crop.circle")
+                        }
+                        .disabled(accountActionPending || (kindeAuth.isSignedIn && kindeAuth.accountID == nil))
+                    } else {
+                        Text("Your profile is unavailable. Try reopening Account.")
+                    }
+                }
+                Section {
+                    if kindeAuth.isSignedIn {
+                        if let email = kindeAuth.userPreview, !email.isEmpty {
+                            LabeledContent("Email", value: email).textSelection(.enabled)
+                        }
+                        Button("Sign out", role: .destructive) {
+                            accountActionPending = true
+                            Task { @MainActor in
+                                defer { accountActionPending = false }
+                                skippedSignInGate = false
+                                await kindeAuth.logout()
+                            }
+                        }.disabled(accountActionPending)
+                    } else {
+                        Button("Sign in") {
+                            accountActionPending = true
+                            Task { @MainActor in
+                                defer { accountActionPending = false }
+                                do { try await kindeAuth.login() }
+                                catch { self.error = "Sign-in couldn’t be completed. Please try again." }
+                            }
+                        }.disabled(accountActionPending)
+                    }
+                    if accountActionPending { ProgressView("Updating account…") }
+                } header: {
+                    Text("Sign-in")
+                } footer: {
+                    Text(kindeAuth.isSignedIn ? "Your saved health records stay on this device when you sign out." : "Sign in to use cloud transcription and summaries.")
+                }
+            }
+            .storyListCanvas()
+            .navigationTitle("Account").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close", systemImage: "xmark") { isPresented = false }
+                        .labelStyle(.iconOnly).disabled(accountActionPending)
+                }
+            }
+            .alert("Sign in", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+                Button("OK", role: .cancel) { error = nil }
+            } message: { Text(error ?? "") }
+        }
+        .background(BrandPalette.canvas.ignoresSafeArea())
+        .presentationDetents([.large])
+        .interactiveDismissDisabled(accountActionPending)
+        .task { await kindeAuth.refreshProfile() }
     }
 }
