@@ -5,7 +5,7 @@ import Foundation
 public enum StorySummarySharing {
     private static let patterns = [
         #"\b(?:safety(?: screening| assessment| risk)?|suicid\w*|self[\s-]*harm\w*|self[\s-]*injur\w*|homicid\w*)\b"#,
-        #"\b(?:harm|hurt|kill)(?:ing)?\s+(?:to\s+)?(?:self|myself|herself|himself|themselves|others|someone|baby|infant|child)\b"#,
+        #"\b(?:harm|hurt|kill)(?:ing)?\s+(?:(?:to|towards?)\s+)?(?:(?:my|her|his|their|our|the)\s+(?:own\s+)?)?(?:self|myself|herself|himself|themselves|others|someone|baby|infant|child(?:ren)?)\b"#,
         #"\b(?:harm (?:thoughts|visions|ideation)|thoughts of (?:death|dying)|end (?:my|her|his|their) life)\b"#,
         #"\b(?:sexual\w*|intercourse|dyspareunia|libido|orgasm\w*|intimacy|erectile|penetration|vaginismus)\b"#,
         #"\b(?:genital\w*|perine\w*|vulv\w*|vagina|clitor\w*|penis|penile|scrot\w*|testicul\w*|labia\w*|saddle (?:sens\w*|numb\w*|anaesth\w*|anesth\w*))\b"#,

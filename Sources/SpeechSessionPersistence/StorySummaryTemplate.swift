@@ -342,7 +342,7 @@ public enum StorySummaryDocument {
     }
 
     /// A read-only presentation: saved bullets and their source evidence stay unchanged.
-    public static func practitionerPresentation(_ text: String, hasAbnormalLabs: Bool, bulletDates: [StorySummaryBulletDate], providerContacts: [CareTeamMember] = [], patientName: String? = nil) -> (blocks: [StorySummaryBlock], dates: [StorySummaryBulletDate]) {
+    public static func practitionerPresentation(_ text: String, hasAbnormalLabs: Bool, bulletDates: [StorySummaryBulletDate], providerContacts: [CareTeamMember] = [], patientName: String? = nil, canMergeAdjacentPoints: ((String, String) -> Bool)? = nil) -> (blocks: [StorySummaryBlock], dates: [StorySummaryBulletDate]) {
         var output: [StorySummaryBlock] = []
         var dates: [StorySummaryBulletDate] = []
         func labels(for point: String) -> [String] {
@@ -372,6 +372,7 @@ public enum StorySummaryDocument {
                let old = parts(previous), let next = parts(point),
                old.0.caseInsensitiveCompare(next.0) == .orderedSame,
                !needsSeparatePoints(old.1, next.1),
+               canMergeAdjacentPoints?(previous, point) ?? true,
                (section != "Comprehensive Health History" || StorySummaryBulletDate.historyDisplayDate(text: previous, labels: []) == StorySummaryBulletDate.historyDisplayDate(text: point, labels: [])),
                let previousDates = dates.last,
                Set(previousDates.labels) == Set(pointLabels), previousDates.temporal == pointTemporal {

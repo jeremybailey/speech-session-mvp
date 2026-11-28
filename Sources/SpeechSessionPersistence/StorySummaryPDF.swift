@@ -21,7 +21,7 @@ public enum StorySummaryPDF {
         }
     }
 
-    @MainActor public static func renderSummary(_ summary: StorySharedSummary, title: String, patientName: String?, typography: Typography? = nil, excludeSensitiveDetails: Bool = false) throws -> Data {
+    @MainActor public static func renderSummary(_ summary: StorySharedSummary, title: String, patientName: String?, typography: Typography? = nil, excludeSensitiveDetails: Bool = true) throws -> Data {
         try render(text: summary.text, title: title, generatedAt: summary.generatedAt, patientName: patientName, labs: summary.labReadings ?? [], bulletDates:summary.bulletDates ?? [], providerContacts:summary.providerContacts ?? [], typography: typography, excludeSensitiveDetails: excludeSensitiveDetails, summary: summary) { series, context, rect in
             let renderer = ImageRenderer(content: StoryLabSparkline(series).frame(width: rect.width, height: rect.height).environment(\.colorScheme, .light))
             renderer.render { _, paint in

@@ -139,7 +139,9 @@ final class StoryTemplateTests:XCTestCase {
             StorySummaryBulletDate(text:"Follow-up — review w/ care team",labels:["Record: 2026-11-15"]),
             StorySummaryBulletDate(text:longBullet,labels:["Record: 2026-11-20"]),
             StorySummaryBulletDate(text:"Support — family available",labels:["Record: 2026-09"])])
-        let extracted=try XCTUnwrap(PDFDocument(data:fallbackPDF)?.string).replacingOccurrences(of:"\u{00a0}",with:" ")
+        // Narrow date cells can wrap a label; verify its complete words independent of PDF line breaks.
+        let extracted=try XCTUnwrap(PDFDocument(data:fallbackPDF)?.string)
+            .components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.joined(separator: " ")
         XCTAssertTrue(extracted.contains("Recorded 15 Nov 2026"))
         XCTAssertTrue(extracted.contains("Recorded 20 Nov 2026"))
         XCTAssertTrue(extracted.contains("Recorded Sep 2026"))

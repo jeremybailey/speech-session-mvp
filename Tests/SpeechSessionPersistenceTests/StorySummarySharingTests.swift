@@ -76,4 +76,22 @@ final class StorySummarySharingTests: XCTestCase {
         let restored = try JSONDecoder().decode(StoryWorkspace.self, from: JSONEncoder().encode(optedIn))
         XCTAssertEqual(restored.practitionerExcludeSensitiveDetails, false)
     }
+    func testSafetyPhrasesWithPossessivesAndDirectionalWordingAreExcluded() {
+        for text in ["Thoughts of harming her baby", "No thoughts of hurting my children", "Thoughts of harm towards others", "Thoughts of killing their own infant"] {
+            XCTAssertTrue(StorySummarySharing.isSensitive(text), text)
+        }
+        for text in ["Baby aspirin discussed", "Mother and baby doing well", "Nocturnal reflux", "Hip pain after lifting her baby"] {
+            XCTAssertFalse(StorySummarySharing.isSensitive(text), text)
+        }
+    }
+
+    @MainActor func testPractitionerRendererDefaultsToSensitiveExclusion() throws {
+        let summary = StorySharedSummary(templateID: "practitioner-v1", text: "## Clinical Snapshot\n- Migraine — weekly attacks\n- Safety — suicidal thoughts denied", evidence: [])
+        let filtered = try StorySummaryPDF.renderSummary(summary, title: "Practitioner summary", patientName: nil)
+        let full = try StorySummaryPDF.renderSummary(summary, title: "Practitioner summary", patientName: nil, excludeSensitiveDetails: false)
+        XCTAssertFalse(try XCTUnwrap(PDFDocument(data: filtered)?.string).contains("suicidal"))
+        XCTAssertTrue(try XCTUnwrap(PDFDocument(data: full)?.string).contains("suicidal"))
+        XCTAssertTrue(summary.text.contains("suicidal"))
+    }
+
 }

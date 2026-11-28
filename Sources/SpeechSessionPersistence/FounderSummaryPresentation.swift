@@ -8,13 +8,46 @@ public struct FounderSummaryPresentation {
     public let sources: [String: [String]]
 
     public init(summary: StorySharedSummary, hasAbnormalLabs: Bool, patientName: String?) {
-        let original = StorySummaryDocument.practitionerPresentation(summary.text, hasAbnormalLabs: hasAbnormalLabs, bulletDates: summary.bulletDates ?? [], providerContacts: summary.providerContacts ?? [], patientName: patientName)
+        let isFounder = summary.practitionerPolicy == "founder-v1"
+        // Merge repeated topics only when their structured clinical metadata agrees.
+        // This also keeps semicolon fragments of one point compact without mixing states.
+        func mergeIdentity(_ text: String) -> Set<[String?]> {
+            let parts = StorySummaryDocument.splitShareItems(.bullet(text))
+            let refs = (summary.pointReferences ?? []).filter { ref in
+                StorySummaryDocument.splitShareItems(.bullet(StorySummaryDocument.shareShorthand(ref.text))).contains { parts.contains($0) }
+            }
+            return Set(refs.map { [$0.heading, $0.conditionGroup?.lowercased(), $0.careStatus, $0.timeLabel] })
+        }
+        let original = StorySummaryDocument.practitionerPresentation(summary.text, hasAbnormalLabs: hasAbnormalLabs, bulletDates: summary.bulletDates ?? [], providerContacts: summary.providerContacts ?? [], patientName: patientName, canMergeAdjacentPoints: { first, second in
+            guard isFounder else { return true }
+            let identity = mergeIdentity(first)
+            return identity.count == 1 && identity == mergeIdentity(second)
+        })
         // Preserve legacy prose/tables wholesale until regenerated into the structured
         // contract. A presentation upgrade must never silently discard saved content.
-        if original.blocks.contains(where: { block in
+        if !isFounder || original.blocks.contains(where: { block in
             switch block { case .paragraph, .table: return true; default: return false }
         }) {
-            blocks = original.blocks; dates = original.dates; sources = [:]
+            blocks = original.blocks; dates = original.dates
+            var links: [String: [String]] = [:]
+            var section = ""
+            let allowed = Set(summary.evidence.map(\.id))
+            for block in original.blocks {
+                if case let .heading(title, 2) = block { section = title }
+                guard case let .bullet(text) = block else { continue }
+                let parts = StorySummaryDocument.splitShareItems(.bullet(text))
+                let refs = (summary.pointReferences ?? []).filter { ref in
+                    guard ref.heading == section else { return false }
+                    return StorySummaryDocument.splitShareItems(.bullet(StorySummaryDocument.shareShorthand(ref.text))).contains { block in
+                        if parts.contains(block) { return true }
+                        guard section == "Care Coordination Summary", case let .bullet(value) = block else { return false }
+                        let note = StorySummaryDocument.topicAndNote(value).note
+                        return note.count > 8 && text.contains(note)
+                    }
+                }
+                links[text] = Array(Set((links[text] ?? []) + refs.flatMap(\.citationIDs).filter { allowed.contains($0) })).sorted()
+            }
+            sources = links
             return
         }
         struct Row {
