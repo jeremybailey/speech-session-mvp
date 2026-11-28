@@ -58,6 +58,7 @@ $(SRCROOT)/Sources/SpeechSessionPersistence/StoryOverview.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StoryOverviewRefresh.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StorySummaryPDF.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StorySummarySharing.swift
+$(SRCROOT)/Sources/SpeechSessionPersistence/UserProfile.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/FounderSummaryPresentation.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StorySummaryTemplate.swift
 $(SRCROOT)/Sources/SpeechSessionPersistence/StoryWorkspace.swift

@@ -1,5 +1,6 @@
 import Foundation
 import KindeSDK
+import SpeechSessionPersistence
 import SpeechSessionTranscription
 import SwiftUI
 
@@ -9,10 +10,12 @@ final class KindeAuthManager: ObservableObject {
     @Published private(set) var isSignedIn = false
     @Published var sessionNotice: String?
     private var tokenRequest: Task<String, Error>?
+    let profileStore: UserProfileStore?
 
     private static var didConfigure = false
 
     init() {
+        profileStore = try? UserProfileStore.appDefault()
         Self.configureOnce()
         syncState()
         completeSummaryEngineBootstrapIfSessionRestoredWithoutLogin()
@@ -28,6 +31,9 @@ final class KindeAuthManager: ObservableObject {
         // Authorization includes a refreshable session even when its access token expires.
         let wasSignedIn = isSignedIn
         isSignedIn = KindeSDKAPI.auth.isAuthorized()
+        if isSignedIn, let accountID, let profileName, let profileStore {
+            Task { try? await profileStore.seedName(profileName, accountID: accountID) }
+        }
         if wasSignedIn && !isSignedIn {
             sessionNotice = "You’re signed out. Sign in again to use cloud transcription and summaries. Your records are saved."
         }
@@ -44,6 +50,15 @@ final class KindeAuthManager: ObservableObject {
 
     var userPreview: String? {
         KindeSDKAPI.auth.getUserDetails()?.email
+    }
+
+    /// Only provider-supplied name fields; an email address is not a person's name.
+    var profileName: String? {
+        guard isSignedIn, let user = KindeSDKAPI.auth.getUserDetails() else { return nil }
+        let full = user.fullName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !full.isEmpty { return full }
+        let parts = [user.firstName, user.lastName].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
     }
 
     func login() async throws {

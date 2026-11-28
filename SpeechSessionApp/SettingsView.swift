@@ -3,6 +3,8 @@ import SpeechSessionFeatures
 import SpeechSessionPersistence
 import UniformTypeIdentifiers
 import UserNotifications
+import PhotosUI
+import ImageIO
 
 /// Deliberately reachable only from Settings. Import replaces the local dataset;
 /// it never imports authentication or submits processing work.
@@ -324,6 +326,22 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Profile") {
+                    if let profileStore = kindeAuth.profileStore {
+                        NavigationLink {
+                            SettingsProfileView(store: profileStore,
+                                                accountID: kindeAuth.isSignedIn ? kindeAuth.accountID : nil,
+                                                providerName: kindeAuth.profileName)
+                                .id(kindeAuth.isSignedIn ? kindeAuth.accountID : nil)
+                        } label: {
+                            Label("Name and photo", systemImage: "person.crop.circle")
+                        }
+                        .disabled(kindeAuth.isSignedIn && kindeAuth.accountID == nil)
+                    } else {
+                        Text("Your profile is unavailable. Try reopening Settings.")
+                    }
+                }
+
                 Section {
                     Label {
                         Text("CollectiveCare helps capture and organize visit notes, but it is not medical advice. Review summaries for accuracy before using or sharing them.")
@@ -970,5 +988,124 @@ private struct WholeHistoryRecordReviewView: View {
                 Text(entry.category.displayTitle).font(StoryDesignTokens.font(.caption)).foregroundStyle(StoryDesignTokens.secondaryInk)
             }
         }
+    }
+}
+
+private struct SettingsProfileView: View {
+    let store: UserProfileStore
+    let accountID: String?
+    let providerName: String?
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var photoData: Data?
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var loaded = false
+    @State private var saving = false
+    @State private var loadingPhoto = false
+    @State private var error: String?
+    @State private var reloadID = UUID()
+
+    var body: some View {
+        Form {
+            Section {
+                HStack {
+                    Spacer()
+                    Group {
+                        if let photoData, let image = UIImage(data: photoData) {
+                            Image(uiImage: image).resizable().scaledToFill()
+                        } else {
+                            Image(systemName: "person.crop.circle.fill")
+                                .resizable().scaledToFit().foregroundStyle(StoryDesignTokens.secondaryInk)
+                        }
+                    }
+                    .frame(width: 104, height: 104).clipShape(Circle())
+                    .accessibilityLabel("Profile photo")
+                    Spacer()
+                }.padding(.vertical, 12)
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    Label(photoData == nil ? "Add photo" : "Change photo", systemImage: "photo")
+                }
+                .disabled(!loaded || saving || loadingPhoto)
+                if photoData != nil {
+                    Button("Remove photo", role: .destructive) { photoData = nil; selectedPhoto = nil; error = nil }
+                        .disabled(saving || loadingPhoto)
+                }
+                if loadingPhoto { ProgressView("Preparing photo…") }
+            }
+            Section("Name") {
+                TextField("Your name", text: $name)
+                    .textContentType(.name).textInputAutocapitalization(.words)
+                    .submitLabel(.done)
+                    .disabled(!loaded || saving)
+                if name.count > UserProfileStore.maximumNameLength {
+                    Text("Use a name of \(UserProfileStore.maximumNameLength) characters or fewer.")
+                        .font(StoryDesignTokens.caption).foregroundStyle(StoryDesignTokens.action)
+                }
+            } footer: {
+                Text(accountID == nil ? "Saved on this device while signed out." : "Saved on this device for this account.")
+            }
+            if !loaded && error == nil { ProgressView("Loading profile…") }
+            if let error {
+                Section {
+                    Text(error).foregroundStyle(StoryDesignTokens.action)
+                    if !loaded { Button("Try again") { reloadID = UUID() } }
+                }
+            }
+        }
+        .storyListCanvas()
+        .navigationTitle("Profile").navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button(saving ? "Saving…" : "Save") { save() }
+                    .disabled(!loaded || saving || loadingPhoto || name.count > UserProfileStore.maximumNameLength)
+            }
+        }
+        .task(id: reloadID) {
+            error = nil
+            do {
+                if let accountID, let providerName { try await store.seedName(providerName, accountID: accountID) }
+                let profile = try await store.load(accountID: accountID)
+                try Task.checkCancellation()
+                name = profile.name; photoData = profile.photoData; loaded = true
+            } catch is CancellationError { }
+            catch { self.error = "Your profile couldn’t be loaded. Try again." }
+        }
+        .task(id: selectedPhoto) {
+            guard let selection = selectedPhoto else { return }
+            loadingPhoto = true; error = nil
+            defer { if selectedPhoto == selection { loadingPhoto = false } }
+            do {
+                guard let data = try await selection.loadTransferable(type: Data.self) else { throw UserProfileError.invalidProfile }
+                let prepared = try await Task.detached(priority: .userInitiated) { try Self.preparePhoto(data) }.value
+                try Task.checkCancellation()
+                photoData = prepared
+            } catch is CancellationError { }
+            catch { self.error = "That photo couldn’t be opened. Try another image." }
+        }
+    }
+
+    private func save() {
+        guard loaded, !saving, !loadingPhoto else { return }
+        saving = true; error = nil
+        let profile = UserProfile(name: name, photoData: photoData)
+        Task { @MainActor in
+            defer { saving = false }
+            do { try await store.save(profile, accountID: accountID); dismiss() }
+            catch { self.error = "Your profile couldn’t be saved. Try again." }
+        }
+    }
+
+    /// A small re-encoded image retains orientation but no original photo metadata.
+    nonisolated private static func preparePhoto(_ data: Data) throws -> Data {
+        guard data.count <= 30_000_000,
+              let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 512
+              ] as CFDictionary),
+              let result = UIImage(cgImage: thumbnail).jpegData(compressionQuality: 0.85),
+              result.count <= UserProfileStore.maximumPhotoBytes else { throw UserProfileError.invalidProfile }
+        return result
     }
 }
